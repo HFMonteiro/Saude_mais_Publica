@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conector Transparência SNS - Modelos Semânticos</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  </head>
+  <body>
+    <main class="layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Transparência SNS</p>
+          <h1>Arranque de análise e cruzamento de dados</h1>
+        </div>
+        <div class="sync-state" id="syncState">A carregar...</div>
+      </header>
+
+      <section class="start-page" aria-label="Arranque">
+        <div class="start-copy">
+          <h2>Mega-temas para orientar queries</h2>
+          <p>Seleciona um tema para focar datasets, relações e tabela recente. A classificação corre sobre títulos e campos publicados na API.</p>
+        </div>
+        <div id="themeCards" class="theme-grid"></div>
+      </section>
+
+      <section class="toolbar">
+        <label>
+          <span>Pesquisar dataset</span>
+          <input id="datasetFilter" name="dataset-search" autocomplete="off" placeholder="ex: gastos, hospitais, receita…" type="text" />
+        </label>
+        <label>
+          <span>Mega-tema</span>
+          <select id="themeFilter" name="theme-filter" autocomplete="off">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label class="range-control">
+          <span>Força da ligação</span>
+          <input id="minScore" min="1" max="10" step="1" type="range" value="4" />
+          <strong id="minScoreValue">4</strong>
+        </label>
+        <button id="refreshButton" title="Atualizar dados">Atualizar</button>
+      </section>
+
+      <section class="summary-strip" aria-label="Resumo">
+        <div>
+          <span>Datasets</span>
+          <strong id="statDatasets">-</strong>
+        </div>
+        <div>
+          <span>Ligações</span>
+          <strong id="statLinks">-</strong>
+        </div>
+        <div>
+          <span>Campos por dataset</span>
+          <strong id="statFields">-</strong>
+        </div>
+        <div>
+          <span>Em foco</span>
+          <strong id="statFocus">Catálogo</strong>
+        </div>
+      </section>
+
+      <section class="grid">
+        <aside class="panel sidebar">
+          <div class="panel-heading">
+            <h2>Datasets</h2>
+            <span id="datasetCountLabel"></span>
+          </div>
+          <div id="datasetSummary" class="meta"></div>
+          <div id="datasetList" class="list"></div>
+        </aside>
+
+        <section class="panel workspace">
+          <div class="panel-heading">
+            <h2>Mapa de ligações</h2>
+            <span id="graphScope">Top relações</span>
+          </div>
+          <div id="graphContainer">
+            <svg id="linkGraph"></svg>
+          </div>
+          <div id="linkHelp" class="meta">
+            Clique num nó para detalhar as ligações e criar árvore de cruzamentos.
+          </div>
+          <section class="data-section" aria-labelledby="recentDataTitle">
+            <div class="panel-heading">
+              <div>
+                <h2 id="recentDataTitle">Tabela - últimos 3 anos</h2>
+                <p id="recentDataMeta" class="meta">Seleciona um dataset para consultar registos recentes da API.</p>
+              </div>
+              <button id="reloadRecordsButton" class="ghost-button" type="button">Recarregar tabela</button>
+            </div>
+            <div class="table-strip-frame">
+              <span class="table-edge table-edge-left" aria-hidden="true"></span>
+              <div class="table-wrap">
+                <table id="recentDataTable">
+                  <thead></thead>
+                  <tbody></tbody>
+                </table>
+                <div id="recentDataEmpty" class="empty-state">Sem dataset selecionado.</div>
+              </div>
+              <span class="table-edge table-edge-right" aria-hidden="true"></span>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel inspector">
+          <div class="panel-heading">
+            <h2>Cruzamentos</h2>
+            <button class="ghost-button" id="clearSelectionButton" type="button">Limpar foco</button>
+          </div>
+          <div id="selectedModel" class="meta"></div>
+          <div id="linkTree" class="relationship-list"></div>
+          <div id="opportunitiesSection" class="opportunities"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="edgeTooltipTemplate">
+      <span><strong>{{source}}</strong> ←&gt; <strong>{{target}}</strong></span>
+      <br />
+      Campos partilhados: {{fields}}
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
