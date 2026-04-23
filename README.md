@@ -9,6 +9,12 @@ Projeto criado em `C:\Users\hugof\agentplayground\transparencia_connect`.
 - Cria um proxy local para evitar problemas de CORS.
 - Expõe endpoints auxiliares (`/api/analysis`, `/api/dataset/<id>`, ...).
 - Apresenta no frontend:
+  - **Visão principal**: exploração por mega-tema, rede de ligação, árvore de campos e registos recentes.
+- Apresenta uma **página dedicada a cruzamentos de dados**, com:
+  - Listagem de campos por capacidade de ligação entre datasets,
+  - Tabela de pares com pontuação de semelhança,
+  - Cadeias de integração de dois saltos para apoio a decisões de junção.
+- Mantém os blocos já existentes:
   - Página inicial de arranque por mega-temas.
   - Lista de datasets disponíveis.
   - Rede de ligações com base em campos em comum entre datasets.
@@ -27,6 +33,9 @@ python server.py
 Aceder a:
 
 - `http://127.0.0.1:8000`
+- Página dedicada a cruzamentos:
+
+- `http://127.0.0.1:8000/crosswalk.html`
 
 ## Endpoints locais
 

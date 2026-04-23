@@ -14,17 +14,28 @@ import re
 import threading
 import time
 import unicodedata
-from datetime import date, datetime
+from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import os
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlencode
 from urllib.request import Request, urlopen
 
 ODS_BASE = "https://transparencia.sns.gov.pt/api/explore/v2.1"
 CACHE_TTL_SECONDS = 60 * 5
-MAX_CACHE_ENTRIES = 8
-DEFAULT_DATASET_LIMIT = 500
+MAX_CACHE_ENTRIES = 80
 MAX_DATASET_LIMIT = 100
+ANALYSIS_DATASET_LIMIT = 600
+MAX_RECENT_LIMIT = 100
+DEFAULT_MIN_SCORE = 1
+MAX_MIN_SCORE = 10
+DEFAULT_RECENT_LIMIT = 60
+DEFAULT_ORIGINS = {
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost",
+    "http://127.0.0.1",
+}
 FIELD_STOP_WORDS = {
     "a",
     "aos",
@@ -158,6 +169,7 @@ MEGA_THEMES = {
 }
 
 DEFAULT_THEME = "Outros"
+DATASET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 
 
 _cache: dict[str, tuple[float, dict]] = {}
@@ -188,10 +200,76 @@ def _cache_set(key: str, payload: dict):
         _cache[key] = (_now(), payload)
 
 
+def _cache_status() -> dict:
+    now = _now()
+    with _cache_lock:
+        entries = [
+            {
+                "key": key.split("?", 1)[0],
+                "age_seconds": int(now - timestamp),
+            }
+            for key, (timestamp, _payload) in _cache.items()
+        ]
+    analysis_payload = _cache_get("analysis:catalog")
+    return {
+        "process_id": os.getpid(),
+        "cache": {
+            "ttl_seconds": CACHE_TTL_SECONDS,
+            "max_entries": MAX_CACHE_ENTRIES,
+            "entries": entries,
+            "entry_count": len(entries),
+        },
+        "analysis": {
+            "cached": analysis_payload is not None,
+            "datasets": len(analysis_payload.get("datasets", [])) if analysis_payload else 0,
+            "links": len(analysis_payload.get("links", [])) if analysis_payload else 0,
+            "opportunities": len(analysis_payload.get("opportunities", [])) if analysis_payload else 0,
+            "generated_at": analysis_payload.get("generated_at") if analysis_payload else None,
+        },
+        "limits": {
+            "analysis_dataset_limit": ANALYSIS_DATASET_LIMIT,
+            "max_recent_limit": MAX_RECENT_LIMIT,
+            "max_min_score": MAX_MIN_SCORE,
+        },
+    }
+
+
 def _normalize_token(value: str) -> str:
     value = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode("ascii")
     value = re.sub(r"[^a-z0-9]+", " ", value.lower())
     return " ".join(value.split())
+
+
+def _normalize_origin(origin: str | None) -> str | None:
+    if not origin:
+        return None
+    candidate = origin.rstrip("/")
+    if candidate in DEFAULT_ORIGINS:
+        return candidate
+    return None
+
+
+def _parse_int_param(value: str | None, default: int, minimum: int, maximum: int, field_name: str) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid {field_name}: must be an integer")
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"Invalid {field_name}: expected {minimum}..{maximum}")
+    return parsed
+
+
+def _parse_dataset_id(value: str | None) -> str:
+    if not value:
+        raise ValueError("dataset_id required")
+    dataset_id = unquote(value).strip()
+    if len(dataset_id) < 1 or len(dataset_id) > 120:
+        raise ValueError("Invalid dataset_id length")
+    if not DATASET_ID_RE.fullmatch(dataset_id):
+        raise ValueError("Invalid dataset_id format")
+    return dataset_id
 
 
 def _field_tokens(field: dict) -> list[str]:
@@ -287,6 +365,7 @@ def _ods_fetch(path: str, params: dict[str, str] | None = None) -> dict:
 
     request = Request(_build_ods_url(path, params))
     request.add_header("Accept", "application/json")
+    request.add_header("User-Agent", "transparencia-connect/1.0 (+https://github.com/hfmonteiro)")
     try:
         with urlopen(request, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -318,7 +397,9 @@ def _get_datasets() -> dict:
         all_results.extend(results)
         if total_count is None:
             total_count = page.get("total_count")
-        if not results or (total_count is not None and len(all_results) >= total_count):
+        if not results or len(all_results) >= ANALYSIS_DATASET_LIMIT:
+            break
+        if total_count is not None and len(all_results) >= min(total_count, ANALYSIS_DATASET_LIMIT):
             break
         offset += len(results)
 
@@ -330,7 +411,8 @@ def _get_datasets() -> dict:
 def _analyze_datasets(datasets_payload: dict) -> dict:
     results = datasets_payload.get("results", []) or []
     items = []
-    key_to_datasets: dict[str, list[str]] = {}
+    key_to_datasets: dict[str, set[str]] = {}
+    dataset_theme_by_id: dict[str, str] = {}
     dataset_id_to_fields: dict[str, list[str]] = {}
 
     for entry in results:
@@ -352,10 +434,11 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
             field_names.append(field_name)
             for token in _field_tokens({"name": field_name, "label": field_label}):
                 canonical_keys.add(token)
-                key_to_datasets.setdefault(token, []).append(dataset_id)
+                key_to_datasets.setdefault(token, set()).add(dataset_id)
 
         dataset_id_to_fields[dataset_id] = sorted(canonical_keys)
         mega_theme = _classify_dataset(dataset_id, title, field_names)
+        dataset_theme_by_id[dataset_id] = mega_theme
         items.append(
             {
                 "dataset_id": dataset_id,
@@ -388,7 +471,7 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
 
     opportunities = []
     for key, ds_list in key_to_datasets.items():
-        unique_datasets = sorted(set(ds_list))
+        unique_datasets = sorted(ds_list)
         if len(unique_datasets) < 2:
             continue
         opportunities.append(
@@ -407,8 +490,8 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
     for item in items:
         theme_counts[item["mega_theme"]] = theme_counts.get(item["mega_theme"], 0) + 1
     for link in links:
-        source_theme = next((item["mega_theme"] for item in items if item["dataset_id"] == link["source"]), DEFAULT_THEME)
-        target_theme = next((item["mega_theme"] for item in items if item["dataset_id"] == link["target"]), DEFAULT_THEME)
+        source_theme = dataset_theme_by_id.get(link["source"], DEFAULT_THEME)
+        target_theme = dataset_theme_by_id.get(link["target"], DEFAULT_THEME)
         if source_theme == target_theme:
             theme_link_scores[source_theme] = theme_link_scores.get(source_theme, 0) + link["score"]
         else:
@@ -441,14 +524,15 @@ def _recent_records(dataset_id: str, limit: int) -> dict:
     fields = dataset.get("fields", []) or []
     temporal_field = _pick_temporal_field(fields)
     min_year = date.today().year - 2
-    params = {"limit": str(min(max(limit, 1), 100))}
+    safe_limit = min(max(limit, 1), MAX_RECENT_LIMIT)
+    params = {"limit": str(safe_limit)}
     if temporal_field:
         params["order_by"] = f"{temporal_field} desc"
 
     try:
         payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", params)
     except Exception:
-        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", {"limit": str(min(max(limit, 1), 100))})
+        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", {"limit": str(safe_limit)})
 
     records = payload.get("results", []) or []
     recent = [record for record in records if _is_recent_record(record, temporal_field, min_year)]
@@ -468,27 +552,45 @@ def _recent_records(dataset_id: str, limit: int) -> dict:
         "temporal_field": temporal_field,
         "min_year": min_year,
         "columns": columns,
-        "records": recent[:limit],
-        "returned_count": len(recent[:limit]),
+        "records": recent[:safe_limit],
+        "returned_count": len(recent[:safe_limit]),
         "source_count": len(records),
     }
 
 
 class TransparenciaHandler(SimpleHTTPRequestHandler):
+    def _set_security_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), usb=(), payment=()")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'",
+        )
+        origin = _normalize_origin(self.headers.get("Origin"))
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
     def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._set_security_headers()
         super().end_headers()
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept")
+        origin = _normalize_origin(self.headers.get("Origin"))
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
 
-    def _json(self, status: int, payload: dict):
-        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    def _json(self, status: int, payload: dict, cache_control: str = "no-store, no-cache, must-revalidate, max-age=0"):
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
+        self.send_header("Cache-Control", cache_control)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -504,23 +606,28 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
 
         if path.startswith("/api/"):
             if path == "/api/health":
-                self._json(200, {"status": "ok"})
+                self._json(200, {"status": "ok"}, cache_control="no-store")
+                return
+
+            if path == "/api/processing":
+                self._json(200, _cache_status(), cache_control="no-store")
                 return
 
             if path == "/api/datasets":
                 try:
-                    raw_limit = int((query.get("limit") or [DEFAULT_DATASET_LIMIT])[0])
-                    limit = min(max(raw_limit, 1), 100)
-                    payload = _ods_fetch("/catalog/datasets", {"limit": limit})
-                    self._json(200, payload)
+                    limit = _parse_int_param((query.get("limit") or [None])[0], MAX_DATASET_LIMIT, 1, MAX_DATASET_LIMIT, "limit")
+                    payload = _ods_fetch("/catalog/datasets", {"limit": str(limit)})
+                    self._json(200, payload, cache_control="public, max-age=60")
+                except ValueError as exc:
+                    self._send_error_json(400, str(exc))
                 except Exception as exc:
                     self._send_error_json(502, str(exc))
                 return
 
             if path == "/api/analysis":
-                min_score = int((query.get("min_score") or ["1"])[0])
                 try:
-                    cache_key = f"analysis|min={min_score}"
+                    min_score = _parse_int_param((query.get("min_score") or [None])[0], DEFAULT_MIN_SCORE, DEFAULT_MIN_SCORE, MAX_MIN_SCORE, "min_score")
+                    cache_key = "analysis:catalog"
                     cached = _cache_get(cache_key)
                     if cached is None:
                         catalog = _get_datasets()
@@ -532,54 +639,51 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                         "themes": cached.get("themes", []),
                         "generated_at": cached["generated_at"],
                     }
-                    if min_score > 1:
+                    if min_score > DEFAULT_MIN_SCORE:
                         filtered["links"] = [l for l in cached["links"] if l["score"] >= min_score]
                     else:
                         filtered["links"] = cached["links"]
                     filtered["total"] = len(filtered["datasets"])
                     filtered["link_count"] = len(filtered["links"])
-                    self._json(200, filtered)
+                    self._json(200, filtered, cache_control="public, max-age=45")
                 except Exception as exc:
-                    self._send_error_json(502, str(exc))
+                    status = 400 if isinstance(exc, ValueError) else 502
+                    self._send_error_json(status, str(exc))
                 return
 
             if path.startswith("/api/dataset/"):
-                dataset_id = unquote(path.split("/api/dataset/", 1)[1])
-                if not dataset_id:
-                    self._send_error_json(400, "dataset_id required")
-                    return
                 try:
-                    dataset = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}", None)
-                    self._json(200, dataset)
+                    dataset_id = _parse_dataset_id(path.split("/api/dataset/", 1)[1])
+                    dataset = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}")
+                    self._json(200, dataset, cache_control="public, max-age=300")
+                except ValueError as exc:
+                    self._send_error_json(400, str(exc))
                 except Exception as exc:
                     self._send_error_json(502, str(exc))
                 return
 
             if path.startswith("/api/records/"):
-                dataset_id = unquote(path.split("/api/records/", 1)[1])
-                if not dataset_id:
-                    self._send_error_json(400, "dataset_id required")
-                    return
-                dataset_id = quote(dataset_id)
-                limit = str((query.get("limit") or ["50"])[0])
                 try:
+                    dataset_id = _parse_dataset_id(path.split("/api/records/", 1)[1])
+                    limit = _parse_int_param((query.get("limit") or [None])[0], 50, 1, MAX_RECENT_LIMIT, "limit")
                     records = _ods_fetch(
-                        f"/catalog/datasets/{dataset_id}/records",
-                        {"limit": limit},
+                        f"/catalog/datasets/{quote(dataset_id)}/records",
+                        {"limit": str(limit)},
                     )
-                    self._json(200, records)
+                    self._json(200, records, cache_control="public, max-age=120")
+                except ValueError as exc:
+                    self._send_error_json(400, str(exc))
                 except Exception as exc:
                     self._send_error_json(502, str(exc))
                 return
 
             if path.startswith("/api/recent/"):
-                dataset_id = unquote(path.split("/api/recent/", 1)[1])
-                if not dataset_id:
-                    self._send_error_json(400, "dataset_id required")
-                    return
-                limit = int((query.get("limit") or ["60"])[0])
                 try:
-                    self._json(200, _recent_records(dataset_id, limit))
+                    dataset_id = _parse_dataset_id(path.split("/api/recent/", 1)[1])
+                    limit = _parse_int_param((query.get("limit") or [None])[0], DEFAULT_RECENT_LIMIT, 1, MAX_RECENT_LIMIT, "limit")
+                    self._json(200, _recent_records(dataset_id, limit), cache_control="public, max-age=120")
+                except ValueError as exc:
+                    self._send_error_json(400, str(exc))
                 except Exception as exc:
                     self._send_error_json(502, str(exc))
                 return

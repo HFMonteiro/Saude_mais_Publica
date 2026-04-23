@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conector Transparência SNS - Cruzamentos</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="crosswalk-layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Transparência SNS</p>
+          <h1>Potencial de cruzamento entre dados</h1>
+          <p class="meta">Explora oportunidades por campo partilhado, ligações diretas e cadeias de 2 saltos.</p>
+        </div>
+        <div class="topbar-actions">
+          <a href="processing.html" class="top-link">Processamento</a>
+          <a href="index.html" class="top-link">Voltar à vista principal</a>
+        </div>
+      </header>
+
+      <section class="crosswalk-toolbar">
+        <label>
+          <span>Pesquisar dataset</span>
+          <input id="crossDatasetFilter" name="cross-dataset-search" autocomplete="off" placeholder="ex: despesas, unidades, ambulâncias…" type="text" />
+        </label>
+        <label>
+          <span>Mega-tema</span>
+          <select id="crossThemeFilter" name="cross-theme-filter" autocomplete="off"></select>
+        </label>
+        <label>
+          <span>Foco de campo</span>
+          <select id="crossFieldFilter" name="cross-field-filter">
+            <option value="">Todos os campos</option>
+          </select>
+        </label>
+        <label class="range-control">
+          <span>Força mínima de ligação</span>
+          <input id="crossMinScore" min="1" max="10" step="1" type="range" value="4" />
+          <strong id="crossMinScoreValue">4</strong>
+        </label>
+        <button id="crossReloadButton" class="ghost-button" type="button">Atualizar</button>
+        <button id="crossExportButton" class="ghost-button" type="button">Exportar JSON</button>
+        <div id="crossStatus" class="sync-state">A carregar…</div>
+      </section>
+
+      <section class="crosswalk-summary" aria-label="Resumo de cruzamentos">
+        <div>
+          <span>Campos com potencial</span>
+          <strong id="crossStatFields">-</strong>
+        </div>
+        <div>
+          <span>Pares candidatos</span>
+          <strong id="crossStatPairs">-</strong>
+        </div>
+        <div>
+          <span>Áreas visíveis</span>
+          <strong id="crossStatThemes">-</strong>
+        </div>
+        <div>
+          <span>Foco</span>
+          <strong id="crossStatFocus">Catálogo</strong>
+        </div>
+      </section>
+
+      <section class="panel semantic-panel" aria-labelledby="semanticGraphTitle">
+        <div class="panel-heading">
+          <div>
+            <h2 id="semanticGraphTitle">Modelo semântico sugerido</h2>
+            <p id="semanticGraphMeta" class="meta">A carregar relações possíveis.</p>
+          </div>
+          <div id="semanticGraphLegend" class="semantic-legend"></div>
+        </div>
+        <div class="semantic-graph-wrap">
+          <svg id="semanticModelGraph" role="img" aria-labelledby="semanticGraphTitle"></svg>
+        </div>
+      </section>
+
+      <section class="cross-grid">
+        <aside class="panel cross-panel">
+          <div class="panel-heading">
+            <h2>Campos mais fortes</h2>
+            <button id="crossClearField" class="ghost-button" type="button">Limpar campo</button>
+          </div>
+          <div id="crossFieldList" class="field-list-wrap"></div>
+        </aside>
+
+        <section class="panel cross-panel cross-main">
+          <div class="panel-heading">
+            <div>
+              <h2 id="pairTitle">Pares de cruzamento</h2>
+              <p id="pairDescription" class="meta">Carregando pares por força de ligação.</p>
+            </div>
+            <button id="crossClearDataset" class="ghost-button" type="button">Limpar dataset</button>
+          </div>
+          <div id="pairWrap" class="pair-list-wrap">
+            <table id="pairTable" class="pair-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+            <div id="pairsEmpty" class="empty-state">Sem pares para este filtro.</div>
+          </div>
+        </section>
+
+        <aside class="panel cross-panel">
+          <div class="panel-heading">
+            <h2>Caminhos de integração</h2>
+          </div>
+          <div id="crossPathMeta" class="cross-meta-box">
+            <h3>Seleciona um dataset ou par</h3>
+            <p id="crossPathMetaText" class="meta">Sem foco ativo para análise de caminhos.</p>
+          </div>
+          <div id="crossPaths" class="cross-paths"></div>
+        </aside>
+      </section>
+
+      <section class="panel cross-panel">
+        <div class="panel-heading">
+          <h2>Detalhe da conexão</h2>
+        </div>
+        <div id="crossDetail" class="cross-detail-grid">
+          <div class="empty-state">Seleciona uma linha para abrir o detalhe de ligação.</div>
+        </div>
+      </section>
+    </main>
+
+    <script src="crosswalk.js" defer></script>
+  </body>
+</html>

@@ -11,7 +11,23 @@ const state = {
   datasetById: new Map(),
   degreeById: new Map(),
   analysisAt: null,
+  _viewState: null,
+  _viewStamp: 0,
+  _selectionStamp: 0,
+  _graphState: null,
+  _titleCache: new Map(),
+  _searchTextCache: new Map(),
+  _datasetMetaCache: new Map(),
+  _recentCache: new Map(),
+  datasetRenderLimit: 160,
 };
+
+const DATASET_METADATA_CACHE_SIZE = 40;
+const RECENT_DATA_CACHE_SIZE = 24;
+const META_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const RECENT_DATA_CACHE_TTL_MS = 2.5 * 60 * 1000;
+const DATASET_RENDER_STEP = 160;
+
 const THEME_COLORS = {
   "Acesso & Produção": "#2f6fdb",
   "Recursos Humanos": "#0a7a58",
@@ -63,6 +79,101 @@ tooltip.style.maxWidth = "340px";
 tooltip.style.zIndex = "10";
 document.body.appendChild(tooltip);
 
+let analysisLoadTimer = null;
+let filterTimer = null;
+let resizeTimer = null;
+
+function safeText(value) {
+  return value == null ? "" : String(value);
+}
+
+function clearElement(element) {
+  element.replaceChildren();
+}
+
+function setBoundedCache(map, key, value, maxSize) {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  map.set(key, value);
+  while (map.size > maxSize) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+}
+
+function createShowMoreButton(text, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "show-more-button";
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function invalidateViewState() {
+  state._viewState = null;
+  state._viewStamp += 1;
+  state._graphState = null;
+}
+
+function touchSelectionState(nextDataset) {
+  if (state.selectedDataset === nextDataset) {
+    return false;
+  }
+  state.selectedDataset = nextDataset;
+  state._selectionStamp += 1;
+  state._graphState = null;
+  return true;
+}
+
+function getViewState() {
+  if (state._viewState) {
+    return state._viewState;
+  }
+
+  const value = state.filterText.trim().toLowerCase();
+  const datasets = [];
+  for (const item of state.datasets) {
+    if (state.activeTheme && item.mega_theme !== state.activeTheme) {
+      continue;
+    }
+    if (value) {
+      if (!getDatasetSearchText(item).includes(value)) {
+        continue;
+      }
+    }
+    datasets.push(item);
+  }
+
+  datasets.sort((a, b) => {
+    const degreeDelta = (state.degreeById.get(b.dataset_id) || 0) - (state.degreeById.get(a.dataset_id) || 0);
+    if (degreeDelta !== 0) return degreeDelta;
+    return displayTitle(a).localeCompare(displayTitle(b));
+  });
+
+  const visibleDatasetIds = new Set(datasets.map((item) => item.dataset_id));
+  const links = state.links.filter((edge) => visibleDatasetIds.has(edge.source) && visibleDatasetIds.has(edge.target));
+  state._viewState = {datasets, links, visibleDatasetIds};
+  return state._viewState;
+}
+
+function debounceLoadAnalysis() {
+  if (analysisLoadTimer) clearTimeout(analysisLoadTimer);
+  analysisLoadTimer = setTimeout(() => {
+    loadAnalysis().catch(showError);
+  }, 180);
+}
+
+function debounceRender() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (state.datasets.length) {
+      renderAll();
+    }
+  }, 120);
+}
+
 async function loadAnalysis() {
   syncState.textContent = "A sincronizar…";
   const url = `/api/analysis?min_score=${state.minScore}`;
@@ -78,8 +189,26 @@ async function loadAnalysis() {
   state.analysisAt = payload.generated_at;
   state.datasetById = new Map(state.datasets.map((item) => [item.dataset_id, item]));
   state.degreeById = buildDegreeMap(state.links);
+  state._titleCache = new Map();
+  state._searchTextCache = new Map();
+  const validDatasetIds = new Set(state.datasets.map((dataset) => dataset.dataset_id));
+  for (const key of state._datasetMetaCache.keys()) {
+    if (!validDatasetIds.has(key)) {
+      state._datasetMetaCache.delete(key);
+    }
+  }
+  for (const key of state._recentCache.keys()) {
+    if (!validDatasetIds.has(key)) {
+      state._recentCache.delete(key);
+    }
+  }
+  state._graphState = null;
+  state._viewStamp = 0;
+  state._selectionStamp = 0;
+  state.datasetRenderLimit = DATASET_RENDER_STEP;
+  invalidateViewState();
   if (!state.selectedDataset || !state.datasetById.has(state.selectedDataset)) {
-    state.selectedDataset = filteredDatasets()[0]?.dataset_id || null;
+    touchSelectionState(filteredDatasets()[0]?.dataset_id || null);
     state.recentData = null;
   }
   syncState.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
@@ -99,13 +228,30 @@ function buildDegreeMap(links) {
 }
 
 function displayTitle(dataset) {
-  const value = dataset?.title || dataset?.dataset_id || "";
-  return value
+  const datasetId = dataset?.dataset_id || "";
+  if (state._titleCache.has(datasetId)) {
+    return state._titleCache.get(datasetId);
+  }
+
+  const value = dataset?.title || datasetId;
+  const title = value
     .replace(/-/g, " ")
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
+  state._titleCache.set(datasetId, title);
+  return title;
+}
+
+function getDatasetSearchText(dataset) {
+  const datasetId = dataset?.dataset_id || "";
+  if (state._searchTextCache.has(datasetId)) {
+    return state._searchTextCache.get(datasetId);
+  }
+  const text = `${datasetId} ${displayTitle(dataset)} ${(dataset?.fields || []).join(" ")}`.toLowerCase();
+  state._searchTextCache.set(datasetId, text);
+  return text;
 }
 
 function compactTitle(value, max = 54) {
@@ -122,7 +268,7 @@ function ensureSelectionInFilter() {
   const fallback = visible[0]?.dataset_id || null;
   if (fallback === state.selectedDataset) return false;
 
-  state.selectedDataset = fallback;
+  touchSelectionState(fallback);
   state.recentData = null;
   if (fallback) {
     loadRecentRecords(fallback).catch(showRecordsError);
@@ -131,29 +277,20 @@ function ensureSelectionInFilter() {
 }
 
 function filteredDatasets() {
-  const value = state.filterText.trim().toLowerCase();
-  const list = state.datasets.filter((item) => {
-    if (state.activeTheme && item.mega_theme !== state.activeTheme) return false;
-    if (!value) return true;
-    const text = `${item.dataset_id} ${displayTitle(item)} ${(item.fields || []).join(" ")}`.toLowerCase();
-    return text.includes(value);
-  });
-
-  return list.sort((a, b) => {
-    const degreeDelta = (state.degreeById.get(b.dataset_id) || 0) - (state.degreeById.get(a.dataset_id) || 0);
-    if (degreeDelta !== 0) return degreeDelta;
-    return displayTitle(a).localeCompare(displayTitle(b));
-  });
+  return getViewState().datasets;
 }
 
 function visibleLinks() {
-  const allowed = new Set(filteredDatasets().map((item) => item.dataset_id));
-  return state.links.filter((edge) => allowed.has(edge.source) && allowed.has(edge.target));
+  return getViewState().links;
 }
 
 function renderThemeOptions() {
   const current = themeFilter.value;
-  themeFilter.innerHTML = '<option value="">Todos</option>';
+  clearElement(themeFilter);
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = "Todos";
+  themeFilter.appendChild(allOption);
   state.themes.forEach((theme) => {
     const option = document.createElement("option");
     option.value = theme.theme;
@@ -164,7 +301,7 @@ function renderThemeOptions() {
 }
 
 function renderThemeCards() {
-  themeCards.innerHTML = "";
+  clearElement(themeCards);
   const allCard = {
     theme: "Todos",
     dataset_count: state.datasets.length,
@@ -179,11 +316,16 @@ function renderThemeCards() {
     if ((theme.value ?? theme.theme) === state.activeTheme || (!state.activeTheme && theme.theme === "Todos")) {
       button.classList.add("active");
     }
-    button.innerHTML = `
-      <span>${theme.theme}</span>
-      <strong>${formatNumber(theme.dataset_count)} datasets</strong>
-      <small>${theme.description || "Datasets com classificação automática."}</small>
-    `;
+    const title = document.createElement("span");
+    title.textContent = safeText(theme.theme);
+
+    const count = document.createElement("strong");
+    count.textContent = `${formatNumber(theme.dataset_count)} datasets`;
+
+    const description = document.createElement("small");
+    description.textContent = safeText(theme.description || "Datasets com classificação automática.");
+
+    button.append(title, count, description);
     button.onclick = () => setActiveTheme(theme.value ?? theme.theme);
     themeCards.appendChild(button);
   });
@@ -211,9 +353,16 @@ function renderSummary() {
 function renderDatasetList() {
   const visible = filteredDatasets();
   const selected = state.selectedDataset;
-  datasetList.innerHTML = "";
+  clearElement(datasetList);
 
-  visible.forEach((dataset) => {
+  const selectedIndex = selected ? visible.findIndex((dataset) => dataset.dataset_id === selected) : -1;
+  if (selectedIndex >= state.datasetRenderLimit) {
+    state.datasetRenderLimit = Math.min(visible.length, selectedIndex + 1);
+  }
+
+  const visibleRows = visible.slice(0, state.datasetRenderLimit);
+  const fragment = document.createDocumentFragment();
+  visibleRows.forEach((dataset) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "dataset-item";
@@ -227,7 +376,11 @@ function renderDatasetList() {
     const meta = document.createElement("div");
     meta.className = "dataset-meta-row";
     const degree = state.degreeById.get(dataset.dataset_id) || 0;
-    meta.innerHTML = `<span>${dataset.field_count || 0} campos</span><span>${degree} ligações</span>`;
+    const fieldsCount = document.createElement("span");
+    fieldsCount.textContent = `${dataset.field_count || 0} campos`;
+    const linksCount = document.createElement("span");
+    linksCount.textContent = `${degree} ligações`;
+    meta.append(fieldsCount, linksCount);
 
     const fieldRow = document.createElement("div");
     fieldRow.className = "dataset-meta-row";
@@ -246,11 +399,25 @@ function renderDatasetList() {
     item.appendChild(meta);
     item.appendChild(fieldRow);
     item.onclick = () => selectDataset(dataset.dataset_id);
-    datasetList.appendChild(item);
+    fragment.appendChild(item);
   });
+  datasetList.appendChild(fragment);
+
+  if (visibleRows.length < visible.length) {
+    datasetList.appendChild(createShowMoreButton(
+      `Mostrar mais ${Math.min(DATASET_RENDER_STEP, visible.length - visibleRows.length)} datasets`,
+      () => {
+        state.datasetRenderLimit = Math.min(visible.length, state.datasetRenderLimit + DATASET_RENDER_STEP);
+        renderDatasetList();
+      },
+    ));
+  }
 
   if (!visible.length) {
-    datasetList.innerHTML = "<div class='empty-state'>Sem resultados para esta pesquisa.</div>";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem resultados para esta pesquisa.";
+    datasetList.appendChild(empty);
   }
 }
 
@@ -261,7 +428,6 @@ function graphData() {
   if (state.selectedDataset) {
     const focusLinks = links
       .filter((link) => link.source === state.selectedDataset || link.target === state.selectedDataset)
-      .sort((a, b) => b.score - a.score)
       .slice(0, 45);
     const neighborIds = focusLinks
       .flatMap((link) => [link.source, link.target]);
@@ -273,10 +439,7 @@ function graphData() {
     };
   }
 
-  const topLinks = links
-    .slice()
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 260);
+  const topLinks = links.slice(0, 260);
   const candidateIds = new Set(topLinks.flatMap((link) => [link.source, link.target]));
   const ids = new Set(
     visible
@@ -295,6 +458,12 @@ function renderGraph() {
   const container = document.getElementById("graphContainer");
   const width = container.clientWidth;
   const height = container.clientHeight;
+  const signature = `${state._viewStamp}|${state._selectionStamp}|${width}|${height}`;
+  if (state._graphState?.signature === signature) {
+    return;
+  }
+
+  state._graphState = {signature};
   const data = graphData();
   const nodeMap = new Map(data.nodes.map((dataset) => [dataset.dataset_id, {
     dataset_id: dataset.dataset_id,
@@ -346,7 +515,7 @@ function renderGraph() {
     })
     .on("mouseenter", (event, d) => {
       highlightConnections(d.dataset_id);
-      tooltip.innerHTML = `<strong>${d.title}</strong><br>${d.degree} ligações no score atual`;
+      tooltip.textContent = `${d.title} · ${d.degree} ligações no score atual`;
       tooltip.style.opacity = 1;
       moveTooltip(event);
     })
@@ -417,17 +586,24 @@ function moveTooltip(event) {
 
 function buildTreeForSelected(datasetId) {
   if (!datasetId) {
-    linkTree.innerHTML = "<div class='empty-state'>Seleciona um dataset para ver campos de ligação e datasets candidatos.</div>";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Seleciona um dataset para ver campos de ligação e datasets candidatos.";
+    clearElement(linkTree);
+    linkTree.appendChild(empty);
     return;
   }
 
   const links = visibleLinks()
     .filter((item) => item.source === datasetId || item.target === datasetId)
-    .sort((a, b) => b.score - a.score)
     .slice(0, 60);
 
   if (!links.length) {
-    linkTree.innerHTML = "<div class='empty-state'>Sem ligações com o score atual. Reduz a força da ligação.</div>";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem ligações com o score atual. Reduz a força da ligação.";
+    clearElement(linkTree);
+    linkTree.appendChild(empty);
     return;
   }
 
@@ -442,7 +618,7 @@ function buildTreeForSelected(datasetId) {
     });
   });
 
-  linkTree.innerHTML = "";
+  clearElement(linkTree);
   Array.from(byField.entries())
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, 12)
@@ -450,7 +626,12 @@ function buildTreeForSelected(datasetId) {
       const group = document.createElement("section");
       group.className = "relation-group";
       const heading = document.createElement("h3");
-      heading.innerHTML = `<span class="tag">${field}</span> ${datasets.length} dataset(s)`;
+      const fieldLabel = document.createElement("span");
+      fieldLabel.className = "tag";
+      fieldLabel.textContent = safeText(field);
+      const count = document.createElement("span");
+      count.textContent = ` ${datasets.length} dataset(s)`;
+      heading.append(fieldLabel, count);
       group.appendChild(heading);
 
       datasets
@@ -488,13 +669,16 @@ function renderOpportunities() {
     ? state.opportunities.filter((opp) => opp.dataset_ids.includes(selected)).slice(0, 12)
     : byTheme.slice(0, 10);
 
-  opportunitiesSection.innerHTML = "";
+  clearElement(opportunitiesSection);
   const title = document.createElement("h2");
   title.textContent = selected ? "Campos com maior potencial" : "Oportunidades globais";
   opportunitiesSection.appendChild(title);
 
   if (!baseList.length) {
-    opportunitiesSection.innerHTML += "<div class='empty-state'>Sem oportunidades para este filtro.</div>";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem oportunidades para este filtro.";
+    opportunitiesSection.appendChild(empty);
     return;
   }
 
@@ -506,43 +690,96 @@ function renderOpportunities() {
       .map((id) => compactTitle(displayTitle(state.datasetById.get(id) || {dataset_id: id}), 34))
       .join(", ");
     const more = opp.dataset_count > 4 ? ` +${opp.dataset_count - 4}` : "";
-    box.innerHTML = `<strong>${opp.key}</strong><small>${opp.dataset_count} datasets · ${shown}${more}</small>`;
+    const key = document.createElement("strong");
+    key.textContent = safeText(opp.key);
+    const extra = document.createElement("small");
+    extra.textContent = `${opp.dataset_count} datasets · ${shown}${more}`;
+    box.append(key, extra);
     opportunitiesSection.appendChild(box);
   });
 }
 
 function renderSelectedInfo() {
   if (!state.selectedDataset) {
-    selectedModel.innerHTML = "<div class='meta'>Escolhe um dataset na lista ou no mapa para analisar cruzamentos possíveis.</div>";
+    const info = document.createElement("div");
+    info.className = "meta";
+    info.textContent = "Escolhe um dataset na lista ou no mapa para analisar cruzamentos possíveis.";
+    clearElement(selectedModel);
+    selectedModel.appendChild(info);
     return;
   }
   const dataset = state.datasetById.get(state.selectedDataset);
   const fields = (dataset?.fields || []).slice(0, 8);
-  selectedModel.innerHTML = `
-    <div class="selected-title">${displayTitle(dataset)}</div>
-    <div class="dataset-meta-row">
-      <span class="tag theme-tag">${dataset?.mega_theme || "Outros"}</span>
-      <span>${dataset?.field_count || 0} campos</span>
-      <span>${state.degreeById.get(state.selectedDataset) || 0} ligações</span>
-    </div>
-    <div class="dataset-meta-row">${fields.map((field) => `<span class="tag">${field}</span>`).join("")}</div>
-  `;
+  clearElement(selectedModel);
+
+  const title = document.createElement("div");
+  title.className = "selected-title";
+  title.textContent = displayTitle(dataset);
+
+  const metaRow = document.createElement("div");
+  metaRow.className = "dataset-meta-row";
+  const themeTag = document.createElement("span");
+  themeTag.className = "tag theme-tag";
+  themeTag.textContent = safeText(dataset?.mega_theme || "Outros");
+  const fieldCount = document.createElement("span");
+  fieldCount.textContent = `${dataset?.field_count || 0} campos`;
+  const degree = document.createElement("span");
+  degree.textContent = `${state.degreeById.get(state.selectedDataset) || 0} ligações`;
+  metaRow.append(themeTag, fieldCount, degree);
+
+  const fieldRow = document.createElement("div");
+  fieldRow.className = "dataset-meta-row";
+  fields.forEach((field) => {
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = safeText(field);
+    fieldRow.appendChild(tag);
+  });
+
+  selectedModel.append(title, metaRow, fieldRow);
 }
 
 async function selectDataset(datasetId) {
-  state.selectedDataset = datasetId;
+  const changed = touchSelectionState(datasetId);
+  if (!changed && state.recentData) {
+    renderAll();
+    return;
+  }
   state.recentData = null;
   renderAll();
-  loadRecentRecords(datasetId).catch(showRecordsError);
-
-  try {
-    const response = await fetch(`/api/dataset/${encodeURIComponent(datasetId)}`);
-    const payload = await response.json();
-    if (response.ok && payload?.metas?.default?.description && state.selectedDataset === datasetId) {
+  const cachedMeta = state._datasetMetaCache.get(datasetId);
+  if (cachedMeta && Date.now() - cachedMeta.timestamp < META_DATA_CACHE_TTL_MS) {
+    const payload = cachedMeta.value;
+    if (payload?.metas?.default?.description && state.selectedDataset === datasetId) {
       const container = document.createElement("div");
       container.className = "meta description";
       container.textContent = stripHtml(payload.metas.default.description);
       selectedModel.appendChild(container);
+    }
+  }
+
+  loadRecentRecords(datasetId).catch(showRecordsError);
+
+  try {
+    const cacheEntry = state._datasetMetaCache.get(datasetId);
+    if (cacheEntry && Date.now() - cacheEntry.timestamp < META_DATA_CACHE_TTL_MS) {
+      return;
+    }
+    const response = await fetch(`/api/dataset/${encodeURIComponent(datasetId)}`);
+    const payload = await response.json();
+    if (response.ok && payload?.metas?.default?.description && state.selectedDataset === datasetId) {
+      setBoundedCache(
+        state._datasetMetaCache,
+        datasetId,
+        {timestamp: Date.now(), value: payload},
+        DATASET_METADATA_CACHE_SIZE,
+      );
+      const container = document.createElement("div");
+      container.className = "meta description";
+      container.textContent = stripHtml(payload.metas.default.description);
+      selectedModel.appendChild(container);
+    } else if (!response.ok) {
+      throw new Error(payload.error || "Não foi possível carregar a descrição do dataset.");
     }
   } catch {
     // Metadata enrichment is optional. The main analysis is already rendered.
@@ -551,12 +788,33 @@ async function selectDataset(datasetId) {
 
 async function loadRecentRecords(datasetId) {
   if (!datasetId) return;
+
+  const cached = state._recentCache.get(datasetId);
+  if (cached && Date.now() - cached.timestamp < RECENT_DATA_CACHE_TTL_MS) {
+    if (state.selectedDataset !== datasetId) {
+      return;
+    }
+    state.recentData = cached.value;
+    renderRecentTable();
+    return;
+  }
+
   recentDataMeta.textContent = "A carregar registos recentes…";
   const response = await fetch(`/api/recent/${encodeURIComponent(datasetId)}?limit=60`);
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || "Erro ao consultar registos recentes");
   }
+  if (state.selectedDataset !== datasetId) {
+    return;
+  }
+
+  setBoundedCache(
+    state._recentCache,
+    datasetId,
+    {timestamp: Date.now(), value: payload},
+    RECENT_DATA_CACHE_SIZE,
+  );
   state.recentData = payload;
   renderRecentTable();
 }
@@ -595,8 +853,8 @@ function renderRecentTable() {
 
   const thead = recentDataTable.querySelector("thead");
   const tbody = recentDataTable.querySelector("tbody");
-  thead.innerHTML = "";
-  tbody.innerHTML = "";
+  clearElement(thead);
+  clearElement(tbody);
 
   if (!selected) {
     recentDataTable.hidden = true;
@@ -674,7 +932,12 @@ function renderAll() {
 }
 
 function setActiveTheme(theme) {
+  if (state.activeTheme === theme) {
+    return;
+  }
   state.activeTheme = theme || "";
+  state.datasetRenderLimit = DATASET_RENDER_STEP;
+  invalidateViewState();
   themeFilter.value = state.activeTheme;
   ensureSelectionInFilter();
   renderAll();
@@ -698,13 +961,19 @@ function setupEvents() {
   minScoreInput.addEventListener("input", () => {
     state.minScore = Number(minScoreInput.value);
     minScoreValue.textContent = state.minScore;
-    loadAnalysis().catch(showError);
+    debounceLoadAnalysis();
   });
 
   datasetFilter.addEventListener("input", () => {
-    state.filterText = datasetFilter.value;
-    ensureSelectionInFilter();
-    renderAll();
+    const nextFilter = datasetFilter.value;
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => {
+      state.filterText = nextFilter;
+      state.datasetRenderLimit = DATASET_RENDER_STEP;
+      invalidateViewState();
+      ensureSelectionInFilter();
+      renderAll();
+    }, 140);
   });
 
   themeFilter.addEventListener("change", () => {
@@ -716,7 +985,7 @@ function setupEvents() {
   });
 
   document.getElementById("clearSelectionButton").addEventListener("click", () => {
-    state.selectedDataset = null;
+    touchSelectionState(null);
     state.recentData = null;
     renderAll();
   });
@@ -726,7 +995,7 @@ function setupEvents() {
   });
 
   window.addEventListener("resize", () => {
-    if (state.datasets.length) renderAll();
+    debounceRender();
   });
 }
 
