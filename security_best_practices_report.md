@@ -1,94 +1,65 @@
 # Security Best Practices Report
 
 ## Executive summary
-This project is a functional local data-explorer for public SNS transparency datasets, with a clean UI flow and useful cross-link analysis. The current implementation is usable, but it mixes trusted and untrusted data in DOM sinks and exposes backend/API surface broadly. Main high-priority work is to remove unsafe HTML sinks, add conservative CORS/header policy, and add request hardening (validation + quotas + endpoint boundaries).
+The app is now a local-first explorer with a narrower public surface. The processing/cache page and `/api/processing` diagnostic endpoint were removed because they exposed runtime internals without adding user value. CSP no longer allows inline styles, upstream ODS error bodies are not returned to clients, static assets are served through an allowlist, and the server version header no longer advertises Python.
 
-## High severity
+## Fixed in this pass
 
-### SBP-101 — DOM XSS via unsanitized `innerHTML` in main UI
-- **Location(s):** `app.js:227`, `app.js:275`, `app.js:390`, `app.js:493`, `app.js:549`, `app.js:561`
-- **Impact:** If field names, titles or shared-field labels contain markup, injected HTML/JS can execute in user browsers.
-- **Why it matters:** Cross-page data comes from an external API and is used directly in rendering.
-- **Fix:** Replace these sinks with `textContent` nodes or explicit `createElement` construction. If markup is needed, add allowlist sanitization before insertion and enforce CSP (`script-src` without unsafe-inline/unsafe-eval).
-- **Suggested code path:** Build rows/cells with `textContent`; keep `innerHTML` only for trusted constant templates.
+### SBP-101 - Processing diagnostics removed
+- **Status:** Fixed.
+- **Location:** `server.py`, `index.html`, `crosswalk.html`, `analytics.html`
+- **Evidence:** `/api/processing` route was removed, `processing.html` and `processing.js` were deleted, and navigation links to processing were removed.
+- **Impact reduced:** Runtime cache keys, process id, cache ages and byte sizes are no longer exposed through the web UI/API.
+- **Verification:** `GET /processing.html` and `GET /api/processing` return `404`.
 
-### SBP-102 — DOM XSS in crosswalk table/detail rendering
-- **Location(s):** `crosswalk.js:474`, `crosswalk.js:477`, `crosswalk.js:500-503`, `crosswalk.js:561`, `crosswalk.js:661`
-- **Impact:** Same DOM execution class in crosswalk page; can compromise analyst browser and any local API state.
-- **Why it matters:** Same dataset payloads are reused and rendered with `cell.innerHTML` and list builders.
-- **Fix:** Centralize safe rendering helpers (`setText`, `renderCellText`) and remove HTML string concatenation for untrusted values.
+### SBP-102 - CSP tightened
+- **Status:** Fixed.
+- **Location:** `server.py`
+- **Evidence:** CSP is now `style-src 'self'` instead of `style-src 'self' 'unsafe-inline'`.
+- **Impact reduced:** The browser no longer allows inline style blocks/attributes by policy. The UI still uses CSS files and constrained CSSOM updates for dynamic visualization values.
 
-### SBP-103 — Public wildcard CORS on API responses
-- **Location(s):** `server.py:482-483`
-- **Impact:** Any web origin can read responses from this local API if exposed.
-- **Why it matters:** Even with public data, this increases cross-site data scraping and policy bypass opportunities.
-- **Fix:** Restrict `Access-Control-Allow-Origin` to explicit trusted origins (or remove CORS entirely when not needed).
+### SBP-103 - Upstream error details no longer returned
+- **Status:** Fixed.
+- **Location:** `server.py`
+- **Evidence:** Non-validation exceptions now return `{"error":"Upstream data service unavailable"}` instead of `str(exc)`.
+- **Impact reduced:** Upstream response bodies, request details and transport exception text are not sent to clients.
 
-## Medium severity
+### SBP-104 - Server fingerprinting reduced
+- **Status:** Fixed.
+- **Location:** `server.py`
+- **Evidence:** `TransparenciaHandler.server_version` and `sys_version` override the default `SimpleHTTP/Python` banner.
+- **Impact reduced:** HTTP responses expose less implementation detail.
 
-### SBP-201 — Missing input bounds for `/api/records` `limit`
-- **Location(s):** `server.py:562-573`
-- **Impact:** Large/unbounded limits can force large payloads and increase latency/CPU.
-- **Fix:** Parse and clamp `limit` with explicit min/max (same pattern as `_recent_records`).
+## Previously fixed controls still in place
+- Static files are served only from `ALLOWED_STATIC_PATHS`; dotfiles and markdown reports are not exposed.
+- Cache is bounded by entry count and bytes.
+- Raw record responses are not stored in backend cache.
+- Analytics variants are computed from the cached base analysis and not cached per slider value.
+- Cold analysis generation uses a lock to avoid duplicate concurrent builds.
+- Local rate limiting is active.
+- D3 is pinned to `7.9.0` with SHA-384 SRI.
+- Frontend rendering avoids dangerous `innerHTML` sinks for API-derived data.
 
-### SBP-202 — Weak `dataset_id` path handling
-- **Location(s):** `server.py:551-552`, `server.py:556`, `server.py:562-568`, `server.py:579-584`
-- **Impact:** `quote()` keeps `/` by default, so malformed IDs can alter path composition.
-- **Fix:** validate `dataset_id` with strict regex, and use `quote(dataset_id, safe="")` when interpolating into path segments.
+## Remaining findings
 
-### SBP-203 — Open static file surface via `SimpleHTTPRequestHandler`
-- **Location(s):** `server.py:480`
-- **Impact:** Any file in the working directory may be exposed by static route logic.
-- **Fix:** serve only from explicit static folder (e.g., `public/`), block dotfiles and config paths.
+### SBP-201 - Production deployment profile is still intentionally local
+- **Severity:** Low.
+- **Evidence:** The app binds to `127.0.0.1:8000` and uses Python `ThreadingHTTPServer`.
+- **Impact:** This is correct for local use. It should not be treated as a production web server if exposed publicly.
+- **Fix:** For production, run behind a reverse proxy or managed platform, keep the allowlist, and move TLS/rate limiting/logging to the edge.
 
-### SBP-204 — No security headers on responses
-- **Location(s):** `server.py:480-500`, `server.py:482-484`
-- **Impact:** Weaker defense-in-depth against DOM/script abuse and MIME confusion.
-- **Fix:** add `X-Content-Type-Options: nosniff`, CSP, `Referrer-Policy`, `Permissions-Policy`, and frame-control suitable for embedding intent.
+### SBP-202 - CDN dependency remains allowed by CSP
+- **Severity:** Low.
+- **Evidence:** `index.html` loads D3 from jsDelivr with SRI.
+- **Impact:** SRI protects against content drift/tampering, but a stricter public deployment can remove the CDN dependency entirely.
+- **Fix:** Vendor `d3.min.js` locally and remove `https://cdn.jsdelivr.net` from `script-src`.
 
-### SBP-205 — Third-party script without SRI
-- **Location(s):** `index.html:8`
-- **Impact:** External dependency can be replaced or altered by CDN without integrity check.
-- **Fix:** pin exact version (already mostly pinned) and add `integrity` + `crossorigin="anonymous"`, or self-host D3.
-
-### SBP-206 — DoS resilience
-- **Location(s):** `server.py:503-589`, `server.py:284-295`
-- **Impact:** No rate limiting and no per-client quotas across endpoints.
-- **Fix:** add basic throttling middleware or front-proxy rate limiting; set request concurrency caps and timeouts for long operations.
-
-## Low severity / hardening
-
-### SBP-301 — Public deployment assumptions not enforced
-- **Location(s):** `server.py:597-600`
-- **Impact:** Running `ThreadingHTTPServer` without environment-specific config encourages dev-style deployment.
-- **Fix:** keep local-only launch path documented; production should run behind reverse proxy + worker process.
-
-### SBP-302 — Missing explicit error-budget and observability
-- **Location(s):** `server.py:492-501`
-- **Impact:** Error handling is functional but no structured logs, no correlation IDs, no alerting.
-- **Fix:** add minimal request logging and structured errors for operational monitoring without logging sensitive payloads.
-
-### SBP-303 — Public data size and memory pressure in analysis
-- **Location(s):** `server.py:309-329`, `server.py:331-440`, `app.js:302-333`
-- **Impact:** O(n²)-like join logic can grow quadratically as corpus grows.
-- **Fix:** implement top-k pruning before full pairwise expansion, and background precompute for cached analysis snapshots.
-
-## Security posture checklist
-- [ ] Add CSP and remove remaining `innerHTML` sinks that can carry attacker-controlled strings.
-- [ ] Add strict CORS allowlist and remove wildcard.
-- [ ] Add path and numeric input validation for all API routes.
-- [ ] Add rate limiting + basic abuse telemetry.
-- [ ] Restrict static serving root and hidden file exposure.
-- [ ] Add `integrity` to third-party scripts or self-host dependencies.
-- [ ] Define local vs public deployment profiles.
-
-## Priority execution plan
-1. **Patch DOM sinks first** (`app.js`, `crosswalk.js`) — highest user-impact security risk.
-2. **Harden API boundaries** (`server.py` CORS/input validation/rate limiting).
-3. **Add response hardening headers + static serving restrictions**.
-4. **Operational controls** (`SRI`, logs, deployment profile).
-
-## Evidence notes
-- All findings below include line anchors to current files.
-- `python -m py_compile server.py` and `node --check app.js crosswalk.js` pass syntax checks.
-
+## Verification performed
+- `python -m py_compile server.py`
+- `node --check app.js`
+- `node --check crosswalk.js`
+- `node --check analytics.js`
+- `git diff --check`
+- HTTP validation: `/processing.html` returns `404`
+- HTTP validation: `/api/processing` returns `404`
+- Header validation: CSP no longer contains `unsafe-inline`

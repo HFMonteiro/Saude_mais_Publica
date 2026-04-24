@@ -32,6 +32,9 @@ const state = {
 const FIELD_RENDER_STEP = 80;
 const PAIR_RENDER_STEP = 120;
 const PATH_RENDER_STEP = 40;
+const TITLE_CACHE_SIZE = 700;
+const SEARCH_TEXT_CACHE_SIZE = 700;
+const PATH_THEME_CACHE_SIZE = 120;
 
 const THEME_COLORS = {
   "Acesso & Produção": "#2f6fdb",
@@ -80,6 +83,17 @@ function clearElement(element) {
 
 function safeText(value) {
   return value == null ? "" : String(value);
+}
+
+function setBoundedCache(map, key, value, maxSize) {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  map.set(key, value);
+  while (map.size > maxSize) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
 }
 
 function invalidateViewState() {
@@ -190,7 +204,7 @@ function displayTitle(dataset) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
-  state._titleCache.set(datasetId, title);
+  setBoundedCache(state._titleCache, datasetId, title, TITLE_CACHE_SIZE);
   return title;
 }
 
@@ -200,7 +214,7 @@ function getDatasetSearchText(dataset) {
     return state._searchTextCache.get(datasetId);
   }
   const text = `${datasetId} ${displayTitle(dataset)} ${(dataset?.fields || []).join(" ")}`.toLowerCase();
-  state._searchTextCache.set(datasetId, text);
+  setBoundedCache(state._searchTextCache, datasetId, text, SEARCH_TEXT_CACHE_SIZE);
   return text;
 }
 
@@ -562,7 +576,7 @@ function formatUniqueThemes(datasetIds) {
     themeSet.add(dataset?.mega_theme || "Outros");
   });
   const value = Array.from(themeSet).sort().slice(0, 3);
-  state._pathThemeCache.set(cacheKey, value);
+  setBoundedCache(state._pathThemeCache, cacheKey, value, PATH_THEME_CACHE_SIZE);
   return value;
 }
 
@@ -682,9 +696,7 @@ function renderPairTable() {
         if (index === 0 || index === 1) {
           const icon = document.createElement("button");
           icon.type = "button";
-          icon.className = "ghost-button";
-          icon.style.marginLeft = "8px";
-          icon.style.height = "24px";
+          icon.className = "ghost-button pair-focus-button";
           icon.textContent = "foco";
           icon.onclick = (event) => {
             event.stopPropagation();
@@ -694,10 +706,7 @@ function renderPairTable() {
             renderAll();
           };
           const wrapper = document.createElement("div");
-          wrapper.style.display = "flex";
-          wrapper.style.alignItems = "center";
-          wrapper.style.justifyContent = "space-between";
-          wrapper.style.gap = "8px";
+          wrapper.className = "pair-focus-cell";
           const label = document.createElement("span");
           label.textContent = value;
           wrapper.append(label, icon);

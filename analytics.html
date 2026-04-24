@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Conector Transparência SNS - Analytics</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="analytics-layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Transparência SNS</p>
+          <h1>Analytics de dados</h1>
+          <p class="meta">Perfis, distribuições, tendências e correlações calculadas sobre amostras reais de registos.</p>
+        </div>
+        <div class="topbar-actions">
+          <a href="/" class="top-link">Vista principal</a>
+          <a href="crosswalk.html" class="top-link">Cruzamentos</a>
+        </div>
+      </header>
+
+      <section class="panel analytics-panel data-analytics-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Análise exploratória da amostra</h2>
+            <p id="dataAnalyticsMeta" class="meta">Escolhe um dataset para calcular estatísticas reais dos registos publicados.</p>
+          </div>
+          <div id="dataAnalyticsStatus" class="sync-state">A aguardar catálogo...</div>
+        </div>
+
+        <div class="data-analytics-toolbar">
+          <label>
+            <span>Dataset</span>
+            <select id="dataDatasetSelect" name="data-dataset"></select>
+          </label>
+          <label class="range-control">
+            <span>Amostra de registos</span>
+            <input id="dataSampleLimit" min="20" max="100" step="20" type="range" value="80" />
+            <strong id="dataSampleLimitValue">80</strong>
+          </label>
+          <button id="dataRefreshButton" class="ghost-button" type="button">Analisar dados</button>
+        </div>
+
+        <section class="data-kpis" aria-label="Resumo da amostra">
+          <div>
+            <span>Registos analisados</span>
+            <strong id="dataStatRows">-</strong>
+          </div>
+          <div>
+            <span>Medidas numéricas</span>
+            <strong id="dataStatNumeric">-</strong>
+          </div>
+          <div>
+            <span>Dimensões categóricas</span>
+            <strong id="dataStatCategorical">-</strong>
+          </div>
+          <div>
+            <span>Correlação mais forte</span>
+            <strong id="dataStatCorrelation">-</strong>
+          </div>
+        </section>
+
+        <div id="dataInsightCards" class="data-insight-cards"></div>
+
+        <section class="key-data-panel">
+          <section>
+            <div class="panel-heading">
+              <div>
+                <h2>Top dados-chave</h2>
+                <p class="meta">Ranking leve tipo Boruta sem alvo supervisionado, baseado em completude, variação, diversidade e centralidade.</p>
+              </div>
+            </div>
+            <div id="dataFeatureImportance" class="feature-importance-list"></div>
+          </section>
+          <section>
+            <div class="panel-heading">
+              <div>
+                <h2>PCA das medidas</h2>
+                <p id="dataPcaMeta" class="meta">Projeção das medidas numéricas para encontrar campos que explicam maior variação.</p>
+              </div>
+            </div>
+            <div class="pca-wrap">
+              <svg id="dataPcaChart" role="img" aria-label="PCA das medidas numéricas"></svg>
+            </div>
+          </section>
+        </section>
+
+        <section class="data-analytics-grid">
+          <section>
+            <div class="panel-heading">
+              <h2>Correlação entre medidas</h2>
+            </div>
+            <div id="dataCorrelationList" class="data-correlation-list"></div>
+          </section>
+          <section>
+            <div class="panel-heading">
+              <h2>Tendência temporal</h2>
+            </div>
+            <div class="data-trend-wrap">
+              <svg id="dataTrendChart" role="img" aria-label="Tendência temporal da amostra"></svg>
+            </div>
+          </section>
+        </section>
+
+        <section class="data-analytics-grid">
+          <section>
+            <div class="panel-heading">
+              <h2>Medidas</h2>
+            </div>
+            <div id="dataNumericProfiles" class="data-profile-list"></div>
+          </section>
+          <section>
+            <div class="panel-heading">
+              <h2>Dimensões</h2>
+            </div>
+            <div id="dataCategoricalProfiles" class="data-profile-list"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="analytics-toolbar">
+        <div class="toolbar-title">
+          <strong>Catálogo de ligações</strong>
+          <span>apoio para escolher cruzamentos entre datasets</span>
+        </div>
+        <label>
+          <span>Pesquisar relação</span>
+          <input id="analyticsSearch" name="analytics-search" autocomplete="off" placeholder="ex: periodo, hospital, mortalidade..." type="text" />
+        </label>
+        <label>
+          <span>Dimensão</span>
+          <select id="analyticsKind" name="analytics-kind">
+            <option value="">Todas</option>
+            <option value="temporal">Temporal</option>
+            <option value="territorial">Território</option>
+            <option value="entidade">Entidade</option>
+            <option value="medida">Medida</option>
+            <option value="generico">Genérico</option>
+          </select>
+        </label>
+        <label>
+          <span>Confiança</span>
+          <select id="analyticsConfidence" name="analytics-confidence">
+            <option value="">Todas</option>
+            <option value="alta">Alta</option>
+            <option value="media">Média</option>
+            <option value="exploratoria">Exploratória</option>
+          </select>
+        </label>
+        <label class="range-control">
+          <span>Score mínimo</span>
+          <input id="analyticsMinScore" min="1" max="10" step="1" type="range" value="4" />
+          <strong id="analyticsMinScoreValue">4</strong>
+        </label>
+        <button id="analyticsRefresh" class="ghost-button" type="button">Atualizar</button>
+        <button id="analyticsExport" class="ghost-button" type="button">Exportar JSON</button>
+        <div id="analyticsStatus" class="sync-state">A carregar...</div>
+      </section>
+
+      <section class="analytics-summary" aria-label="Resumo analítico">
+        <div>
+          <span>Datasets analisados</span>
+          <strong id="analyticsStatDatasets">-</strong>
+        </div>
+        <div>
+          <span>Relações elegíveis</span>
+          <strong id="analyticsStatLinks">-</strong>
+        </div>
+        <div>
+          <span>Dimensões cruzáveis</span>
+          <strong id="analyticsStatDimensions">-</strong>
+        </div>
+        <div>
+          <span>Alta confiança</span>
+          <strong id="analyticsStatConfidence">-</strong>
+        </div>
+      </section>
+
+      <section class="analytics-insights" aria-label="Leitura rápida">
+        <div id="analyticsInsightCards" class="analytics-insight-cards"></div>
+        <div class="panel analytics-panel analytics-distribution-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Distribuição filtrada</h2>
+              <p id="analyticsDistributionMeta" class="meta">Confiança e tipos de dimensão nas relações visíveis.</p>
+            </div>
+          </div>
+          <div id="analyticsDistribution" class="analytics-distribution"></div>
+        </div>
+      </section>
+
+      <section class="panel analytics-panel analytics-model-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Modelo semântico provável</h2>
+            <p id="analyticsModelMeta" class="meta">Temas ligados por dimensões comuns nas relações filtradas.</p>
+          </div>
+        </div>
+        <div class="analytics-model-wrap">
+          <svg id="analyticsSemanticModel" role="img" aria-label="Grafo de modelo semântico provável"></svg>
+        </div>
+      </section>
+
+      <section class="panel analytics-panel analytics-public-health-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Matriz likelihood × impact em saúde pública</h2>
+            <p id="publicHealthMeta" class="meta">Posiciona oportunidades de cruzamento por probabilidade técnica e impacto potencial.</p>
+          </div>
+        </div>
+        <div class="public-health-layout">
+          <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de likelihood versus impact"></div>
+          <aside>
+            <h3>Estratificação por área matched</h3>
+            <div id="publicHealthStrata" class="public-health-strata"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="analytics-grid">
+        <section class="panel analytics-panel analytics-chart-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Mapa de oportunidades</h2>
+              <p id="analyticsChartMeta" class="meta">Distribuição por cobertura e intensidade.</p>
+            </div>
+          </div>
+          <div class="analytics-chart-wrap">
+            <svg id="analyticsBubbleChart" role="img" aria-label="Mapa de dimensões cruzáveis"></svg>
+          </div>
+        </section>
+
+        <aside class="panel analytics-panel">
+          <div class="panel-heading">
+            <h2>Dimensões fortes</h2>
+          </div>
+          <div id="analyticsDimensionList" class="analytics-list"></div>
+        </aside>
+      </section>
+
+      <section class="analytics-grid analytics-grid-wide">
+        <section class="panel analytics-panel">
+          <div class="panel-heading">
+            <h2>Matriz tema-tema</h2>
+          </div>
+          <div id="analyticsThemeMatrix" class="analytics-matrix"></div>
+        </section>
+
+        <section class="panel analytics-panel">
+          <div class="panel-heading">
+            <h2>Cruzamento de dimensões</h2>
+          </div>
+          <div id="analyticsDimensionMatrix" class="analytics-matrix"></div>
+        </section>
+      </section>
+
+      <section class="panel analytics-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Relações candidatas para correlação</h2>
+            <p id="analyticsCorrelationMeta" class="meta">Ordenadas por score semântico.</p>
+          </div>
+        </div>
+        <div class="analytics-table-wrap">
+          <table id="analyticsCorrelationTable" class="analytics-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="analytics.js" defer></script>
+  </body>
+</html>

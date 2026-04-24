@@ -22,6 +22,8 @@ const state = {
   datasetRenderLimit: 160,
 };
 
+const TITLE_CACHE_SIZE = 700;
+const SEARCH_TEXT_CACHE_SIZE = 700;
 const DATASET_METADATA_CACHE_SIZE = 40;
 const RECENT_DATA_CACHE_SIZE = 24;
 const META_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -66,17 +68,7 @@ const recentDataEmpty = document.getElementById("recentDataEmpty");
 const reloadRecordsButton = document.getElementById("reloadRecordsButton");
 
 const tooltip = document.createElement("div");
-tooltip.style.position = "fixed";
-tooltip.style.pointerEvents = "none";
-tooltip.style.padding = "8px 10px";
-tooltip.style.background = "#102033";
-tooltip.style.borderRadius = "6px";
-tooltip.style.color = "#fff";
-tooltip.style.fontSize = "12px";
-tooltip.style.opacity = "0";
-tooltip.style.transition = "opacity 0.18s ease";
-tooltip.style.maxWidth = "340px";
-tooltip.style.zIndex = "10";
+tooltip.className = "graph-tooltip";
 document.body.appendChild(tooltip);
 
 let analysisLoadTimer = null;
@@ -240,7 +232,7 @@ function displayTitle(dataset) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
-  state._titleCache.set(datasetId, title);
+  setBoundedCache(state._titleCache, datasetId, title, TITLE_CACHE_SIZE);
   return title;
 }
 
@@ -250,7 +242,7 @@ function getDatasetSearchText(dataset) {
     return state._searchTextCache.get(datasetId);
   }
   const text = `${datasetId} ${displayTitle(dataset)} ${(dataset?.fields || []).join(" ")}`.toLowerCase();
-  state._searchTextCache.set(datasetId, text);
+  setBoundedCache(state._searchTextCache, datasetId, text, SEARCH_TEXT_CACHE_SIZE);
   return text;
 }
 
@@ -914,9 +906,7 @@ function showRecordsError(error) {
 }
 
 function stripHtml(value) {
-  const temp = document.createElement("div");
-  temp.innerHTML = value;
-  return temp.textContent || temp.innerText || "";
+  return safeText(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function renderAll() {

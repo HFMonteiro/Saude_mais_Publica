@@ -14,6 +14,11 @@ Projeto criado em `C:\Users\hugof\agentplayground\transparencia_connect`.
   - Listagem de campos por capacidade de ligação entre datasets,
   - Tabela de pares com pontuação de semelhança,
   - Cadeias de integração de dois saltos para apoio a decisões de junção.
+- Apresenta uma **página de analytics**, com:
+  - Mapa visual de dimensões cruzáveis,
+  - Matriz tema-tema,
+  - Matriz por tipo de dimensão,
+  - Relações candidatas ordenadas por score semântico.
 - Mantém os blocos já existentes:
   - Página inicial de arranque por mega-temas.
   - Lista de datasets disponíveis.
@@ -36,11 +41,16 @@ Aceder a:
 - Página dedicada a cruzamentos:
 
 - `http://127.0.0.1:8000/crosswalk.html`
+- Página de analytics:
+
+- `http://127.0.0.1:8000/analytics.html`
 
 ## Endpoints locais
 
 - `GET /api/analysis?min_score=1`  
   Gera o grafo de ligações entre datasets.
+- `GET /api/analytics?min_score=4`
+  Gera uma vista derivada para oportunidades de correlação semântica.
 - `GET /api/dataset/<dataset_id>`  
   Liga-se ao endpoint original do dataset no portal SNS.
 - `GET /api/records/<dataset_id>?limit=50`  
@@ -63,5 +73,6 @@ Aceder a:
 ## Notas
 
 Esta implementação está pronta para funcionar com os dados expostos pelo portal.
-Se quiseres, no próximo passo podemos adicionar uma visualização em 3D/diagrama mais avançada
-ou um export CSV de pares de cruzamento recomendados para cada dataset.
+O servidor está configurado para uso local em `127.0.0.1`, com allowlist de ficheiros estáticos,
+headers de segurança, limite simples de pedidos e cache em memória limitada por tamanho. Registos
+brutos não são mantidos em cache.
