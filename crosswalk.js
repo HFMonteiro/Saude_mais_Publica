@@ -64,6 +64,7 @@ const pairEmpty = document.getElementById("pairsEmpty");
 const crossDetail = document.getElementById("crossDetail");
 const pathMetaText = document.getElementById("crossPathMetaText");
 const crossPaths = document.getElementById("crossPaths");
+const recommendedPath = document.getElementById("recommendedPath");
 const crossStatFields = document.getElementById("crossStatFields");
 const crossStatPairs = document.getElementById("crossStatPairs");
 const crossStatThemes = document.getElementById("crossStatThemes");
@@ -496,7 +497,7 @@ function renderFieldList() {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem campos partilhados para estes filtros.";
+    empty.textContent = "Sem campos para este filtro.";
     fieldListEl.appendChild(empty);
     return;
   }
@@ -509,9 +510,10 @@ function renderFieldList() {
   const visibleRows = rows.slice(0, state.fieldRenderLimit);
   const fragment = document.createDocumentFragment();
   visibleRows.forEach((row) => {
+    const kind = classifySemanticField(row.field);
     const item = document.createElement("button");
     item.type = "button";
-    item.className = "field-item";
+    item.className = `field-item semantic-field-${kind}`;
     if (state.selectedField === row.field) item.classList.add("active");
 
     const head = document.createElement("div");
@@ -527,6 +529,16 @@ function renderFieldList() {
     meta.className = "field-meta";
     meta.textContent = `Cobertura por tema: ${formatUniqueThemes(row.datasetIds).join(", ")}`;
 
+    const badges = document.createElement("div");
+    badges.className = "field-badge-row";
+    const kindBadge = document.createElement("span");
+    kindBadge.className = "field-kind";
+    kindBadge.textContent = semanticClassLabel(kind);
+    const riskBadge = document.createElement("span");
+    riskBadge.className = "field-risk";
+    riskBadge.textContent = fieldRisk(kind);
+    badges.append(kindBadge, riskBadge);
+
     const track = document.createElement("div");
     track.className = "field-progress-track";
     const bar = document.createElement("div");
@@ -535,7 +547,7 @@ function renderFieldList() {
     bar.style.width = `${ratio}%`;
     track.appendChild(bar);
 
-    item.append(head, meta, track);
+    item.append(head, badges, meta, track);
     item.onclick = () => {
       const next = state.selectedField === row.field ? "" : row.field;
       state.selectedField = next;
@@ -597,7 +609,7 @@ function renderPairTable() {
     pairTitle.textContent = "Sem pares de cruzamento";
     pairDescription.textContent = state.selectedField
       ? `Campo "${state.selectedField}" não encontra pares visíveis para os filtros atuais.`
-      : "Sem ligações com este conjunto de filtros.";
+      : "Sem ligações neste filtro.";
     clearElement(crossPaths);
     const pathEmpty = document.createElement("div");
     pathEmpty.className = "empty-state";
@@ -619,7 +631,7 @@ function renderPairTable() {
   }
 
   const rowNode = document.createElement("tr");
-  ["Dataset A", "Dataset B", "Score", "Temas", "Campos partilhados"].forEach((label) => {
+  ["Dataset A", "Dataset B", "Score", "Áreas", "Chaves"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     rowNode.appendChild(th);
@@ -692,7 +704,6 @@ function renderPairTable() {
         }
         cell.appendChild(fieldList);
       } else {
-        cell.textContent = value;
         if (index === 0 || index === 1) {
           const icon = document.createElement("button");
           icon.type = "button";
@@ -711,6 +722,8 @@ function renderPairTable() {
           label.textContent = value;
           wrapper.append(label, icon);
           cell.appendChild(wrapper);
+        } else {
+          cell.textContent = value;
         }
       }
       line.appendChild(cell);
@@ -839,9 +852,11 @@ function renderSemanticGraph() {
     return;
   }
 
-  const leftX = 150;
-  const rightX = width - 150;
+  const sideInset = Math.max(188, Math.min(220, width * 0.24));
+  const leftX = sideInset;
+  const rightX = width - sideInset;
   const fieldX = width / 2;
+  const datasetLabelMax = width < 820 ? 16 : 18;
   const datasetYStep = height / (datasets.length + 1);
   const fieldYStep = height / (fields.length + 1);
   const datasetPositions = new Map();
@@ -917,11 +932,11 @@ function renderSemanticGraph() {
     group.style.setProperty("--node-theme", getThemeColor(dataset.mega_theme || "Outros"));
     group.appendChild(svgNode("circle", {r: 13}));
     const title = svgNode("text", {
-      x: pos.side === "left" ? -22 : 22,
+      x: pos.side === "left" ? -18 : 18,
       y: 4,
       "text-anchor": pos.side === "left" ? "end" : "start",
     });
-    title.textContent = compactTitle(displayTitle(dataset), 34);
+    title.textContent = compactTitle(displayTitle(dataset), datasetLabelMax);
     group.appendChild(title);
     group.addEventListener("click", () => {
       setSelectedDataset(dataset.dataset_id);
@@ -951,7 +966,7 @@ function renderCrossDetail() {
     clearElement(crossDetail);
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Seleciona uma linha para abrir o detalhe de ligação.";
+    empty.textContent = "Abre uma linha para ver o detalhe.";
     crossDetail.appendChild(empty);
     return;
   }
@@ -1022,26 +1037,64 @@ function renderCrossDetail() {
   }
   sharedSection.append(sharedTitle, sharedList);
 
+  const recipe = buildJoinRecipe(fields, datasetA, datasetB);
   const suggestion = document.createElement("div");
-  suggestion.className = "cross-detail-item";
+  suggestion.className = "cross-detail-item join-recipe";
   const suggestionTitle = document.createElement("h3");
-  suggestionTitle.textContent = "Sugestões práticas";
-  const suggestionText = document.createElement("p");
-  suggestionText.textContent = "Usa estes campos como chaves de integração e confirma a normalização de formato (tipos, espaçamento, e valores nulos) antes de cruzar.";
+  suggestionTitle.textContent = "Receita de join";
+  const recipeGrid = document.createElement("div");
+  recipeGrid.className = "join-recipe-grid";
+  [
+    ["Chave sugerida", recipe.keys],
+    ["Tipo recomendado", recipe.joinType],
+    ["Validações", recipe.validations],
+    ["Risco", recipe.risk],
+  ].forEach(([label, value]) => {
+    const block = document.createElement("div");
+    const blockLabel = document.createElement("span");
+    blockLabel.textContent = label;
+    const blockValue = document.createElement("strong");
+    blockValue.textContent = value;
+    block.append(blockLabel, blockValue);
+    recipeGrid.appendChild(block);
+  });
   const suggestionMeta = document.createElement("p");
+  suggestionMeta.className = "meta";
   suggestionMeta.textContent = `Registo de análise: ${new Date((state.analysisAt || Date.now()) * 1000).toLocaleString("pt-PT")}`;
-  suggestion.append(suggestionTitle, suggestionText, suggestionMeta);
+  suggestion.append(suggestionTitle, recipeGrid, suggestionMeta);
 
   crossDetail.append(connection, sharedSection, suggestion);
 }
 
+function buildJoinRecipe(fields, datasetA, datasetB) {
+  const kinds = fields.map(classifySemanticField);
+  const preferred = fields
+    .filter((field) => {
+      const kind = classifySemanticField(field);
+      return kind === "entidade" || kind === "territorial" || kind === "temporal";
+    })
+    .slice(0, 4);
+  const hasMeasure = kinds.includes("medida");
+  const hasGeneric = kinds.includes("generico");
+  const hasEntityOrTerritory = kinds.includes("entidade") || kinds.includes("territorial");
+  const crossTheme = datasetA?.mega_theme && datasetB?.mega_theme && datasetA.mega_theme !== datasetB.mega_theme;
+
+  return {
+    keys: (preferred.length ? preferred : fields.slice(0, 3)).join(", ") || "validar chave manualmente",
+    joinType: hasEntityOrTerritory ? "left join com reconciliação de entidades" : "inner join exploratório",
+    validations: "tipo, nulos, duplicados e cardinalidade 1:N",
+    risk: hasMeasure || hasGeneric || crossTheme ? "médio: granularidade a confirmar" : "baixo: chave candidata estável",
+  };
+}
+
 function renderPaths() {
   if (!state.selectedPairKey && !state.selectedDataset) {
-    pathMetaText.textContent = "Seleciona um dataset ou par para analisar caminhos de 2 saltos.";
+    pathMetaText.textContent = "Escolhe um foco para ver caminhos de 2 saltos.";
+    renderRecommendedPath([]);
     clearElement(crossPaths);
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem foco para calcular cadeias de integração.";
+    empty.textContent = "Escolhe um foco para calcular caminhos.";
     crossPaths.appendChild(empty);
     return;
   }
@@ -1057,6 +1110,7 @@ function renderPaths() {
     const [a, b] = state.selectedPairKey.split("|");
     if (!visibleIds.has(a) || !visibleIds.has(b)) {
       pathMetaText.textContent = "O par selecionado não está no filtro atual.";
+      renderRecommendedPath([]);
       clearElement(crossPaths);
       const empty = document.createElement("div");
       empty.className = "empty-state";
@@ -1100,6 +1154,7 @@ function renderPaths() {
 
   anchors.sort((p1, p2) => p2.score - p1.score);
   const topPaths = anchors.slice(0, state.pathRenderLimit);
+  renderRecommendedPath(anchors);
 
   pathMetaText.textContent = `${title} A mostrar ${topPaths.length}/${anchors.length} resultados com filtros ativos.`;
   if (!topPaths.length) {
@@ -1165,6 +1220,45 @@ function renderPaths() {
       },
     ));
   }
+}
+
+function renderRecommendedPath(paths) {
+  if (!recommendedPath) return;
+  clearElement(recommendedPath);
+  const title = document.createElement("strong");
+  title.textContent = "Caminho recomendado";
+
+  if (state.selectedPairKey) {
+    const edge = state.linkByPair.get(state.selectedPairKey);
+    const direct = document.createElement("p");
+    direct.className = "meta";
+    direct.textContent = edge
+      ? `Melhor par direto selecionado: score ${edge.score || 0}, ${(edge.shared_fields || []).slice(0, 3).join(", ") || "chave a validar"}.`
+      : "Par direto indisponível nos filtros atuais.";
+    recommendedPath.append(title, direct);
+  } else {
+    recommendedPath.appendChild(title);
+  }
+
+  const best = (paths || [])[0];
+  if (!best) {
+    const empty = document.createElement("p");
+    empty.className = "meta";
+    empty.textContent = state.selectedDataset || state.selectedPairKey
+      ? "Sem caminho de 2 saltos forte para este foco."
+      : "Escolhe dataset, campo ou par para recomendar caminho.";
+    recommendedPath.appendChild(empty);
+    return;
+  }
+
+  const route = document.createElement("div");
+  route.className = "recommended-route";
+  route.textContent = best.path.map((id) => compactTitle(displayTitle(state.datasetById.get(id)), 24)).join(" → ");
+  const reason = document.createElement("p");
+  reason.className = "meta";
+  const keys = best.connectors.flat().slice(0, 4).join(", ") || "chaves a validar";
+  reason.textContent = `Melhor 2 saltos: score ${best.score}. Razão: maior força acumulada e chaves comuns (${keys}).`;
+  recommendedPath.append(route, reason);
 }
 
 function buildAdjacency() {

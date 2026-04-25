@@ -188,6 +188,7 @@ ALLOWED_STATIC_PATHS = {
     "/crosswalk.js",
     "/analytics.html",
     "/analytics.js",
+    "/metodologia.html",
 }
 
 

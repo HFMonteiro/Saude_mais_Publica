@@ -3,29 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Conector Transparência SNS - Analytics</title>
+    <title>Transparência SNS - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=quick-predictive-20260425" />
   </head>
   <body>
     <main class="analytics-layout">
       <header class="topbar">
         <div>
           <p class="eyebrow">Transparência SNS</p>
-          <h1>Analytics de dados</h1>
-          <p class="meta">Perfis, distribuições, tendências e correlações calculadas sobre amostras reais de registos.</p>
+          <h1>Analytics SNS</h1>
+          <p class="meta">Amostras reais, sinais fortes, prioridades e tabelas de validação.</p>
         </div>
         <div class="topbar-actions">
           <a href="/" class="top-link">Vista principal</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
+          <a href="metodologia.html" class="top-link">Metodologia</a>
         </div>
       </header>
 
-      <section class="panel analytics-panel data-analytics-panel">
+      <nav class="analytics-tabs" aria-label="Secções de analytics">
+        <button class="analytics-tab is-active" type="button" data-analytics-tab="data">Dados reais</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="predictive">Preditiva</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="local">Planos Locais</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="tables">Tabelas</button>
+      </nav>
+
+      <section class="panel analytics-panel data-analytics-panel" data-tab-panel="data">
         <div class="panel-heading">
           <div>
-            <h2>Análise exploratória da amostra</h2>
-            <p id="dataAnalyticsMeta" class="meta">Escolhe um dataset para calcular estatísticas reais dos registos publicados.</p>
+            <h2>Amostra real</h2>
+            <p id="dataAnalyticsMeta" class="meta">Escolhe um dataset para medir sinais reais.</p>
           </div>
           <div id="dataAnalyticsStatus" class="sync-state">A aguardar catálogo...</div>
         </div>
@@ -35,6 +45,10 @@
             <span>Dataset</span>
             <select id="dataDatasetSelect" name="data-dataset"></select>
           </label>
+          <div class="dataset-mode-toggle" role="group" aria-label="Modo de escolha de dataset">
+            <button id="dataRichMode" class="is-active" type="button">Dataset rico</button>
+            <button id="dataManualMode" type="button">Dataset atual</button>
+          </div>
           <label class="range-control">
             <span>Amostra de registos</span>
             <input id="dataSampleLimit" min="20" max="100" step="20" type="range" value="80" />
@@ -69,16 +83,20 @@
             <div class="panel-heading">
               <div>
                 <h2>Top dados-chave</h2>
-                <p class="meta">Ranking leve tipo Boruta sem alvo supervisionado, baseado em completude, variação, diversidade e centralidade.</p>
+                <p class="meta">Ranking exploratório por completude, variação, diversidade e centralidade.</p>
               </div>
             </div>
             <div id="dataFeatureImportance" class="feature-importance-list"></div>
           </section>
+          <aside id="featureDetailPanel" class="feature-detail-panel">
+            <strong>Driver selecionado</strong>
+            <p class="meta">Seleciona um dado-chave para ver os sinais completos.</p>
+          </aside>
           <section>
             <div class="panel-heading">
               <div>
                 <h2>PCA das medidas</h2>
-                <p id="dataPcaMeta" class="meta">Projeção das medidas numéricas para encontrar campos que explicam maior variação.</p>
+                <p id="dataPcaMeta" class="meta">Medidas que explicam maior variação.</p>
               </div>
             </div>
             <div class="pca-wrap">
@@ -120,14 +138,61 @@
         </section>
       </section>
 
-      <section class="analytics-toolbar">
+      <section class="panel analytics-panel predictive-panel" data-tab-panel="predictive" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Análise preditiva simples</h2>
+            <p id="predictiveMeta" class="meta">Projeções exploratórias sobre a amostra real selecionada.</p>
+          </div>
+          <button id="predictiveDataButton" class="ghost-button" type="button">Escolher dataset</button>
+        </div>
+
+        <section id="predictiveKpis" class="predictive-kpis" aria-label="Resumo preditivo"></section>
+
+        <section class="predictive-grid predictive-grid-primary">
+          <article class="predictive-card predictive-forecast-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Projeção curta</h2>
+                <p class="meta">Linear, baseada nos períodos disponíveis.</p>
+              </div>
+            </div>
+            <div class="predictive-chart-wrap">
+              <svg id="predictiveForecastChart" role="img" aria-label="Projeção preditiva simples"></svg>
+            </div>
+          </article>
+          <article class="predictive-card">
+            <div class="panel-heading">
+              <h2>Drivers prováveis</h2>
+            </div>
+            <div id="predictiveDrivers" class="predictive-list"></div>
+          </article>
+        </section>
+
+        <section class="predictive-grid">
+          <article class="predictive-card">
+            <div class="panel-heading">
+              <h2>Cenários</h2>
+            </div>
+            <div id="predictiveScenarios" class="predictive-scenarios"></div>
+          </article>
+          <article class="predictive-card">
+            <div class="panel-heading">
+              <h2>Risco do modelo</h2>
+            </div>
+            <div id="predictiveRisk" class="predictive-list"></div>
+          </article>
+        </section>
+      </section>
+
+      <section class="analytics-toolbar analytics-filter-panel" data-tab-panel="semantic health local tables" hidden>
         <div class="toolbar-title">
-          <strong>Catálogo de ligações</strong>
-          <span>apoio para escolher cruzamentos entre datasets</span>
+          <strong>Filtros</strong>
+          <span>foca relações úteis</span>
         </div>
         <label>
           <span>Pesquisar relação</span>
-          <input id="analyticsSearch" name="analytics-search" autocomplete="off" placeholder="ex: periodo, hospital, mortalidade..." type="text" />
+          <input id="analyticsSearch" name="analytics-search" autocomplete="off" placeholder="período, hospital, mortalidade" type="text" />
         </label>
         <label>
           <span>Dimensão</span>
@@ -159,7 +224,7 @@
         <div id="analyticsStatus" class="sync-state">A carregar...</div>
       </section>
 
-      <section class="analytics-summary" aria-label="Resumo analítico">
+      <section class="analytics-summary" aria-label="Resumo analítico" data-tab-panel="semantic health local tables" hidden>
         <div>
           <span>Datasets analisados</span>
           <strong id="analyticsStatDatasets">-</strong>
@@ -178,7 +243,17 @@
         </div>
       </section>
 
-      <section class="analytics-insights" aria-label="Leitura rápida">
+      <section class="panel analytics-panel top-opportunities-panel" data-tab-panel="semantic" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Oportunidades agora</h2>
+            <p class="meta">Combina score semântico, likelihood, impact e baixo risco.</p>
+          </div>
+        </div>
+        <div id="analyticsTopOpportunities" class="top-opportunity-list"></div>
+      </section>
+
+      <section class="analytics-insights" aria-label="Leitura rápida" data-tab-panel="semantic" hidden>
         <div id="analyticsInsightCards" class="analytics-insight-cards"></div>
         <div class="panel analytics-panel analytics-distribution-panel">
           <div class="panel-heading">
@@ -191,10 +266,10 @@
         </div>
       </section>
 
-      <section class="panel analytics-panel analytics-model-panel">
+      <section class="panel analytics-panel analytics-model-panel" data-tab-panel="semantic" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Modelo semântico provável</h2>
+            <h2>Modelo semântico</h2>
             <p id="analyticsModelMeta" class="meta">Temas ligados por dimensões comuns nas relações filtradas.</p>
           </div>
         </div>
@@ -203,23 +278,156 @@
         </div>
       </section>
 
-      <section class="panel analytics-panel analytics-public-health-panel">
+      <section class="panel analytics-panel analytics-public-health-panel" data-tab-panel="health" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Matriz likelihood × impact em saúde pública</h2>
-            <p id="publicHealthMeta" class="meta">Posiciona oportunidades de cruzamento por probabilidade técnica e impacto potencial.</p>
+            <h2>Leitura de saúde pública</h2>
+            <p id="publicHealthMeta" class="meta">Hipóteses exploratórias por likelihood, impacto, área e qualidade de cruzamento.</p>
           </div>
         </div>
-        <div class="public-health-layout">
-          <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de likelihood versus impact"></div>
+
+        <section id="publicHealthKpis" class="public-health-kpis" aria-label="Resumo de prioridade em saúde pública"></section>
+
+        <div class="public-health-layout public-health-layout-primary">
+          <section>
+            <div class="panel-heading">
+              <div>
+                <h2>Matriz likelihood × impacto</h2>
+                <p class="meta">Primeira leitura: probabilidade técnica de cruzar vs impacto potencial em saúde pública.</p>
+              </div>
+            </div>
+            <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de likelihood versus impact"></div>
+          </section>
           <aside>
             <h3>Estratificação por área matched</h3>
             <div id="publicHealthStrata" class="public-health-strata"></div>
           </aside>
         </div>
+
+        <section class="public-health-cockpit">
+          <section class="public-health-priority-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Hipóteses de análise</h2>
+                <p class="meta">Triagem Hanlon/PNS-like. Não é recomendação oficial.</p>
+              </div>
+            </div>
+            <div id="publicHealthPriorityList" class="public-health-priority-list"></div>
+          </section>
+
+          <section class="public-health-map-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Cartograma SNS</h2>
+                <p class="meta">Leitura regional: continente norte-sul e ilhas. O nacional fica separado.</p>
+              </div>
+              <div id="publicHealthLayerControls" class="map-layer-controls" role="group" aria-label="Layers do mapa SNS"></div>
+            </div>
+            <div id="publicHealthNationalSummary" class="public-health-national-summary"></div>
+            <div class="public-health-map-wrap">
+              <svg id="publicHealthMap" role="img" aria-label="Mapa/cartograma de prioridades em saúde pública"></svg>
+            </div>
+          </section>
+
+          <aside class="public-health-detail-panel">
+            <h3>Drivers e leitura</h3>
+            <div id="publicHealthDecisionDetail" class="public-health-decision-detail"></div>
+          </aside>
+        </section>
+
+        <section class="public-health-questions-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Perguntas úteis</h2>
+              <p class="meta">Geradas a partir das prioridades disponíveis.</p>
+            </div>
+          </div>
+          <div id="publicHealthQuestions" class="public-health-questions"></div>
+        </section>
+
+        <section class="public-health-table-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Matriz de hipóteses</h2>
+              <p id="publicHealthTableMeta" class="meta">Seleciona uma célula para ver explicação e hipóteses candidatas.</p>
+            </div>
+          </div>
+          <div class="hypothesis-matrix-layout">
+            <div id="publicHealthHypothesisMatrix" class="hypothesis-matrix" aria-label="Matriz de hipóteses por leitura e âmbito"></div>
+            <aside id="publicHealthHypothesisDetail" class="hypothesis-detail-panel"></aside>
+          </div>
+        </section>
       </section>
 
-      <section class="analytics-grid">
+      <section class="panel analytics-panel local-plans-panel" data-tab-panel="local" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Cockpit de Planos Locais de Saúde</h2>
+            <p id="localPlanMeta" class="meta">Diagnóstico, prioridades, surveillance, risco e plano de ação a partir dos cruzamentos disponíveis.</p>
+          </div>
+        </div>
+
+        <section id="localPlanKpis" class="local-plan-kpis" aria-label="Resumo para planos locais"></section>
+
+        <section class="local-plan-grid">
+          <article class="local-plan-card local-diagnosis-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Diagnóstico local</h2>
+                <p class="meta">Temas PNS, cobertura territorial e lacunas que condicionam planeamento subnacional.</p>
+              </div>
+            </div>
+            <div id="localDiagnosis" class="local-diagnosis"></div>
+          </article>
+
+          <article class="local-plan-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Prioridades</h2>
+                <p class="meta">Matriz necessidade × capacidade de análise.</p>
+              </div>
+            </div>
+            <div class="local-priority-layout">
+              <div id="localPriorityMatrix" class="local-priority-matrix" aria-label="Matriz de prioridades para planos locais"></div>
+              <aside id="localPriorityDetail" class="local-priority-detail"></aside>
+            </div>
+          </article>
+        </section>
+
+        <section class="local-plan-grid local-plan-grid-secondary">
+          <article class="local-plan-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Surveillance</h2>
+                <p class="meta">Sinal temporal, capacidade de monitorização e qualidade da série.</p>
+              </div>
+            </div>
+            <div id="localSurveillance" class="local-signal-list"></div>
+          </article>
+
+          <article class="local-plan-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Risco residual</h2>
+                <p class="meta">Probabilidade × impacto, ajustado por vulnerabilidade e capacidade analítica.</p>
+              </div>
+            </div>
+            <div id="localRiskMatrix" class="local-risk-matrix"></div>
+          </article>
+        </section>
+
+        <section class="local-plan-card">
+          <div class="panel-heading">
+            <div>
+              <h2>Plano de ação</h2>
+              <p class="meta">Perguntas acionáveis, datasets necessários e validações antes de usar em planeamento local.</p>
+            </div>
+          </div>
+          <div id="localActionPlan" class="local-action-plan"></div>
+        </section>
+      </section>
+
+      <section class="analytics-grid" data-tab-panel="semantic" hidden>
         <section class="panel analytics-panel analytics-chart-panel">
           <div class="panel-heading">
             <div>
@@ -240,38 +448,51 @@
         </aside>
       </section>
 
-      <section class="analytics-grid analytics-grid-wide">
-        <section class="panel analytics-panel">
-          <div class="panel-heading">
-            <h2>Matriz tema-tema</h2>
-          </div>
-          <div id="analyticsThemeMatrix" class="analytics-matrix"></div>
-        </section>
-
-        <section class="panel analytics-panel">
-          <div class="panel-heading">
-            <h2>Cruzamento de dimensões</h2>
-          </div>
-          <div id="analyticsDimensionMatrix" class="analytics-matrix"></div>
-        </section>
-      </section>
-
-      <section class="panel analytics-panel">
+      <section class="panel analytics-panel analytics-table-panel tables-primary-panel" data-tab-panel="tables" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Relações candidatas para correlação</h2>
+            <h2>Relações candidatas para cruzar dados</h2>
             <p id="analyticsCorrelationMeta" class="meta">Ordenadas por score semântico.</p>
           </div>
         </div>
+        <div class="tables-guidance">
+          <span>Filtra dimensão/confiança</span>
+          <span>Abre uma linha</span>
+          <span>Exporta o filtro</span>
+        </div>
         <div class="analytics-table-wrap">
-          <table id="analyticsCorrelationTable" class="analytics-table">
+          <table id="analyticsCorrelationTable" class="analytics-table analytics-relation-table">
             <thead></thead>
             <tbody></tbody>
           </table>
         </div>
       </section>
+
+      <section class="analytics-grid analytics-grid-wide analytics-matrix-strip" data-tab-panel="tables" hidden>
+        <details class="panel analytics-panel analytics-details">
+          <summary>Mapa rápido por tema</summary>
+          <div class="panel-heading">
+            <div>
+              <h2>Matriz tema-tema</h2>
+              <p class="meta">Mostra os temas com mais pares cruzáveis.</p>
+            </div>
+          </div>
+          <div id="analyticsThemeMatrix" class="analytics-matrix"></div>
+        </details>
+
+        <details class="panel analytics-panel analytics-details">
+          <summary>Mapa rápido por dimensão</summary>
+          <div class="panel-heading">
+            <div>
+              <h2>Cruzamento de dimensões</h2>
+              <p class="meta">Mostra os tipos de chave que aparecem em mais relações.</p>
+            </div>
+          </div>
+          <div id="analyticsDimensionMatrix" class="analytics-matrix"></div>
+        </details>
+      </section>
     </main>
 
-    <script src="analytics.js" defer></script>
+    <script src="analytics.js?v=quick-predictive-20260425-3" defer></script>
   </body>
 </html>

@@ -8,8 +8,23 @@ const state = {
   lowRiskOnly: false,
   selectedCorrelationKey: "",
   selectedDataDataset: "",
+  selectedFeatureKey: "",
+  selectedPublicHealthKey: "",
+  selectedPublicHealthMatrixCell: "",
+  selectedLocalPriorityCell: "",
+  activePublicHealthLayer: "impact",
+  publicHealthRenderLimit: 40,
+  publicHealthSort: "priority",
+  activeTab: "data",
+  datasetMode: "rich",
   dataLimit: 80,
   dataPayload: null,
+  _predictiveLoadDataset: "",
+  _filterCache: {
+    key: "",
+    correlations: [],
+    dimensions: [],
+  },
 };
 
 const analyticsSearch = document.getElementById("analyticsSearch");
@@ -24,6 +39,8 @@ const dataDatasetSelect = document.getElementById("dataDatasetSelect");
 const dataSampleLimit = document.getElementById("dataSampleLimit");
 const dataSampleLimitValue = document.getElementById("dataSampleLimitValue");
 const dataRefreshButton = document.getElementById("dataRefreshButton");
+const dataRichMode = document.getElementById("dataRichMode");
+const dataManualMode = document.getElementById("dataManualMode");
 const dataAnalyticsStatus = document.getElementById("dataAnalyticsStatus");
 const dataAnalyticsMeta = document.getElementById("dataAnalyticsMeta");
 const dataStatRows = document.getElementById("dataStatRows");
@@ -36,8 +53,19 @@ const dataTrendChart = document.getElementById("dataTrendChart");
 const dataNumericProfiles = document.getElementById("dataNumericProfiles");
 const dataCategoricalProfiles = document.getElementById("dataCategoricalProfiles");
 const dataFeatureImportance = document.getElementById("dataFeatureImportance");
+const featureDetailPanel = document.getElementById("featureDetailPanel");
 const dataPcaMeta = document.getElementById("dataPcaMeta");
 const dataPcaChart = document.getElementById("dataPcaChart");
+const predictiveMeta = document.getElementById("predictiveMeta");
+const predictiveDataButton = document.getElementById("predictiveDataButton");
+const predictiveKpis = document.getElementById("predictiveKpis");
+const predictiveForecastChart = document.getElementById("predictiveForecastChart");
+const predictiveDrivers = document.getElementById("predictiveDrivers");
+const predictiveScenarios = document.getElementById("predictiveScenarios");
+const predictiveRisk = document.getElementById("predictiveRisk");
+const analyticsTabs = Array.from(document.querySelectorAll("[data-analytics-tab]"));
+const analyticsPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+const topOpportunities = document.getElementById("analyticsTopOpportunities");
 const statDatasets = document.getElementById("analyticsStatDatasets");
 const statLinks = document.getElementById("analyticsStatLinks");
 const statDimensions = document.getElementById("analyticsStatDimensions");
@@ -49,8 +77,26 @@ const distribution = document.getElementById("analyticsDistribution");
 const modelMeta = document.getElementById("analyticsModelMeta");
 const semanticModel = document.getElementById("analyticsSemanticModel");
 const publicHealthMeta = document.getElementById("publicHealthMeta");
+const publicHealthKpis = document.getElementById("publicHealthKpis");
+const publicHealthPriorityList = document.getElementById("publicHealthPriorityList");
+const publicHealthLayerControls = document.getElementById("publicHealthLayerControls");
+const publicHealthNationalSummary = document.getElementById("publicHealthNationalSummary");
+const publicHealthMap = document.getElementById("publicHealthMap");
+const publicHealthDecisionDetail = document.getElementById("publicHealthDecisionDetail");
+const publicHealthQuestions = document.getElementById("publicHealthQuestions");
+const publicHealthTableMeta = document.getElementById("publicHealthTableMeta");
+const publicHealthHypothesisMatrix = document.getElementById("publicHealthHypothesisMatrix");
+const publicHealthHypothesisDetail = document.getElementById("publicHealthHypothesisDetail");
 const publicHealthMatrix = document.getElementById("publicHealthMatrix");
 const publicHealthStrata = document.getElementById("publicHealthStrata");
+const localPlanMeta = document.getElementById("localPlanMeta");
+const localPlanKpis = document.getElementById("localPlanKpis");
+const localDiagnosis = document.getElementById("localDiagnosis");
+const localPriorityMatrix = document.getElementById("localPriorityMatrix");
+const localPriorityDetail = document.getElementById("localPriorityDetail");
+const localSurveillance = document.getElementById("localSurveillance");
+const localRiskMatrix = document.getElementById("localRiskMatrix");
+const localActionPlan = document.getElementById("localActionPlan");
 const bubbleChart = document.getElementById("analyticsBubbleChart");
 const dimensionList = document.getElementById("analyticsDimensionList");
 const themeMatrix = document.getElementById("analyticsThemeMatrix");
@@ -58,6 +104,131 @@ const dimensionMatrix = document.getElementById("analyticsDimensionMatrix");
 const correlationMeta = document.getElementById("analyticsCorrelationMeta");
 const correlationTable = document.getElementById("analyticsCorrelationTable");
 const SVG_NS = "http://www.w3.org/2000/svg";
+const PUBLIC_HEALTH_LAYERS = [
+  ["impact", "Impacto"],
+  ["likelihood", "Likelihood"],
+  ["risk", "Risco"],
+  ["entities", "Entidades"],
+  ["opportunities", "Oportunidades"],
+];
+const PUBLIC_HEALTH_GEO = [
+  {
+    id: "norte",
+    label: "Norte",
+    x: 216,
+    y: 64,
+    w: 136,
+    h: 82,
+    labelX: 284,
+    labelY: 108,
+    match: /(norte|porto|braga|viana|vila real|braganca|bragança|uls)/,
+  },
+  {
+    id: "centro",
+    label: "Centro",
+    x: 216,
+    y: 156,
+    w: 136,
+    h: 82,
+    labelX: 284,
+    labelY: 200,
+    match: /(centro|coimbra|leiria|viseu|guarda|castelo branco|aveiro)/,
+  },
+  {
+    id: "lisboa",
+    label: "Lisboa e V. Tejo",
+    x: 216,
+    y: 248,
+    w: 136,
+    h: 82,
+    labelX: 284,
+    labelY: 292,
+    match: /(lisboa|tejo|setubal|setúbal|santarem|santarém|oeste|aml)/,
+  },
+  {
+    id: "alentejo",
+    label: "Alentejo",
+    x: 216,
+    y: 340,
+    w: 136,
+    h: 82,
+    labelX: 284,
+    labelY: 384,
+    match: /(alentejo|evora|évora|beja|portalegre|ribatejo)/,
+  },
+  {
+    id: "algarve",
+    label: "Algarve",
+    x: 216,
+    y: 432,
+    w: 136,
+    h: 64,
+    labelX: 284,
+    labelY: 468,
+    match: /(algarve|faro|portimao|portimão)/,
+  },
+  {
+    id: "madeira",
+    label: "Madeira",
+    x: 62,
+    y: 398,
+    w: 108,
+    h: 56,
+    labelX: 116,
+    labelY: 430,
+    match: /(madeira|funchal)/,
+  },
+  {
+    id: "acores",
+    label: "Açores",
+    x: 62,
+    y: 86,
+    w: 108,
+    h: 56,
+    labelX: 116,
+    labelY: 118,
+    match: /(acores|açores|ponta delgada|angra|horta)/,
+  },
+];
+const PUBLIC_HEALTH_NATIONAL_GEO = {
+  id: "nacional",
+  label: "Vista nacional",
+  x: 346,
+  y: 76,
+  w: 132,
+  h: 84,
+  labelX: 412,
+  labelY: 111,
+  match: /nacional/,
+};
+const PNS_TERMS = [
+  "desigualdade",
+  "vulneravel",
+  "vulnerabilidade",
+  "mortalidade",
+  "morbilidade",
+  "doenca",
+  "diabetes",
+  "avc",
+  "oncologico",
+  "rastreio",
+  "emergencia",
+  "urgencia",
+  "prevencao",
+  "vacina",
+  "acesso",
+  "espera",
+  "recursos",
+  "territorio",
+  "saude publica",
+];
+const LOCAL_PNS_AXES = [
+  ["Equidade", /(desigualdade|equidade|vulneravel|vulnerabilidade|territorio|territorial|acesso)/],
+  ["Acesso e qualidade", /(acesso|espera|consulta|urgencia|referenciacao|qualidade|satisfacao|seguranca)/],
+  ["Carga da doença", /(mortalidade|morbilidade|doenca|diabetes|avc|oncologico|saude mental|hipertensao)/],
+  ["Emergência e vigilância", /(emergencia|urgencia|vigilancia|epidem|risco|sazonal|resposta|alerta)/],
+  ["Recursos e integração", /(recursos|profissionais|contrato|despesa|financeiro|integracao|hospital|uls|csp)/],
+];
 
 let searchTimer = null;
 let loadTimer = null;
@@ -125,6 +296,20 @@ function relationKey(item) {
   return `${item.source}|${item.target}`;
 }
 
+function invalidateFilterCache() {
+  state._filterCache = {key: "", correlations: [], dimensions: []};
+}
+
+function activeFilterKey() {
+  return [
+    state.payload?.generated_at || "",
+    state.search.trim().toLowerCase(),
+    state.kind,
+    state.confidence,
+    state.lowRiskOnly ? "low" : "all",
+  ].join("|");
+}
+
 function dominantEntry(entries) {
   return entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || ["-", 0];
 }
@@ -133,6 +318,25 @@ function svgNode(tag, attributes = {}) {
   const node = document.createElementNS(SVG_NS, tag);
   Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
   return node;
+}
+
+function renderDatasetMode() {
+  dataRichMode?.classList.toggle("is-active", state.datasetMode === "rich");
+  dataManualMode?.classList.toggle("is-active", state.datasetMode === "manual");
+}
+
+function setActiveTab(tab) {
+  state.activeTab = tab || "data";
+  analyticsTabs.forEach((button) => {
+    const isActive = button.dataset.analyticsTab === state.activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  analyticsPanels.forEach((panel) => {
+    const panels = (panel.dataset.tabPanel || "").split(/\s+/);
+    panel.hidden = !panels.includes(state.activeTab);
+  });
+  renderAll();
 }
 
 async function loadAnalytics() {
@@ -147,6 +351,7 @@ async function loadAnalytics() {
     throw new Error(payload.error || "Erro ao carregar analytics");
   }
   state.payload = payload;
+  invalidateFilterCache();
   populateDataDatasetOptions();
   analyticsStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   renderAll();
@@ -180,13 +385,20 @@ function populateDataDatasetOptions() {
     option.textContent = `${compactTitle(dataset.title || dataset.dataset_id, 72)} · ${dataset.mega_theme} · ${formatNumber(dataset.metric_candidate_count || 0)} medidas`;
     dataDatasetSelect.appendChild(option);
   });
-  if (current && datasets.some((dataset) => dataset.dataset_id === current)) {
+  if (state.datasetMode === "rich") {
+    const richest = datasets.find((dataset) => (dataset.records_count || 0) > 0 && (dataset.metric_candidate_count || 0) >= 2)
+      || datasets.find((dataset) => (dataset.records_count || 0) > 0)
+      || datasets[0];
+    state.selectedDataDataset = richest?.dataset_id || "";
+    dataDatasetSelect.value = state.selectedDataDataset;
+  } else if (current && datasets.some((dataset) => dataset.dataset_id === current)) {
     dataDatasetSelect.value = current;
   } else {
     const firstWithRecords = datasets.find((dataset) => (dataset.records_count || 0) > 0) || datasets[0];
     state.selectedDataDataset = firstWithRecords?.dataset_id || "";
     dataDatasetSelect.value = state.selectedDataDataset;
   }
+  renderDatasetMode();
 }
 
 async function loadDataAnalytics() {
@@ -201,7 +413,11 @@ async function loadDataAnalytics() {
   }
   state.dataPayload = payload;
   dataAnalyticsStatus.textContent = `Amostra atualizada · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
-  renderDataAnalytics();
+  if (state.activeTab === "predictive") {
+    renderPredictiveAnalytics();
+  } else {
+    renderDataAnalytics();
+  }
 }
 
 function debounceLoadDataAnalytics() {
@@ -214,8 +430,12 @@ function debounceLoadDataAnalytics() {
 function filteredCorrelations() {
   const payload = state.payload;
   if (!payload) return [];
+  const key = activeFilterKey();
+  if (state._filterCache.key === key && state._filterCache.correlations) {
+    return state._filterCache.correlations;
+  }
   const search = state.search.trim().toLowerCase();
-  return (payload.correlations || []).filter((item) => {
+  const correlations = (payload.correlations || []).filter((item) => {
     if (state.confidence && item.confidence !== state.confidence) return false;
     if (state.kind && !(item.dimension_kinds || []).includes(state.kind)) return false;
     if (state.lowRiskOnly && (item.risk_flags || []).length) return false;
@@ -230,17 +450,31 @@ function filteredCorrelations() {
     ].join(" ").toLowerCase();
     return text.includes(search);
   });
+  state._filterCache.key = key;
+  state._filterCache.correlations = correlations;
+  state._filterCache.dimensions = null;
+  return correlations;
 }
 
 function filteredDimensions() {
   const payload = state.payload;
   if (!payload) return [];
+  const key = activeFilterKey();
+  if (state._filterCache.key === key && state._filterCache.dimensions) {
+    return state._filterCache.dimensions;
+  }
   const search = state.search.trim().toLowerCase();
-  return (payload.dimensions || []).filter((item) => {
+  const dimensions = (payload.dimensions || []).filter((item) => {
     if (state.kind && item.kind !== state.kind) return false;
     if (!search) return true;
     return `${item.field} ${item.kind}`.toLowerCase().includes(search);
   });
+  if (state._filterCache.key !== key) {
+    state._filterCache.key = key;
+    state._filterCache.correlations = null;
+  }
+  state._filterCache.dimensions = dimensions;
+  return dimensions;
 }
 
 function renderSummary() {
@@ -253,10 +487,205 @@ function renderSummary() {
   statConfidence.textContent = formatNumber(correlations.filter((item) => item.confidence === "alta").length);
 }
 
+function opportunityPriority(item) {
+  const likelihoodRank = {alta: 3, media: 2, baixa: 1};
+  const impactRank = {alto: 3, medio: 2, baixo: 1};
+  const model = item.public_health_model || {};
+  const riskPenalty = (item.risk_flags || []).length * 1.8;
+  return Number(item.semantic_score || 0)
+    + likelihoodRank[model.likelihood?.level || "baixa"] * 2
+    + impactRank[model.impact?.level || "baixo"] * 2
+    - riskPenalty;
+}
+
+function normalizeSearchText(value) {
+  return safeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function priorityDecision(score, row) {
+  if ((row.risk || 0) >= 7 || row.viability < 4) return "Validar antes";
+  if (score >= 72) return "Priorizar";
+  if (score >= 55) return "Acompanhar";
+  return "Explorar";
+}
+
+function decisionTone(decision) {
+  return {
+    "Priorizar": "act",
+    "Acompanhar": "watch",
+    "Explorar": "investigate",
+    "Validar antes": "avoid",
+  }[decision] || "investigate";
+}
+
+function matchedGeo(item) {
+  const text = normalizeSearchText([
+    item.source_title,
+    item.target_title,
+    item.source_theme,
+    item.target_theme,
+    ...(item.shared_fields || []),
+    ...((item.public_health_model || {}).matched_areas || []),
+  ].join(" "));
+  return PUBLIC_HEALTH_GEO.find((geo) => geo.match.test(text)) || PUBLIC_HEALTH_NATIONAL_GEO;
+}
+
+function pnsAlignment(item) {
+  const text = normalizeSearchText([
+    item.source_title,
+    item.target_title,
+    item.source_theme,
+    item.target_theme,
+    ...(item.shared_fields || []),
+    ...((item.public_health_model || {}).impact?.drivers || []),
+  ].join(" "));
+  return PNS_TERMS.reduce((count, term) => count + (text.includes(normalizeSearchText(term)) ? 1 : 0), 0);
+}
+
+function publicHealthPriorityRows() {
+  const rows = filteredCorrelations().map((item) => {
+    const model = item.public_health_model || {};
+    const likelihoodRank = {alta: 3, media: 2, baixa: 1}[model.likelihood?.level || "baixa"];
+    const impactRank = {alto: 3, medio: 2, baixo: 1}[model.impact?.level || "baixo"];
+    const dimensionKinds = item.dimension_kinds || [];
+    const keyCount = (item.join_recipe?.suggested_keys || item.shared_fields || []).length;
+    const risk = Math.min(10, (item.risk_flags || []).length * 3 + (dimensionKinds.includes("medida") ? 2 : 0));
+    const magnitude = Math.min(20, Number(item.semantic_score || 0) * 1.4 + Math.min(6, keyCount));
+    const severity = Math.min(20, impactRank * 6 + pnsAlignment(item));
+    const trend = state.dataPayload?.trends?.length ? 8 : 4;
+    const inequity = Math.min(16, (dimensionKinds.includes("territorial") ? 6 : 0) + (dimensionKinds.includes("entidade") ? 4 : 0) + ((model.matched_areas || []).length * 2));
+    const viability = Math.max(0, Math.min(18, likelihoodRank * 5 + (item.confidence === "alta" ? 3 : item.confidence === "media" ? 1 : 0) - risk));
+    const alignment = Math.min(12, pnsAlignment(item) * 2);
+    const priority = Math.round(magnitude + severity + trend + inequity + viability + alignment);
+    const geo = matchedGeo(item);
+    const row = {
+      item,
+      key: relationKey(item),
+      priority,
+      magnitude,
+      severity,
+      trend,
+      inequity,
+      viability,
+      alignment,
+      risk,
+      geo,
+      decision: "",
+      reason: "",
+    };
+    row.decision = priorityDecision(priority, row);
+    row.reason = publicHealthReason(row);
+    return row;
+  });
+
+  const sorters = {
+    priority: (a, b) => b.priority - a.priority || b.viability - a.viability,
+    impact: (a, b) => b.severity - a.severity || b.priority - a.priority,
+    risk: (a, b) => b.risk - a.risk || b.priority - a.priority,
+    viability: (a, b) => b.viability - a.viability || b.priority - a.priority,
+  };
+  return rows.sort(sorters[state.publicHealthSort] || sorters.priority);
+}
+
+function publicHealthReason(row) {
+  const model = row.item.public_health_model || {};
+  const drivers = model.impact?.drivers || [];
+  const parts = [];
+  if (row.decision === "Priorizar") parts.push("alto valor potencial e boa viabilidade");
+  if (row.decision === "Acompanhar") parts.push("sinal relevante para acompanhamento");
+  if (row.decision === "Explorar") parts.push("potencial exploratório ainda incompleto");
+  if (row.decision === "Validar antes") parts.push("validar risco, granularidade ou viabilidade");
+  if (drivers.length) parts.push(`drivers: ${drivers.slice(0, 2).join(", ")}`);
+  if (row.geo.label !== "Nacional") parts.push(`área: ${row.geo.label}`);
+  return parts.join(" · ");
+}
+
+function questionForPriority(row) {
+  const model = row.item.public_health_model || {};
+  const areas = model.matched_areas || [];
+  const area = areas[0] || row.geo.label;
+  const fields = row.item.join_recipe?.suggested_keys || row.item.shared_fields || [];
+  if ((row.item.dimension_kinds || []).includes("territorial")) {
+    return `Onde há maior desigualdade territorial em ${area.toLowerCase()} quando cruzamos ${fields.slice(0, 2).join(" + ") || "as chaves disponíveis"}?`;
+  }
+  if ((row.item.dimension_kinds || []).includes("entidade")) {
+    return `Que ULS, hospital ou entidade fica fora do padrão esperado neste cruzamento?`;
+  }
+  if ((row.item.dimension_kinds || []).includes("temporal")) {
+    return `O sinal está a piorar no tempo ou é um efeito pontual de reporte?`;
+  }
+  return `Que decisão muda se esta relação for validada com dados reais?`;
+}
+
+function aggregateHealthGeo(rows) {
+  const base = new Map(PUBLIC_HEALTH_GEO.map((geo) => [geo.id, {...geo, count: 0, priority: 0, impact: 0, likelihood: 0, risk: 0, entities: 0}]));
+  base.set("nacional", {...PUBLIC_HEALTH_NATIONAL_GEO, count: 0, priority: 0, impact: 0, likelihood: 0, risk: 0, entities: 0});
+  rows.forEach((row) => {
+    const entry = base.get(row.geo.id) || base.get("nacional");
+    const model = row.item.public_health_model || {};
+    entry.count += 1;
+    entry.priority += row.priority;
+    entry.impact += {alto: 3, medio: 2, baixo: 1}[model.impact?.level || "baixo"];
+    entry.likelihood += {alta: 3, media: 2, baixa: 1}[model.likelihood?.level || "baixa"];
+    entry.risk += row.risk;
+    entry.entities += (row.item.dimension_kinds || []).includes("entidade") ? 1 : 0;
+  });
+  return [...base.values()].map((entry) => ({
+    ...entry,
+    avgPriority: entry.count ? entry.priority / entry.count : 0,
+    avgImpact: entry.count ? entry.impact / entry.count : 0,
+    avgLikelihood: entry.count ? entry.likelihood / entry.count : 0,
+    avgRisk: entry.count ? entry.risk / entry.count : 0,
+  }));
+}
+
+function renderTopOpportunities() {
+  if (!topOpportunities) return;
+  clearElement(topOpportunities);
+  const rows = filteredCorrelations()
+    .slice()
+    .sort((a, b) => opportunityPriority(b) - opportunityPriority(a) || Number(b.semantic_score || 0) - Number(a.semantic_score || 0))
+    .slice(0, 5);
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem oportunidades para os filtros atuais.";
+    topOpportunities.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  rows.forEach((item, index) => {
+    const model = item.public_health_model || {};
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "top-opportunity-card";
+    const rank = document.createElement("span");
+    rank.textContent = `#${index + 1}`;
+    const title = document.createElement("strong");
+    title.textContent = `${compactTitle(item.source_title, 34)} / ${compactTitle(item.target_title, 34)}`;
+    const meta = document.createElement("small");
+    meta.textContent = `${likelihoodLabel(model.likelihood?.level || "baixa")} likelihood · ${impactLabel(model.impact?.level || "baixo")} impact · ${(item.risk_flags || []).length ? "validar risco" : "baixo risco"}`;
+    const keys = document.createElement("em");
+    keys.textContent = (item.join_recipe?.suggested_keys || item.shared_fields || []).slice(0, 3).join(", ") || "chave a validar";
+    card.append(rank, title, meta, keys);
+    card.addEventListener("click", () => {
+      state.selectedCorrelationKey = relationKey(item);
+      setActiveTab("tables");
+      requestAnimationFrame(() => correlationTable?.scrollIntoView({block: "start", behavior: "smooth"}));
+    });
+    fragment.appendChild(card);
+  });
+  topOpportunities.appendChild(fragment);
+}
+
 function renderDataAnalytics() {
   const payload = state.dataPayload;
   if (!payload) {
-    dataAnalyticsMeta.textContent = "Escolhe um dataset para calcular estatísticas reais dos registos publicados.";
+    dataAnalyticsMeta.textContent = "Escolhe um dataset para medir sinais reais.";
     dataStatRows.textContent = "-";
     dataStatNumeric.textContent = "-";
     dataStatCategorical.textContent = "-";
@@ -316,7 +745,7 @@ function renderDataCorrelations(payload) {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem correlações numéricas relevantes nesta amostra.";
+    empty.textContent = "Sem correlações fortes nesta amostra.";
     dataCorrelationList.appendChild(empty);
     return;
   }
@@ -324,7 +753,8 @@ function renderDataCorrelations(payload) {
     const item = document.createElement("div");
     item.className = row.correlation >= 0 ? "data-correlation-row is-positive" : "data-correlation-row is-negative";
     const label = document.createElement("span");
-    label.textContent = `${compactTitle(row.label_a, 28)} / ${compactTitle(row.label_b, 28)}`;
+    label.textContent = `${compactTitle(row.label_a, 20)} / ${compactTitle(row.label_b, 20)}`;
+    label.title = `${row.label_a} / ${row.label_b}`;
     const bar = document.createElement("i");
     bar.style.width = `${Math.max(4, row.abs_correlation * 100)}%`;
     const value = document.createElement("strong");
@@ -336,19 +766,27 @@ function renderDataCorrelations(payload) {
 
 function renderFeatureImportance(payload) {
   clearElement(dataFeatureImportance);
+  clearElement(featureDetailPanel);
   const rows = payload.feature_importance || [];
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem dados-chave suficientes nesta amostra.";
+    empty.textContent = "Poucos dados-chave nesta amostra.";
     dataFeatureImportance.appendChild(empty);
+    const detail = document.createElement("p");
+    detail.className = "meta";
+    detail.textContent = "Escolhe um dataset mais rico ou aumenta a amostra.";
+    featureDetailPanel.append(detail);
     return;
   }
   const maxScore = Math.max(...rows.map((row) => row.score), 1);
+  const selected = rows.find((row) => row.field === state.selectedFeatureKey) || rows[0];
+  state.selectedFeatureKey = selected.field;
   rows.slice(0, 9).forEach((row, index) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `feature-row is-${row.kind} is-${row.selection}`;
+    if (row.field === state.selectedFeatureKey) item.classList.add("is-active");
     const rank = document.createElement("span");
     rank.className = "feature-rank";
     rank.textContent = String(index + 1).padStart(2, "0");
@@ -364,12 +802,40 @@ function renderFeatureImportance(payload) {
     score.textContent = formatDecimal(row.score, 1);
     item.append(rank, body, score);
     item.addEventListener("click", () => {
-      analyticsSearch.value = row.field;
-      state.search = row.field;
-      renderAll();
+      state.selectedFeatureKey = row.field;
+      renderFeatureImportance(payload);
     });
     dataFeatureImportance.appendChild(item);
   });
+  renderFeatureDetail(selected);
+}
+
+function renderFeatureDetail(row) {
+  clearElement(featureDetailPanel);
+  if (!row) return;
+  const title = document.createElement("strong");
+  title.textContent = row.label || row.field;
+  const meta = document.createElement("p");
+  meta.className = "meta";
+  meta.textContent = `${row.kind} · ${row.selection === "forte" ? "sinal forte" : "sinal exploratório"} · score ${formatDecimal(row.score, 1)}`;
+  const drivers = document.createElement("div");
+  drivers.className = "feature-driver-list";
+  (row.drivers || ["sinal exploratório"]).forEach((driver) => {
+    const chip = document.createElement("span");
+    chip.textContent = driver;
+    drivers.appendChild(chip);
+  });
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "ghost-button";
+  action.textContent = "Filtrar relações";
+  action.addEventListener("click", () => {
+    analyticsSearch.value = row.field;
+    state.search = row.field;
+    invalidateFilterCache();
+    setActiveTab("semantic");
+  });
+  featureDetailPanel.append(title, meta, drivers, action);
 }
 
 function renderPcaChart(payload) {
@@ -379,9 +845,9 @@ function renderPcaChart(payload) {
   const height = 280;
   dataPcaChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
   if (!pca.available || !pca.loadings?.length) {
-    dataPcaMeta.textContent = pca.reason || "PCA indisponível para esta amostra.";
+    dataPcaMeta.textContent = pca.reason || "PCA indisponível para esta amostra. Usa Dataset rico para procurar uma amostra com pelo menos duas medidas.";
     const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
-    empty.textContent = "PCA requer pelo menos duas medidas numéricas.";
+    empty.textContent = "PCA requer duas ou mais medidas numéricas.";
     dataPcaChart.appendChild(empty);
     return;
   }
@@ -411,10 +877,19 @@ function renderPcaChart(payload) {
     const x = cx + item.pc1 * scale;
     const y = cy - item.pc2 * scale;
     const group = svgNode("g", {class: "pca-point", transform: `translate(${x}, ${y})`});
+    const titleNode = svgNode("title");
+    titleNode.textContent = `${item.label || item.field}: PC1 ${formatDecimal(item.pc1, 2)}, PC2 ${formatDecimal(item.pc2, 2)}, magnitude ${formatDecimal(item.magnitude, 2)}`;
+    group.appendChild(titleNode);
     group.appendChild(svgNode("circle", {r: Math.max(5, Math.min(14, item.magnitude * 12))}));
     const label = svgNode("text", {x: 10, y: 4});
     label.textContent = compactTitle(item.label, 20);
     group.appendChild(label);
+    group.addEventListener("click", () => {
+      analyticsSearch.value = item.field || item.label;
+      state.search = item.field || item.label;
+      invalidateFilterCache();
+      setActiveTab("semantic");
+    });
     dataPcaChart.appendChild(group);
   });
 }
@@ -425,7 +900,7 @@ function renderNumericProfiles(payload) {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem medidas numéricas consistentes nesta amostra.";
+    empty.textContent = "Sem medidas numéricas consistentes.";
     dataNumericProfiles.appendChild(empty);
     return;
   }
@@ -459,7 +934,7 @@ function renderCategoricalProfiles(payload) {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem dimensões categóricas úteis nesta amostra.";
+    empty.textContent = "Sem dimensões úteis nesta amostra.";
     dataCategoricalProfiles.appendChild(empty);
     return;
   }
@@ -497,7 +972,7 @@ function renderDataTrend(payload) {
   dataTrendChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
   if (!trend || !trend.points?.length) {
     const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
-    empty.textContent = "Sem eixo temporal suficiente para tendência.";
+    empty.textContent = "Tendência indisponível: faltam períodos.";
     dataTrendChart.appendChild(empty);
     return;
   }
@@ -506,10 +981,10 @@ function renderDataTrend(payload) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const left = 44;
-  const right = width - 22;
-  const top = 24;
-  const bottom = height - 42;
+  const left = 66;
+  const right = width - 42;
+  const top = 48;
+  const bottom = height - 54;
   const xStep = points.length > 1 ? (right - left) / (points.length - 1) : 0;
   const coords = points.map((point, index) => ({
     x: left + index * xStep,
@@ -519,23 +994,310 @@ function renderDataTrend(payload) {
   const axis = svgNode("g", {class: "data-trend-axis"});
   axis.appendChild(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom}));
   axis.appendChild(svgNode("line", {x1: left, y1: top, x2: left, y2: bottom}));
-  const title = svgNode("text", {x: left, y: 16});
-  title.textContent = compactTitle(trend.label, 48);
+  const title = svgNode("text", {x: left, y: 22});
+  title.textContent = compactTitle(trend.label, 42);
   axis.appendChild(title);
+  const minLabel = svgNode("text", {x: left - 8, y: bottom, "text-anchor": "end"});
+  minLabel.textContent = formatDecimal(min, 1);
+  const maxLabel = svgNode("text", {x: left - 8, y: top + 4, "text-anchor": "end"});
+  maxLabel.textContent = formatDecimal(max, 1);
+  axis.append(minLabel, maxLabel);
   dataTrendChart.appendChild(axis);
+
+  if (points.length === 2) {
+    const [first, last] = points;
+    const delta = last.avg - first.avg;
+    const pct = first.avg ? (delta / Math.abs(first.avg)) * 100 : null;
+    const note = svgNode("text", {x: right, y: 22, "text-anchor": "end", class: "data-trend-note"});
+    note.textContent = `2 pontos · variação ${delta >= 0 ? "+" : ""}${formatDecimal(delta, 1)}${pct === null ? "" : ` (${delta >= 0 ? "+" : ""}${formatDecimal(pct, 1)}%)`}`;
+    dataTrendChart.appendChild(note);
+  }
+
   const path = svgNode("path", {
-    class: "data-trend-line",
+    class: `data-trend-line ${points.length <= 2 ? "is-sparse" : ""}`.trim(),
     d: coords.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
   });
   dataTrendChart.appendChild(path);
   coords.forEach((coord) => {
     const group = svgNode("g", {class: "data-trend-point", transform: `translate(${coord.x}, ${coord.y})`});
+    const tooltip = svgNode("title");
+    tooltip.textContent = `${coord.point.period}: ${formatDecimal(coord.point.avg, 2)} · ${formatNumber(coord.point.count || 0)} registos`;
+    group.appendChild(tooltip);
     group.appendChild(svgNode("circle", {r: 4}));
-    const label = svgNode("text", {"text-anchor": "middle", y: 19});
+    const label = svgNode("text", {"text-anchor": coord.x > width - 90 ? "end" : "middle", y: 19});
     label.textContent = coord.point.period;
     group.appendChild(label);
     dataTrendChart.appendChild(group);
   });
+}
+
+function bestPredictiveTrend(payload) {
+  const trends = (payload?.trends || []).filter((trend) => (trend.points || []).length >= 2);
+  return trends
+    .slice()
+    .sort((a, b) => (b.points?.length || 0) - (a.points?.length || 0))
+    [0] || null;
+}
+
+function predictiveEligibility(trend) {
+  const points = (trend?.points || [])
+    .map((point, index) => ({
+      x: index,
+      period: point.period,
+      value: Number(point.avg),
+      observed: true,
+    }))
+    .filter((point) => Number.isFinite(point.value));
+  if (points.length < 4) {
+    return {ok: false, points, reason: "Poucos períodos para projetar com decência."};
+  }
+  if (points.length > 50) {
+    return {ok: false, points, reason: "Série longa: precisa de agregação, sazonalidade ou modelo próprio."};
+  }
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const mean = values.reduce((acc, value) => acc + value, 0) / values.length;
+  const span = max - min;
+  if (!span || Math.abs(span / (Math.abs(mean) || 1)) < 0.015) {
+    return {ok: false, points, reason: "Variação baixa: a projeção não acrescenta valor."};
+  }
+  return {ok: true, points, reason: ""};
+}
+
+function forecastFromTrend(trend) {
+  const eligibility = predictiveEligibility(trend);
+  const points = eligibility.points;
+  if (!eligibility.ok) return {available: false, label: trend?.label || "Série temporal", points, reason: eligibility.reason};
+  const n = points.length;
+  const sumX = points.reduce((acc, point) => acc + point.x, 0);
+  const sumY = points.reduce((acc, point) => acc + point.value, 0);
+  const sumXY = points.reduce((acc, point) => acc + point.x * point.value, 0);
+  const sumXX = points.reduce((acc, point) => acc + point.x * point.x, 0);
+  const denominator = (n * sumXX) - (sumX * sumX) || 1;
+  const slope = ((n * sumXY) - (sumX * sumY)) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+  const residuals = points.map((point) => Math.abs(point.value - (intercept + slope * point.x)));
+  const error = residuals.reduce((acc, value) => acc + value, 0) / residuals.length;
+  const forecast = Array.from({length: 3}, (_, index) => {
+    const x = points.length + index;
+    return {
+      x,
+      period: `+${index + 1}`,
+      value: intercept + slope * x,
+      observed: false,
+    };
+  });
+  return {
+    available: true,
+    label: trend.label,
+    points: [...points, ...forecast],
+    slope,
+    error,
+    last: points.at(-1),
+  };
+}
+
+function predictiveConfidence(payload, forecast) {
+  let score = 0;
+  if ((payload?.sample_size || 0) >= 60) score += 2;
+  if ((payload?.numeric_profiles || []).length >= 3) score += 2;
+  if (forecast?.available && forecast.points?.filter((point) => point.observed).length >= 4) score += 3;
+  if ((payload?.correlations || []).length) score += 1;
+  if ((payload?.categorical_profiles || []).length) score += 1;
+  if (score >= 7) return "média";
+  if (score >= 4) return "baixa-média";
+  return "baixa";
+}
+
+function clearPredictive() {
+  [predictiveKpis, predictiveForecastChart, predictiveDrivers, predictiveScenarios, predictiveRisk].forEach((node) => {
+    if (node) clearElement(node);
+  });
+}
+
+function addPredictiveKpi(label, value, detail) {
+  const card = document.createElement("div");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const small = document.createElement("small");
+  small.textContent = detail;
+  card.append(span, strong, small);
+  predictiveKpis.appendChild(card);
+}
+
+function renderPredictiveForecast(forecast) {
+  clearElement(predictiveForecastChart);
+  const width = Math.max(520, predictiveForecastChart.closest(".predictive-chart-wrap")?.clientWidth || 520);
+  const height = 270;
+  predictiveForecastChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  if (!forecast?.available) {
+    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
+    empty.textContent = forecast?.reason || "Projeção linear não aplicável.";
+    predictiveForecastChart.appendChild(empty);
+    if (forecast?.points?.length) {
+      const note = svgNode("text", {x: width / 2, y: (height / 2) + 24, "text-anchor": "middle", fill: "#657489"});
+      note.textContent = `${forecast.points.length} períodos observados.`;
+      predictiveForecastChart.appendChild(note);
+    }
+    return;
+  }
+  const values = forecast.points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const left = 58;
+  const right = width - 32;
+  const top = 34;
+  const bottom = height - 46;
+  const xStep = forecast.points.length > 1 ? (right - left) / (forecast.points.length - 1) : 0;
+  const coords = forecast.points.map((point, index) => ({
+    x: left + index * xStep,
+    y: bottom - ((point.value - min) / span) * (bottom - top),
+    point,
+  }));
+  const axis = svgNode("g", {class: "predictive-axis"});
+  axis.append(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom}), svgNode("line", {x1: left, y1: top, x2: left, y2: bottom}));
+  const title = svgNode("text", {x: left, y: 20});
+  title.textContent = compactTitle(forecast.label, 58);
+  axis.appendChild(title);
+  predictiveForecastChart.appendChild(axis);
+
+  const observed = coords.filter((coord) => coord.point.observed);
+  const projected = coords.filter((coord, index) => !coord.point.observed || index >= observed.length - 1);
+  predictiveForecastChart.appendChild(svgNode("path", {
+    class: "predictive-line observed",
+    d: observed.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+  }));
+  predictiveForecastChart.appendChild(svgNode("path", {
+    class: "predictive-line projected",
+    d: projected.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+  }));
+  coords.forEach((coord) => {
+    const group = svgNode("g", {class: `predictive-point ${coord.point.observed ? "observed" : "projected"}`, transform: `translate(${coord.x}, ${coord.y})`});
+    const titleNode = svgNode("title");
+    titleNode.textContent = `${coord.point.period}: ${formatDecimal(coord.point.value, 2)}`;
+    group.append(titleNode, svgNode("circle", {r: coord.point.observed ? 4 : 3.5}));
+    const label = svgNode("text", {y: 18, "text-anchor": coord.x > width - 70 ? "end" : "middle"});
+    label.textContent = coord.point.period;
+    group.appendChild(label);
+    predictiveForecastChart.appendChild(group);
+  });
+}
+
+function renderPredictiveDrivers(payload) {
+  clearElement(predictiveDrivers);
+  const rows = [
+    ...(payload.feature_importance || []).slice(0, 4).map((row) => ({
+      label: row.label || row.field,
+      value: formatDecimal(row.score || 0, 1),
+      detail: `${row.selection || "sinal"} · ${(row.drivers || []).slice(0, 2).join(" · ") || "driver exploratório"}`,
+    })),
+    ...(payload.correlations || []).slice(0, 3).map((row) => ({
+      label: `${row.label_a} / ${row.label_b}`,
+      value: formatDecimal(row.correlation, 2),
+      detail: `${formatNumber(row.samples || 0)} pares · correlação observada`,
+    })),
+  ].slice(0, 7);
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem drivers fortes nesta amostra.";
+    predictiveDrivers.appendChild(empty);
+    return;
+  }
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "predictive-list-item";
+    const strong = document.createElement("strong");
+    strong.textContent = compactTitle(row.label, 58);
+    strong.title = row.label;
+    const value = document.createElement("em");
+    value.textContent = row.value;
+    const small = document.createElement("small");
+    small.textContent = row.detail;
+    item.append(strong, value, small);
+    predictiveDrivers.appendChild(item);
+  });
+}
+
+function renderPredictiveScenarios(forecast) {
+  clearElement(predictiveScenarios);
+  if (!forecast?.available) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = forecast?.reason || "Cenários desligados para evitar falsa precisão.";
+    predictiveScenarios.appendChild(empty);
+    return;
+  }
+  const last = forecast.last?.value || 0;
+  const baseline = forecast.points.at(-1)?.value || last;
+  const scenarios = [
+    ["Conservador", baseline - forecast.error, "projeta com erro médio subtraído"],
+    ["Base", baseline, "continua o declive observado"],
+    ["Stress", baseline + forecast.error, "projeta com erro médio somado"],
+  ];
+  scenarios.forEach(([label, value, detail]) => {
+    const card = document.createElement("div");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = formatDecimal(value, 1);
+    const small = document.createElement("small");
+    small.textContent = detail;
+    card.append(span, strong, small);
+    predictiveScenarios.appendChild(card);
+  });
+}
+
+function renderPredictiveRisk(payload, forecast) {
+  clearElement(predictiveRisk);
+  const risks = [];
+  if (!forecast?.available) risks.push(["Sem projeção linear", forecast?.reason || "Não há série temporal elegível."]);
+  if ((payload.sample_size || 0) < 40) risks.push(["Amostra curta", "A projeção pode oscilar com poucos registos."]);
+  if ((payload.numeric_profiles || []).length < 2) risks.push(["Poucas medidas", "Faltam variáveis contínuas para comparar drivers."]);
+  if (!(payload.correlations || []).length) risks.push(["Sem correlações", "O modelo não tem pares fortes para explicar variação."]);
+  risks.push(["Uso correto", "Exploratório: serve para triagem, não para decisão causal."]);
+  risks.forEach(([label, detail]) => {
+    const item = document.createElement("div");
+    item.className = "predictive-list-item";
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const small = document.createElement("small");
+    small.textContent = detail;
+    item.append(strong, small);
+    predictiveRisk.appendChild(item);
+  });
+}
+
+function renderPredictiveAnalytics() {
+  clearPredictive();
+  const payload = state.dataPayload;
+  if (!payload) {
+    predictiveMeta.textContent = "Escolhe ou analisa um dataset em Dados reais para ativar a projeção.";
+    if (state.selectedDataDataset && state._predictiveLoadDataset !== state.selectedDataDataset) {
+      state._predictiveLoadDataset = state.selectedDataDataset;
+      loadDataAnalytics().catch(showDataError);
+    }
+    addPredictiveKpi("Estado", "sem dados", "usa a amostra real");
+    return;
+  }
+  state._predictiveLoadDataset = "";
+  const trend = bestPredictiveTrend(payload);
+  const forecast = forecastFromTrend(trend);
+  const confidence = predictiveConfidence(payload, forecast);
+  const slope = forecast?.available ? forecast.slope : null;
+  predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · confiança ${confidence}.`;
+  addPredictiveKpi("Série", trend ? compactTitle(trend.label, 26) : "indisponível", trend ? `${trend.points.length} períodos` : "sem eixo temporal");
+  addPredictiveKpi("Projeção", forecast?.available ? "ativa" : "não aplicável", forecast?.available ? "linear curta" : (forecast?.reason || "sem série elegível"));
+  addPredictiveKpi("Tendência", slope === null ? "-" : `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)}`, "variação média por período");
+  addPredictiveKpi("Drivers", formatNumber((payload.feature_importance || []).length), "Boruta-like exploratório");
+  renderPredictiveForecast(forecast);
+  renderPredictiveDrivers(payload);
+  renderPredictiveScenarios(forecast);
+  renderPredictiveRisk(payload, forecast);
 }
 
 function addInsightCard({label, value, meta, tone = "", active = false, onClick}) {
@@ -824,12 +1586,777 @@ function summarizePublicHealthCells(correlations) {
   return cells;
 }
 
+function createSmallButton(text, onClick, className = "ghost-button") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function renderPublicHealthCockpit(rows) {
+  const visibleRows = rows.slice(0, state.publicHealthRenderLimit);
+  if (!state.selectedPublicHealthKey && rows.length) {
+    state.selectedPublicHealthKey = rows[0].key;
+  }
+  const selected = rows.find((row) => row.key === state.selectedPublicHealthKey) || rows[0];
+  renderPublicHealthKpis(rows);
+  renderPublicHealthLayerControls();
+  renderPublicHealthPriorityList(visibleRows, rows.length);
+  renderPublicHealthMap(rows);
+  renderPublicHealthDecisionDetail(selected);
+  renderPublicHealthQuestions(rows);
+  renderPublicHealthPriorityTable(rows, rows.length);
+}
+
+function renderPublicHealthKpis(rows) {
+  clearElement(publicHealthKpis);
+  const priorityCount = rows.filter((row) => row.decision === "Priorizar").length;
+  const nationalCount = rows.filter((row) => row.geo.id === "nacional").length;
+  const avgPriority = rows.length ? rows.reduce((sum, row) => sum + row.priority, 0) / rows.length : 0;
+  const geoCount = new Set(rows.map((row) => row.geo.id)).size;
+  [
+    ["Score médio", formatDecimal(avgPriority, 0)],
+    ["Priorizar", formatNumber(priorityCount)],
+    ["Âmbitos", formatNumber(geoCount)],
+    ["Sem região", formatNumber(nationalCount)],
+  ].forEach(([label, value]) => {
+    const card = document.createElement("div");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    card.append(span, strong);
+    publicHealthKpis.appendChild(card);
+  });
+}
+
+function renderPublicHealthLayerControls() {
+  clearElement(publicHealthLayerControls);
+  PUBLIC_HEALTH_LAYERS.forEach(([key, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = key === state.activePublicHealthLayer ? "is-active" : "";
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      state.activePublicHealthLayer = key;
+      renderPublicHealthMatrix();
+    });
+    publicHealthLayerControls.appendChild(button);
+  });
+}
+
+function renderPublicHealthPriorityList(rows, total) {
+  clearElement(publicHealthPriorityList);
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem prioridades para os filtros atuais.";
+    publicHealthPriorityList.appendChild(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  rows.slice(0, 12).forEach((row, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `priority-card tone-${decisionTone(row.decision)}`;
+    if (row.key === state.selectedPublicHealthKey) button.classList.add("is-active");
+    const head = document.createElement("div");
+    const rank = document.createElement("span");
+    rank.textContent = `#${index + 1}`;
+    const decision = document.createElement("em");
+    decision.textContent = row.decision;
+    head.append(rank, decision);
+    const title = document.createElement("strong");
+    title.textContent = `${compactTitle(row.item.source_title, 34)} / ${compactTitle(row.item.target_title, 34)}`;
+    title.title = `${row.item.source_title} / ${row.item.target_title}`;
+    const meta = document.createElement("small");
+    const scope = row.geo.id === "nacional" ? "Nacional · sem match regional" : `${row.geo.label} · match regional`;
+    meta.textContent = `${scope} · score ${row.priority} · viabilidade ${formatDecimal(row.viability, 0)}`;
+    button.append(head, title, meta);
+    button.addEventListener("click", () => {
+      state.selectedPublicHealthKey = row.key;
+      renderPublicHealthMatrix();
+    });
+    fragment.appendChild(button);
+  });
+  publicHealthPriorityList.appendChild(fragment);
+  if (rows.length < total) {
+    publicHealthPriorityList.appendChild(createSmallButton(
+      `Mostrar mais ${Math.min(40, total - rows.length)} prioridades`,
+      () => {
+        state.publicHealthRenderLimit = Math.min(total, state.publicHealthRenderLimit + 40);
+        renderPublicHealthMatrix();
+      },
+      "show-more-button",
+    ));
+  }
+}
+
+function mapLayerValue(entry) {
+  if (state.activePublicHealthLayer === "impact") return entry.avgImpact / 3;
+  if (state.activePublicHealthLayer === "likelihood") return entry.avgLikelihood / 3;
+  if (state.activePublicHealthLayer === "risk") return Math.min(1, entry.avgRisk / 10);
+  if (state.activePublicHealthLayer === "entities") return Math.min(1, entry.entities / Math.max(1, entry.count));
+  return Math.min(1, entry.avgPriority / 90);
+}
+
+function renderNationalSummary(rows, nationalEntry) {
+  if (!publicHealthNationalSummary) return;
+  clearElement(publicHealthNationalSummary);
+  const selected = rows.find((row) => row.key === state.selectedPublicHealthKey);
+  const nationalRows = rows.filter((row) => row.geo.id === "nacional");
+  const nationalRatio = rows.length ? nationalRows.length / rows.length : 0;
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `national-summary-card ${nationalRatio >= 0.7 ? "is-warning" : ""}`.trim();
+  if (selected?.geo.id === "nacional") card.classList.add("is-active");
+  const label = document.createElement("span");
+  label.textContent = nationalRatio >= 0.7 ? "Cobertura regional fraca" : "Vista nacional";
+  const value = document.createElement("strong");
+  value.textContent = `${formatNumber(nationalEntry?.count || 0)} relações sem região`;
+  const detail = document.createElement("small");
+  detail.textContent = nationalRatio >= 0.7
+    ? "A maioria das hipóteses não tem match territorial explícito. O mapa mostra só o subconjunto regional; usa a matriz abaixo para separar o backlog nacional."
+    : "Não aparece no mapa: classificar por ULS, hospital, ARS ou região antes de usar como layer regional.";
+  card.append(label, value, detail);
+  card.addEventListener("click", () => {
+    const candidate = nationalRows[0];
+    if (candidate) {
+      state.selectedPublicHealthKey = candidate.key;
+      renderPublicHealthMatrix();
+    }
+  });
+  publicHealthNationalSummary.appendChild(card);
+}
+
+function renderPublicHealthMap(rows) {
+  clearElement(publicHealthMap);
+  const width = 500;
+  const height = 510;
+  publicHealthMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const layerTitle = PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto";
+  const title = svgNode("text", {x: 22, y: 28, class: "health-map-title"});
+  title.textContent = `Cartograma · layer: ${layerTitle}`;
+  publicHealthMap.appendChild(title);
+  const subtitle = svgNode("text", {x: 22, y: 48, class: "health-map-subtitle"});
+  subtitle.textContent = "Blocos aproximados: regiões de saúde e ilhas. Nacional não é região no mapa.";
+  publicHealthMap.appendChild(subtitle);
+
+  const selected = rows.find((row) => row.key === state.selectedPublicHealthKey);
+  const geoRows = aggregateHealthGeo(rows);
+  const regionalRows = geoRows.filter((entry) => entry.id !== "nacional");
+  const nationalEntry = geoRows.find((entry) => entry.id === "nacional");
+  renderNationalSummary(rows, nationalEntry);
+  regionalRows.forEach((entry) => {
+    const value = mapLayerValue(entry);
+    const level = Math.max(0, Math.min(5, Math.ceil(value * 5)));
+    const group = svgNode("g", {
+      class: `health-map-region layer-${state.activePublicHealthLayer} level-${level} ${selected?.geo.id === entry.id ? "is-selected" : ""}`.trim(),
+    });
+    const titleNode = svgNode("title");
+    titleNode.textContent = `${entry.label}: ${formatNumber(entry.count)} matches regionais · score médio ${formatDecimal(entry.avgPriority, 0)}`;
+    group.appendChild(titleNode);
+    group.appendChild(svgNode("rect", {x: entry.x, y: entry.y, width: entry.w, height: entry.h, rx: 8}));
+    const labelX = entry.labelX || entry.x + entry.w / 2;
+    const labelY = entry.labelY || entry.y + entry.h / 2;
+    const label = svgNode("text", {x: labelX, y: labelY - 3, "text-anchor": "middle"});
+    label.textContent = compactTitle(entry.label, entry.id === "lisboa" ? 15 : 18);
+    const count = svgNode("text", {x: labelX, y: labelY + 15, "text-anchor": "middle", class: "health-map-count"});
+    count.textContent = entry.count ? `${formatNumber(entry.count)} match` : "sem match";
+    group.append(label, count);
+    group.addEventListener("click", () => {
+      const candidate = rows.find((row) => row.geo.id === entry.id);
+      if (candidate) {
+        state.selectedPublicHealthKey = candidate.key;
+        renderPublicHealthMatrix();
+      }
+    });
+    publicHealthMap.appendChild(group);
+  });
+
+  const dotCounts = new Map();
+  rows.slice(0, 48).forEach((row) => {
+    const geo = row.geo;
+    if (geo.id === "nacional") return;
+    const localIndex = dotCounts.get(geo.id) || 0;
+    const localLimit = geo.w < 70 ? 2 : 5;
+    if (localIndex >= localLimit) return;
+    dotCounts.set(geo.id, localIndex + 1);
+    const columns = Math.min(3, Math.max(1, Math.floor(geo.w / 34)));
+    const col = localIndex % columns;
+    const rowIndex = Math.floor(localIndex / columns);
+    const x = geo.x + 16 + col * Math.max(18, (geo.w - 32) / Math.max(1, columns - 1));
+    const y = geo.id === "nacional" ? geo.y + geo.h - 9 - rowIndex * 13 : geo.y + geo.h - 16 - rowIndex * 15;
+    const dot = svgNode("circle", {
+      cx: x,
+      cy: y,
+      r: row.decision === "Priorizar" ? 5 : 3.6,
+      class: `health-map-dot tone-${decisionTone(row.decision)} ${row.key === state.selectedPublicHealthKey ? "is-selected" : ""}`.trim(),
+    });
+    const titleNode = svgNode("title");
+    titleNode.textContent = `${row.decision}: ${row.priority} · ${row.item.source_title} / ${row.item.target_title}`;
+    dot.appendChild(titleNode);
+    dot.addEventListener("click", () => {
+      state.selectedPublicHealthKey = row.key;
+      renderPublicHealthMatrix();
+    });
+    publicHealthMap.appendChild(dot);
+  });
+
+  const legend = svgNode("g", {class: "health-map-legend"});
+  [
+    ["Cor", "layer ativo"],
+    ["Bloco", "região SNS"],
+    ["Ponto", "hipótese regional"],
+  ].forEach(([label, value], index) => {
+    const x = 22 + index * 145;
+    const y = 488;
+    legend.appendChild(svgNode("rect", {x, y: y - 10, width: 10, height: 10, rx: 2}));
+    const text = svgNode("text", {x: x + 16, y, class: "health-map-legend-text"});
+    text.textContent = `${label}: ${value}`;
+    legend.appendChild(text);
+  });
+  publicHealthMap.appendChild(legend);
+}
+
+function renderPublicHealthDecisionDetail(row) {
+  clearElement(publicHealthDecisionDetail);
+  if (!row) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Abre uma prioridade para ver drivers.";
+    publicHealthDecisionDetail.appendChild(empty);
+    return;
+  }
+  const title = document.createElement("strong");
+  title.textContent = row.decision;
+  title.className = `decision-title tone-${decisionTone(row.decision)}`;
+  const relation = document.createElement("p");
+  relation.textContent = `${row.item.source_title} / ${row.item.target_title}`;
+  const scope = document.createElement("p");
+  scope.className = "decision-scope";
+  scope.textContent = row.geo.id === "nacional"
+    ? "Âmbito: vista nacional, sem match regional detetado."
+    : `Âmbito: ${row.geo.label}, com match regional.`;
+  const reason = document.createElement("p");
+  reason.className = "meta";
+  reason.textContent = row.reason;
+  const drivers = document.createElement("div");
+  drivers.className = "decision-driver-grid";
+  [
+    ["Magnitude", row.magnitude],
+    ["Gravidade", row.severity],
+    ["Tendência", row.trend],
+    ["Inequidade", row.inequity],
+    ["Viabilidade", row.viability],
+    ["PNS", row.alignment],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = formatDecimal(value, 0);
+    item.append(span, strong);
+    drivers.appendChild(item);
+  });
+  const validation = document.createElement("p");
+  validation.className = "meta";
+  const keys = (row.item.join_recipe?.suggested_keys || row.item.shared_fields || []).slice(0, 4).join(", ") || "chave a validar";
+  validation.textContent = `Validação antes do uso: confirmar tipo, nulos, duplicados, cardinalidade e granularidade das chaves (${keys}).`;
+  publicHealthDecisionDetail.append(title, relation, scope, reason, drivers, validation);
+}
+
+function renderPublicHealthQuestions(rows) {
+  clearElement(publicHealthQuestions);
+  const questions = [];
+  rows.slice(0, 8).forEach((row) => {
+    const question = questionForPriority(row);
+    if (!questions.includes(question)) questions.push(question);
+  });
+  if (!questions.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem perguntas geradas para os filtros atuais.";
+    publicHealthQuestions.appendChild(empty);
+    return;
+  }
+  questions.slice(0, 6).forEach((question) => {
+    const item = document.createElement("div");
+    item.className = "public-health-question";
+    item.textContent = question;
+    publicHealthQuestions.appendChild(item);
+  });
+}
+
+function renderPublicHealthPriorityTable(rows, total) {
+  clearElement(publicHealthHypothesisMatrix);
+  clearElement(publicHealthHypothesisDetail);
+  const nationalCount = rows.filter((row) => row.geo.id === "nacional").length;
+  const regionalCount = rows.length - nationalCount;
+  publicHealthTableMeta.textContent = `${formatNumber(total)} hipóteses · ${formatNumber(regionalCount)} regionais · ${formatNumber(nationalCount)} sem match territorial.`;
+
+  const decisions = ["Priorizar", "Acompanhar", "Explorar", "Validar antes"];
+  const scopes = [
+    ["regional", "Regional"],
+    ["nacional", "Sem região"],
+  ];
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const scope = row.geo.id === "nacional" ? "nacional" : "regional";
+    const key = `${row.decision}|${scope}`;
+    const bucket = buckets.get(key) || {decision: row.decision, scope, rows: [], score: 0, risk: 0};
+    bucket.rows.push(row);
+    bucket.score += row.priority;
+    bucket.risk += row.risk;
+    buckets.set(key, bucket);
+  });
+  const fallbackKey = [...buckets.values()]
+    .sort((a, b) => b.rows.length - a.rows.length || (b.score / Math.max(1, b.rows.length)) - (a.score / Math.max(1, a.rows.length)))[0];
+  if (!state.selectedPublicHealthMatrixCell || !buckets.has(state.selectedPublicHealthMatrixCell)) {
+    state.selectedPublicHealthMatrixCell = fallbackKey ? `${fallbackKey.decision}|${fallbackKey.scope}` : "";
+  }
+
+  const corner = document.createElement("div");
+  corner.className = "hypothesis-axis hypothesis-corner";
+  corner.textContent = "Leitura × âmbito";
+  publicHealthHypothesisMatrix.appendChild(corner);
+  scopes.forEach(([, label]) => {
+    const axis = document.createElement("div");
+    axis.className = "hypothesis-axis";
+    axis.textContent = label;
+    publicHealthHypothesisMatrix.appendChild(axis);
+  });
+  decisions.forEach((decision) => {
+    const axis = document.createElement("div");
+    axis.className = "hypothesis-axis";
+    axis.textContent = decision;
+    publicHealthHypothesisMatrix.appendChild(axis);
+    scopes.forEach(([scope, label]) => {
+      const key = `${decision}|${scope}`;
+      const bucket = buckets.get(key);
+      const count = bucket?.rows.length || 0;
+      const avgScore = bucket ? bucket.score / Math.max(1, count) : 0;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `hypothesis-cell tone-${decisionTone(decision)} ${state.selectedPublicHealthMatrixCell === key ? "is-active" : ""}`.trim();
+      const strong = document.createElement("strong");
+      strong.textContent = formatNumber(count);
+      const span = document.createElement("span");
+      span.textContent = count ? `${label} · score ${formatDecimal(avgScore, 0)}` : "sem hipóteses";
+      button.append(strong, span);
+      button.disabled = count === 0;
+      button.addEventListener("click", () => {
+        state.selectedPublicHealthMatrixCell = key;
+        const first = bucket?.rows[0];
+        if (first) state.selectedPublicHealthKey = first.key;
+        renderPublicHealthMatrix();
+      });
+      publicHealthHypothesisMatrix.appendChild(button);
+    });
+  });
+
+  renderHypothesisCellDetail(buckets.get(state.selectedPublicHealthMatrixCell), rows);
+}
+
+function renderHypothesisCellDetail(bucket, allRows) {
+  clearElement(publicHealthHypothesisDetail);
+  if (!bucket || !bucket.rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Seleciona uma célula com hipóteses.";
+    publicHealthHypothesisDetail.appendChild(empty);
+    return;
+  }
+  const scopeLabel = bucket.scope === "nacional" ? "sem match territorial" : "com match regional";
+  const title = document.createElement("strong");
+  title.className = "hypothesis-detail-title";
+  title.textContent = `${bucket.decision} · ${scopeLabel}`;
+  const ratio = document.createElement("p");
+  ratio.className = "meta";
+  ratio.textContent = `${formatNumber(bucket.rows.length)} de ${formatNumber(allRows.length)} hipóteses. Score médio ${formatDecimal(bucket.score / bucket.rows.length, 0)}.`;
+  const explanation = document.createElement("p");
+  explanation.className = "decision-scope";
+  explanation.textContent = bucket.scope === "nacional"
+    ? "Estas relações podem ser relevantes, mas ainda não devem alimentar o mapa. Primeiro é preciso confirmar se existe campo de ULS, hospital, ARS, concelho/distrito ou região nos dados de origem."
+    : "Estas relações já têm sinal territorial suficiente para análise regional inicial. Ainda assim, valida granularidade, duplicados e período antes de cruzar datasets.";
+  const list = document.createElement("div");
+  list.className = "hypothesis-detail-list";
+  bucket.rows.slice(0, 6).forEach((row) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = row.key === state.selectedPublicHealthKey ? "is-active" : "";
+    const strong = document.createElement("strong");
+    strong.textContent = `${compactTitle(row.item.source_title, 34)} / ${compactTitle(row.item.target_title, 34)}`;
+    const small = document.createElement("small");
+    small.textContent = `${row.reason} · validação: ${(row.item.risk_flags || []).join(", ") || "tipo, nulos, duplicados, cardinalidade"}`;
+    button.append(strong, small);
+    button.addEventListener("click", () => {
+      state.selectedPublicHealthKey = row.key;
+      renderPublicHealthMatrix();
+    });
+    list.appendChild(button);
+  });
+  publicHealthHypothesisDetail.append(title, ratio, explanation, list);
+}
+
+function pnsAxesForItem(item) {
+  const text = normalizeSearchText([
+    item.source_title,
+    item.target_title,
+    item.source_theme,
+    item.target_theme,
+    ...(item.shared_fields || []),
+    ...((item.public_health_model || {}).impact?.drivers || []),
+    ...((item.public_health_model || {}).matched_areas || []),
+  ].join(" "));
+  return LOCAL_PNS_AXES.filter(([, pattern]) => pattern.test(text)).map(([label]) => label);
+}
+
+function localPlanRows() {
+  return publicHealthPriorityRows().map((row) => {
+    const item = row.item;
+    const model = item.public_health_model || {};
+    const dimensionKinds = item.dimension_kinds || [];
+    const suggestedKeys = item.join_recipe?.suggested_keys || item.shared_fields || [];
+    const confidenceScore = item.confidence === "alta" ? 18 : item.confidence === "media" ? 10 : 4;
+    const riskPenalty = Math.min(22, (item.risk_flags || []).length * 7 + row.risk);
+    const linkabilityScore = Math.max(0, Math.min(100,
+      Number(item.semantic_score || 0) * 6
+      + confidenceScore
+      + Math.min(20, suggestedKeys.length * 5)
+      - riskPenalty,
+    ));
+    const territorialSignals = [
+      dimensionKinds.includes("territorial"),
+      dimensionKinds.includes("entidade"),
+      row.geo.id !== "nacional",
+      (model.matched_areas || []).some((area) => /ars|regiao|concelho|distrito|uls|hospital/i.test(area)),
+      suggestedKeys.some((key) => /ars|regiao|região|local|geo|concelho|distrito|hospital|uls/i.test(key)),
+    ].filter(Boolean).length;
+    const territorialReadiness = Math.min(100, territorialSignals * 22);
+    const temporalText = normalizeSearchText([item.source_title, item.target_title, ...suggestedKeys].join(" "));
+    const surveillanceReadiness = Math.min(100,
+      (dimensionKinds.includes("temporal") ? 35 : 0)
+      + (/ano|periodo|período|mensal|data|evolucao|evolução|sazonal/.test(temporalText) ? 25 : 0)
+      + (state.dataPayload?.trends?.length ? 20 : 0)
+      + (item.confidence === "alta" ? 12 : 6),
+    );
+    const likelihoodRank = {alta: 3, media: 2, baixa: 1}[model.likelihood?.level || "baixa"];
+    const impactRank = {alto: 3, medio: 2, baixo: 1}[model.impact?.level || "baixo"];
+    const riskRelevance = Math.min(100, likelihoodRank * 18 + impactRank * 20 + row.inequity + Math.min(12, (model.impact?.drivers || []).length * 3));
+    const pnsAxes = pnsAxesForItem(item);
+    const pnsScore = Math.min(100, row.alignment * 7 + pnsAxes.length * 12);
+    const needScore = Math.min(100, row.severity * 2.1 + row.inequity * 1.5 + riskRelevance * 0.32 + pnsScore * 0.25);
+    const analysisCapacity = Math.min(100, linkabilityScore * 0.38 + territorialReadiness * 0.24 + surveillanceReadiness * 0.2 + row.viability * 1.0);
+    const localScore = Math.round(needScore * 0.58 + analysisCapacity * 0.42);
+    const readiness = territorialReadiness >= 45 ? "regional" : "sem-territorio";
+    const priorityBand = needScore >= 72 && analysisCapacity >= 58
+      ? "Pronto para plano"
+      : needScore >= 72
+        ? "Necessita dados"
+        : analysisCapacity >= 58
+          ? "Monitorizar"
+          : "Explorar";
+    return {
+      ...row,
+      linkabilityScore,
+      territorialReadiness,
+      surveillanceReadiness,
+      riskRelevance,
+      pnsScore,
+      pnsAxes,
+      needScore,
+      analysisCapacity,
+      localScore,
+      readiness,
+      priorityBand,
+    };
+  }).sort((a, b) => b.localScore - a.localScore || b.priority - a.priority);
+}
+
+function renderLocalPlanKpis(rows) {
+  clearElement(localPlanKpis);
+  const ready = rows.filter((row) => row.priorityBand === "Pronto para plano").length;
+  const needsData = rows.filter((row) => row.priorityBand === "Necessita dados").length;
+  const regional = rows.filter((row) => row.readiness === "regional").length;
+  const surveillance = rows.filter((row) => row.surveillanceReadiness >= 55).length;
+  [
+    ["Prioridades locais", formatNumber(ready)],
+    ["Backlog de dados", formatNumber(needsData)],
+    ["Com território", `${formatNumber(regional)}/${formatNumber(rows.length)}`],
+    ["Com surveillance", formatNumber(surveillance)],
+  ].forEach(([label, value]) => {
+    const card = document.createElement("div");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    card.append(span, strong);
+    localPlanKpis.appendChild(card);
+  });
+}
+
+function createLocalMetric(label, value, max = 100) {
+  const row = document.createElement("div");
+  row.className = "local-metric-row";
+  const span = document.createElement("span");
+  span.textContent = label;
+  const bar = document.createElement("i");
+  const fill = document.createElement("b");
+  fill.style.width = `${Math.max(0, Math.min(100, value / max * 100))}%`;
+  bar.appendChild(fill);
+  const strong = document.createElement("strong");
+  strong.textContent = formatDecimal(value, 0);
+  row.append(span, bar, strong);
+  return row;
+}
+
+function renderLocalDiagnosis(rows) {
+  clearElement(localDiagnosis);
+  const axisCounts = new Map(LOCAL_PNS_AXES.map(([label]) => [label, 0]));
+  rows.forEach((row) => row.pnsAxes.forEach((axis) => axisCounts.set(axis, (axisCounts.get(axis) || 0) + 1)));
+  const nationalCount = rows.filter((row) => row.readiness !== "regional").length;
+  const regionalCount = rows.length - nationalCount;
+  const warning = document.createElement("div");
+  warning.className = nationalCount > regionalCount ? "local-warning" : "local-note";
+  warning.textContent = nationalCount > regionalCount
+    ? "Insuficiente para mapa local: a maioria das hipóteses ainda não tem território classificável."
+    : "Cobertura territorial suficiente para leitura local exploratória.";
+  localDiagnosis.appendChild(warning);
+  [...axisCounts.entries()].sort((a, b) => b[1] - a[1]).forEach(([axis, count]) => {
+    localDiagnosis.appendChild(createLocalMetric(axis, count, Math.max(1, rows.length)));
+  });
+}
+
+function localCellKey(needBand, capacityBand) {
+  return `${needBand}|${capacityBand}`;
+}
+
+function renderLocalPriorityMatrix(rows) {
+  clearElement(localPriorityMatrix);
+  clearElement(localPriorityDetail);
+  const needBands = [
+    ["alta", "Necessidade alta"],
+    ["media", "Necessidade média"],
+    ["baixa", "Necessidade baixa"],
+  ];
+  const capacityBands = [
+    ["pronta", "Capacidade pronta"],
+    ["limitada", "Capacidade limitada"],
+  ];
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const needBand = row.needScore >= 72 ? "alta" : row.needScore >= 48 ? "media" : "baixa";
+    const capacityBand = row.analysisCapacity >= 58 ? "pronta" : "limitada";
+    const key = localCellKey(needBand, capacityBand);
+    const bucket = buckets.get(key) || {needBand, capacityBand, rows: [], score: 0};
+    bucket.rows.push(row);
+    bucket.score += row.localScore;
+    buckets.set(key, bucket);
+  });
+  const best = [...buckets.values()].sort((a, b) => b.rows.length - a.rows.length || b.score - a.score)[0];
+  if (!state.selectedLocalPriorityCell || !buckets.has(state.selectedLocalPriorityCell)) {
+    state.selectedLocalPriorityCell = best ? localCellKey(best.needBand, best.capacityBand) : "";
+  }
+  const corner = document.createElement("div");
+  corner.className = "local-priority-axis";
+  corner.textContent = "Necessidade × capacidade";
+  localPriorityMatrix.appendChild(corner);
+  capacityBands.forEach(([, label]) => {
+    const axis = document.createElement("div");
+    axis.className = "local-priority-axis";
+    axis.textContent = label;
+    localPriorityMatrix.appendChild(axis);
+  });
+  needBands.forEach(([needBand, needLabel]) => {
+    const axis = document.createElement("div");
+    axis.className = "local-priority-axis";
+    axis.textContent = needLabel;
+    localPriorityMatrix.appendChild(axis);
+    capacityBands.forEach(([capacityBand, capacityLabel]) => {
+      const key = localCellKey(needBand, capacityBand);
+      const bucket = buckets.get(key);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = state.selectedLocalPriorityCell === key ? "local-priority-cell is-active" : "local-priority-cell";
+      button.disabled = !bucket;
+      const strong = document.createElement("strong");
+      strong.textContent = formatNumber(bucket?.rows.length || 0);
+      const span = document.createElement("span");
+      span.textContent = bucket ? `${capacityLabel} · score ${formatDecimal(bucket.score / bucket.rows.length, 0)}` : "sem hipóteses";
+      button.append(strong, span);
+      button.addEventListener("click", () => {
+        state.selectedLocalPriorityCell = key;
+        renderLocalPlans();
+      });
+      localPriorityMatrix.appendChild(button);
+    });
+  });
+  renderLocalPriorityDetail(buckets.get(state.selectedLocalPriorityCell), rows);
+}
+
+function renderLocalPriorityDetail(bucket, rows) {
+  clearElement(localPriorityDetail);
+  if (!bucket) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Seleciona uma célula com hipóteses.";
+    localPriorityDetail.appendChild(empty);
+    return;
+  }
+  const title = document.createElement("strong");
+  title.textContent = `${formatNumber(bucket.rows.length)} hipóteses para planeamento`;
+  const explanation = document.createElement("p");
+  explanation.className = "decision-scope";
+  explanation.textContent = bucket.capacityBand === "pronta"
+    ? "Pode alimentar diagnóstico local exploratório: há sinal analítico suficiente para preparar validações e discussão com equipas locais."
+    : "Há necessidade potencial, mas falta capacidade analítica: melhorar território, período, chave de join ou qualidade antes de usar no plano.";
+  const list = document.createElement("div");
+  list.className = "local-plan-list";
+  bucket.rows.slice(0, 6).forEach((row) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    const strong = document.createElement("strong");
+    strong.textContent = `${compactTitle(row.item.source_title, 36)} / ${compactTitle(row.item.target_title, 36)}`;
+    const small = document.createElement("small");
+    small.textContent = `PNS: ${row.pnsAxes.slice(0, 2).join(", ") || "por classificar"} · território ${formatDecimal(row.territorialReadiness, 0)} · linkability ${formatDecimal(row.linkabilityScore, 0)}`;
+    item.append(strong, small);
+    item.addEventListener("click", () => {
+      state.selectedPublicHealthKey = row.key;
+      setActiveTab("health");
+    });
+    list.appendChild(item);
+  });
+  localPriorityDetail.append(title, explanation, list);
+}
+
+function renderLocalSurveillance(rows) {
+  clearElement(localSurveillance);
+  const candidates = rows.slice().sort((a, b) => b.surveillanceReadiness - a.surveillanceReadiness || b.localScore - a.localScore).slice(0, 6);
+  const meta = document.createElement("div");
+  meta.className = "local-note";
+  meta.textContent = state.dataPayload?.trends?.length
+    ? "Existe amostra temporal ativa: estes sinais podem apoiar monitorização exploratória."
+    : "Surveillance depende sobretudo de campos temporais nos metadados; carrega uma amostra real para validar tendências.";
+  localSurveillance.appendChild(meta);
+  candidates.forEach((row) => {
+    const card = document.createElement("div");
+    card.className = "local-signal-card";
+    const strong = document.createElement("strong");
+    strong.textContent = compactTitle(`${row.item.source_title} / ${row.item.target_title}`, 72);
+    const small = document.createElement("small");
+    small.textContent = `surveillance ${formatDecimal(row.surveillanceReadiness, 0)} · ${row.readiness === "regional" ? "com leitura territorial" : "sem território local"} · ${row.item.confidence}`;
+    card.append(strong, small, createLocalMetric("Sinal temporal", row.surveillanceReadiness));
+    localSurveillance.appendChild(card);
+  });
+}
+
+function renderLocalRiskMatrix(rows) {
+  clearElement(localRiskMatrix);
+  const bands = [
+    ["alto", "Impacto alto"],
+    ["medio", "Impacto médio"],
+    ["baixo", "Impacto baixo"],
+  ];
+  const likelihoods = [
+    ["alta", "Prob. alta"],
+    ["media", "Prob. média"],
+    ["baixa", "Prob. baixa"],
+  ];
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const model = row.item.public_health_model || {};
+    const impact = model.impact?.level || "baixo";
+    const likelihood = model.likelihood?.level || "baixa";
+    const key = `${impact}|${likelihood}`;
+    const bucket = buckets.get(key) || {impact, likelihood, rows: [], residual: 0};
+    bucket.rows.push(row);
+    bucket.residual += Math.max(0, row.riskRelevance - row.analysisCapacity * 0.45);
+    buckets.set(key, bucket);
+  });
+  const corner = document.createElement("div");
+  corner.className = "local-risk-axis";
+  corner.textContent = "Impacto × prob.";
+  localRiskMatrix.appendChild(corner);
+  likelihoods.forEach(([, label]) => {
+    const axis = document.createElement("div");
+    axis.className = "local-risk-axis";
+    axis.textContent = label;
+    localRiskMatrix.appendChild(axis);
+  });
+  bands.forEach(([impact, impactLabel]) => {
+    const axis = document.createElement("div");
+    axis.className = "local-risk-axis";
+    axis.textContent = impactLabel;
+    localRiskMatrix.appendChild(axis);
+    likelihoods.forEach(([likelihood]) => {
+      const bucket = buckets.get(`${impact}|${likelihood}`);
+      const cell = document.createElement("div");
+      cell.className = `local-risk-cell impact-${impact} likelihood-${likelihood}`;
+      const strong = document.createElement("strong");
+      strong.textContent = formatNumber(bucket?.rows.length || 0);
+      const small = document.createElement("small");
+      small.textContent = bucket ? `risco residual ${formatDecimal(bucket.residual / bucket.rows.length, 0)}` : "sem sinal";
+      cell.append(strong, small);
+      localRiskMatrix.appendChild(cell);
+    });
+  });
+}
+
+function renderLocalActionPlan(rows) {
+  clearElement(localActionPlan);
+  const top = rows.slice(0, 5);
+  const validations = [
+    "Confirmar granularidade territorial: ULS, hospital, ARS, concelho/distrito ou região.",
+    "Validar chaves de join: tipo, nulos, duplicados e cardinalidade.",
+    "Confirmar período e comparabilidade temporal antes de usar tendências.",
+    "Separar hipóteses nacionais de análises locais quando não há match territorial.",
+  ];
+  const questions = top.map((row) => questionForPriority(row));
+  const columns = [
+    ["Perguntas acionáveis", [...new Set(questions)].slice(0, 5)],
+    ["Validações antes do plano", validations],
+    ["Datasets prioritários", top.map((row) => compactTitle(row.item.source_title, 52))],
+  ];
+  columns.forEach(([titleText, items]) => {
+    const section = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const list = document.createElement("ul");
+    items.forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      list.appendChild(item);
+    });
+    section.append(title, list);
+    localActionPlan.appendChild(section);
+  });
+}
+
+function renderLocalPlans() {
+  if (!localPlanMeta) return;
+  const rows = localPlanRows();
+  const regional = rows.filter((row) => row.readiness === "regional").length;
+  const national = rows.length - regional;
+  localPlanMeta.textContent = `${formatNumber(rows.length)} hipóteses filtradas · ${formatNumber(regional)} com território · ${formatNumber(national)} insuficientes para mapa local.`;
+  renderLocalPlanKpis(rows);
+  renderLocalDiagnosis(rows);
+  renderLocalPriorityMatrix(rows);
+  renderLocalSurveillance(rows);
+  renderLocalRiskMatrix(rows);
+  renderLocalActionPlan(rows);
+}
+
 function renderPublicHealthMatrix() {
   clearElement(publicHealthMatrix);
   clearElement(publicHealthStrata);
   const correlations = filteredCorrelations();
+  const priorityRows = publicHealthPriorityRows();
   const cells = summarizePublicHealthCells(correlations);
-  publicHealthMeta.textContent = `${formatNumber(correlations.length)} relações filtradas posicionadas por likelihood técnica, impact em saúde pública e área matched.`;
+  publicHealthMeta.textContent = `${formatNumber(correlations.length)} relações filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} hipóteses a priorizar · layer ativo: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
+  renderPublicHealthCockpit(priorityRows);
 
   const likelihoodLevels = ["alta", "media", "baixa"];
   const impactLevels = ["baixo", "medio", "alto"];
@@ -837,7 +2364,7 @@ function renderPublicHealthMatrix() {
 
   const corner = document.createElement("div");
   corner.className = "public-health-axis public-health-corner";
-  corner.textContent = "Likelihood \\ Impact";
+  corner.textContent = "Likelihood × impacto";
   publicHealthMatrix.appendChild(corner);
   impactLevels.forEach((impact) => {
     const axis = document.createElement("div");
@@ -1026,7 +2553,7 @@ function renderMatrix(container, rows, formatter) {
     return;
   }
   const maxScore = Math.max(...rows.map((row) => row.score_sum || row.count || row.link_count || 1), 1);
-  rows.slice(0, 24).forEach((row) => {
+  rows.slice(0, 10).forEach((row) => {
     const item = document.createElement("div");
     item.className = "analytics-matrix-row";
     const strength = Math.max(row.score_sum || row.count || row.link_count || 1, 1);
@@ -1034,7 +2561,8 @@ function renderMatrix(container, rows, formatter) {
     const left = document.createElement("span");
     const right = document.createElement("strong");
     const detail = formatter(row);
-    left.textContent = detail.label;
+    left.textContent = compactTitle(detail.label, 54);
+    left.title = detail.label;
     right.textContent = detail.value;
     item.append(left, right);
     container.appendChild(item);
@@ -1129,16 +2657,39 @@ function renderCorrelationTable() {
 
 function renderAll() {
   if (!state.payload) return;
-  renderSummary();
-  renderInsightCards();
-  renderDistribution();
-  renderSemanticModel();
-  renderPublicHealthMatrix();
-  renderBubbleChart();
-  renderDimensionList();
-  renderMatrices();
-  renderCorrelationTable();
-  renderDataAnalytics();
+  if (state.activeTab === "data") {
+    renderDataAnalytics();
+    return;
+  }
+  if (state.activeTab === "predictive") {
+    renderPredictiveAnalytics();
+    return;
+  }
+  if (state.activeTab === "semantic") {
+    renderSummary();
+    renderTopOpportunities();
+    renderInsightCards();
+    renderDistribution();
+    renderSemanticModel();
+    renderBubbleChart();
+    renderDimensionList();
+    return;
+  }
+  if (state.activeTab === "health") {
+    renderSummary();
+    renderPublicHealthMatrix();
+    return;
+  }
+  if (state.activeTab === "local") {
+    renderSummary();
+    renderLocalPlans();
+    return;
+  }
+  if (state.activeTab === "tables") {
+    renderSummary();
+    renderMatrices();
+    renderCorrelationTable();
+  }
 }
 
 function setupEvents() {
@@ -1146,22 +2697,36 @@ function setupEvents() {
   analyticsMinScoreValue.textContent = state.minScore;
   dataSampleLimit.value = state.dataLimit;
   dataSampleLimitValue.textContent = state.dataLimit;
+  const initialTab = new URLSearchParams(window.location.search).get("tab");
+  if (["data", "predictive", "semantic", "health", "local", "tables"].includes(initialTab)) {
+    state.activeTab = initialTab;
+  }
+  renderDatasetMode();
+
+  analyticsTabs.forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.analyticsTab));
+  });
+  predictiveDataButton?.addEventListener("click", () => setActiveTab("data"));
+  setActiveTab(state.activeTab);
 
   analyticsSearch.addEventListener("input", () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       state.search = analyticsSearch.value;
+      invalidateFilterCache();
       renderAll();
     }, 120);
   });
 
   analyticsKind.addEventListener("change", () => {
     state.kind = analyticsKind.value;
+    invalidateFilterCache();
     renderAll();
   });
 
   analyticsConfidence.addEventListener("change", () => {
     state.confidence = analyticsConfidence.value;
+    invalidateFilterCache();
     renderAll();
   });
 
@@ -1176,6 +2741,8 @@ function setupEvents() {
   });
 
   dataDatasetSelect.addEventListener("change", () => {
+    state.datasetMode = "manual";
+    renderDatasetMode();
     state.selectedDataDataset = dataDatasetSelect.value;
     state.dataPayload = null;
     renderDataAnalytics();
@@ -1190,6 +2757,19 @@ function setupEvents() {
 
   dataRefreshButton.addEventListener("click", () => {
     loadDataAnalytics().catch(showDataError);
+  });
+
+  dataRichMode?.addEventListener("click", () => {
+    state.datasetMode = "rich";
+    state.dataPayload = null;
+    populateDataDatasetOptions();
+    renderDataAnalytics();
+    loadDataAnalytics().catch(showDataError);
+  });
+
+  dataManualMode?.addEventListener("click", () => {
+    state.datasetMode = "manual";
+    renderDatasetMode();
   });
 
   analyticsExport.addEventListener("click", () => {

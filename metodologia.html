@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transparência SNS - Metodologia</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css?v=ux-20260425" />
+  </head>
+  <body>
+    <main class="methodology-layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Transparência SNS</p>
+          <h1>Metodologia</h1>
+          <p class="meta">Como o protótipo transforma catálogo, metadados e amostras reais em hipóteses de análise.</p>
+        </div>
+        <div class="topbar-actions">
+          <a href="/" class="top-link">Vista principal</a>
+          <a href="crosswalk.html" class="top-link">Cruzamentos</a>
+          <a href="analytics.html" class="top-link">Analytics</a>
+        </div>
+      </header>
+
+      <section class="methodology-hero">
+        <div>
+          <span class="methodology-pill">Heurístico, auditável, leve</span>
+          <h2>Do dado publicado à pergunta útil</h2>
+          <p>
+            A app não tenta substituir validação epidemiológica. Faz triagem: encontra chaves prováveis,
+            mede sinais na amostra e mostra onde há valor potencial para cruzamento.
+          </p>
+        </div>
+        <aside>
+          <strong>Regra central</strong>
+          <p>Quanto mais clara for a chave, a granularidade, a cobertura temporal e a pergunta, maior o valor do cruzamento.</p>
+        </aside>
+      </section>
+
+      <section class="methodology-grid">
+        <article class="methodology-card">
+          <span>1</span>
+          <h2>Catálogo</h2>
+          <p>Carrega datasets e campos da API, normaliza nomes e agrupa por mega-temas: território, acesso, produção, finanças, recursos e qualidade.</p>
+        </article>
+        <article class="methodology-card">
+          <span>2</span>
+          <h2>Cruzamentos</h2>
+          <p>Procura campos partilhados e classifica a dimensão: temporal, território, entidade, medida ou genérica. O score combina força, confiança e risco.</p>
+        </article>
+        <article class="methodology-card">
+          <span>3</span>
+          <h2>Dados reais</h2>
+          <p>Sobre amostras leves, calcula perfis, completude, variação, correlações, tendência e PCA simples, evitando cache pesada no browser.</p>
+        </article>
+        <article class="methodology-card">
+          <span>4</span>
+          <h2>Saúde pública</h2>
+          <p>Combina likelihood, impact, viabilidade, inequidade proxy e alinhamento PNS-like para priorizar hipóteses de valor público.</p>
+        </article>
+      </section>
+
+      <section class="panel methodology-steps">
+        <div class="panel-heading">
+          <div>
+            <h2>Validação antes de usar</h2>
+            <p class="meta">Checklist mínimo para transformar uma hipótese em análise robusta.</p>
+          </div>
+        </div>
+        <ol>
+          <li><strong>Granularidade:</strong> confirmar se a chave representa linha, episódio, entidade, período ou região.</li>
+          <li><strong>Cardinalidade:</strong> medir duplicados e joins 1:1, 1:N ou N:N antes de agregar.</li>
+          <li><strong>Cobertura:</strong> comparar anos, regiões, entidades e campos nulos entre datasets.</li>
+          <li><strong>Semântica:</strong> validar nomes de campos contra dicionários oficiais ou documentação do portal.</li>
+          <li><strong>Uso público:</strong> priorizar perguntas com impacto, ação possível e risco interpretativo baixo.</li>
+        </ol>
+      </section>
+
+      <section class="methodology-grid methodology-grid-tight">
+        <article class="methodology-card">
+          <h2>O que responde bem</h2>
+          <p>Onde há desigualdade territorial, que entidades fogem ao padrão, que medidas variam juntas e que cruzamentos merecem auditoria.</p>
+        </article>
+        <article class="methodology-card">
+          <h2>O que não promete</h2>
+          <p>Causalidade, recomendações clínicas, ranking oficial de desempenho ou conclusões sem validação da fonte e da granularidade.</p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

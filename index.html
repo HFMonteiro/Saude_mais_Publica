@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Conector Transparência SNS - Modelos Semânticos</title>
+    <title>Transparência SNS - Radar de dados</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=home-cleanup-20260425" />
     <script
       src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
       integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
@@ -17,19 +17,20 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Transparência SNS</p>
-          <h1>Arranque de análise e cruzamento de dados</h1>
+          <h1>Radar de dados SNS</h1>
         </div>
         <div class="topbar-actions">
-          <a href="crosswalk.html" class="top-link">Página de cruzamentos</a>
+          <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
+          <a href="metodologia.html" class="top-link">Metodologia</a>
           <div class="sync-state" id="syncState">A carregar...</div>
         </div>
       </header>
 
       <section class="start-page" aria-label="Arranque">
         <div class="start-copy">
-          <h2>Mega-temas para orientar queries</h2>
-          <p>Seleciona um tema para focar datasets, relações e tabela recente. A classificação corre sobre títulos e campos publicados na API.</p>
+          <h2>Mega-temas</h2>
+          <p>Escolhe uma área para focar datasets, ligações e registos recentes.</p>
         </div>
         <div id="themeCards" class="theme-grid"></div>
       </section>
@@ -37,7 +38,7 @@
       <section class="toolbar">
         <label>
           <span>Pesquisar dataset</span>
-          <input id="datasetFilter" name="dataset-search" autocomplete="off" placeholder="ex: gastos, hospitais, receita…" type="text" />
+          <input id="datasetFilter" name="dataset-search" autocomplete="off" placeholder="gastos, hospitais, receita" type="text" />
         </label>
         <label>
           <span>Mega-tema</span>
@@ -93,26 +94,6 @@
           <div id="linkHelp" class="meta">
             Clique num nó para detalhar as ligações e criar árvore de cruzamentos.
           </div>
-          <section class="data-section" aria-labelledby="recentDataTitle">
-            <div class="panel-heading">
-              <div>
-                <h2 id="recentDataTitle">Tabela - últimos 3 anos</h2>
-                <p id="recentDataMeta" class="meta">Seleciona um dataset para consultar registos recentes da API.</p>
-              </div>
-              <button id="reloadRecordsButton" class="ghost-button" type="button">Recarregar tabela</button>
-            </div>
-            <div class="table-strip-frame">
-              <span class="table-edge table-edge-left" aria-hidden="true"></span>
-              <div class="table-wrap">
-                <table id="recentDataTable">
-                  <thead></thead>
-                  <tbody></tbody>
-                </table>
-                <div id="recentDataEmpty" class="empty-state">Sem dataset selecionado.</div>
-              </div>
-              <span class="table-edge table-edge-right" aria-hidden="true"></span>
-            </div>
-          </section>
         </section>
 
         <section class="panel inspector">
@@ -124,6 +105,58 @@
           <div id="linkTree" class="relationship-list"></div>
           <div id="opportunitiesSection" class="opportunities"></div>
         </section>
+
+        <section class="data-section recent-data-wide" aria-labelledby="recentDataTitle">
+          <div class="panel-heading">
+            <div>
+              <h2 id="recentDataTitle">Registos recentes</h2>
+              <p id="recentDataMeta" class="meta">Seleciona um dataset para ver a amostra da API.</p>
+            </div>
+            <button id="reloadRecordsButton" class="ghost-button" type="button">Recarregar tabela</button>
+          </div>
+          <div class="table-strip-frame">
+            <span class="table-edge table-edge-left" aria-hidden="true"></span>
+            <div class="table-wrap">
+              <table id="recentDataTable">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+              <div id="recentDataEmpty" class="empty-state">Sem dataset selecionado.</div>
+            </div>
+            <span class="table-edge table-edge-right" aria-hidden="true"></span>
+          </div>
+          <section class="quick-analysis-panel" aria-labelledby="quickAnalysisTitle">
+            <div class="panel-heading">
+              <div>
+                <h2 id="quickAnalysisTitle">Leitura rápida da amostra</h2>
+                <p id="quickAnalysisMeta" class="meta">Deteta tempo, local, medidas contínuas e sinais fora do padrão.</p>
+              </div>
+            </div>
+            <div id="quickAnalysisKpis" class="quick-analysis-kpis"></div>
+            <div class="quick-analysis-grid">
+              <article>
+                <h3>Variáveis chave</h3>
+                <div id="quickKeyVariables" class="quick-key-list"></div>
+              </article>
+              <article>
+                <h3>Running total</h3>
+                <div class="quick-chart-wrap">
+                  <svg id="quickTrendChart" role="img" aria-label="Running total da medida principal"></svg>
+                </div>
+              </article>
+              <article>
+                <h3>Distribuição</h3>
+                <div class="quick-chart-wrap">
+                  <svg id="quickDistributionChart" role="img" aria-label="Distribuição da medida principal"></svg>
+                </div>
+              </article>
+              <article>
+                <h3>Anomalias</h3>
+                <div id="quickAnomalyList" class="quick-anomaly-list"></div>
+              </article>
+            </div>
+          </section>
+        </section>
       </section>
     </main>
 
@@ -133,6 +166,6 @@
       Campos partilhados: {{fields}}
     </template>
 
-    <script src="app.js" defer></script>
+    <script src="app.js?v=home-cleanup-20260425" defer></script>
   </body>
 </html>

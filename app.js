@@ -66,6 +66,12 @@ const recentDataMeta = document.getElementById("recentDataMeta");
 const recentDataTable = document.getElementById("recentDataTable");
 const recentDataEmpty = document.getElementById("recentDataEmpty");
 const reloadRecordsButton = document.getElementById("reloadRecordsButton");
+const quickAnalysisMeta = document.getElementById("quickAnalysisMeta");
+const quickAnalysisKpis = document.getElementById("quickAnalysisKpis");
+const quickKeyVariables = document.getElementById("quickKeyVariables");
+const quickTrendChart = document.getElementById("quickTrendChart");
+const quickDistributionChart = document.getElementById("quickDistributionChart");
+const quickAnomalyList = document.getElementById("quickAnomalyList");
 
 const tooltip = document.createElement("div");
 tooltip.className = "graph-tooltip";
@@ -101,6 +107,12 @@ function createShowMoreButton(text, onClick) {
   button.textContent = text;
   button.addEventListener("click", onClick);
   return button;
+}
+
+function svgNode(tag, attributes = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+  return node;
 }
 
 function invalidateViewState() {
@@ -576,11 +588,15 @@ function moveTooltip(event) {
   tooltip.style.top = `${event.clientY + 12}px`;
 }
 
+function hideTooltip() {
+  tooltip.style.opacity = 0;
+}
+
 function buildTreeForSelected(datasetId) {
   if (!datasetId) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Seleciona um dataset para ver campos de ligação e datasets candidatos.";
+    empty.textContent = "Escolhe um dataset para ver ligações candidatas.";
     clearElement(linkTree);
     linkTree.appendChild(empty);
     return;
@@ -695,7 +711,7 @@ function renderSelectedInfo() {
   if (!state.selectedDataset) {
     const info = document.createElement("div");
     info.className = "meta";
-    info.textContent = "Escolhe um dataset na lista ou no mapa para analisar cruzamentos possíveis.";
+    info.textContent = "Escolhe um dataset para abrir cruzamentos possíveis.";
     clearElement(selectedModel);
     selectedModel.appendChild(info);
     return;
@@ -811,6 +827,327 @@ async function loadRecentRecords(datasetId) {
   renderRecentTable();
 }
 
+function parseNumericValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value === null || value === undefined || value === "") return null;
+  const text = String(value)
+    .replace(/\s/g, "")
+    .replace(/%$/, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+function detectColumnRole(column, data) {
+  const name = safeText(column?.name || column?.label).toLowerCase();
+  if (data?.temporal_field && column?.name === data.temporal_field) return "tempo";
+  if (/(^ano$|period|data|tempo|m[eê]s|mes|trimestre|semana|evolu)/i.test(name)) return "tempo";
+  if (/(regi|ars|uls|hospital|concelho|distrito|local|territ|geograf|entidade|unidade|norte|centro|alentejo|algarve|lisboa)/i.test(name)) return "local";
+  return "";
+}
+
+function isExcludedMeasureColumn(column, data) {
+  const name = safeText(column?.name || column?.label).toLowerCase();
+  if (detectColumnRole(column, data)) return true;
+  return /(telefone|telemovel|telemóvel|fax|email|e-mail|codigo|código|cod_|^cod$|postal|nif|nipc|niss|id_|^id$|url|link|latitude|longitude)/i.test(name);
+}
+
+function numericProfileForColumn(rows, column) {
+  const values = rows
+    .map((row, index) => ({index, value: parseNumericValue(row[column.name])}))
+    .filter((item) => item.value !== null);
+  if (values.length < Math.max(3, Math.ceil(rows.length * 0.25))) return null;
+  const nums = values.map((item) => item.value);
+  const sum = nums.reduce((acc, value) => acc + value, 0);
+  const avg = sum / nums.length;
+  const variance = nums.reduce((acc, value) => acc + ((value - avg) ** 2), 0) / nums.length;
+  return {
+    column,
+    values,
+    count: nums.length,
+    sum,
+    avg,
+    min: Math.min(...nums),
+    max: Math.max(...nums),
+    stddev: Math.sqrt(variance),
+    missing: rows.length - nums.length,
+  };
+}
+
+function buildQuickAnalysis(data, columns) {
+  const rows = data?.records || [];
+  const roles = columns.map((column) => ({column, role: detectColumnRole(column, data)}));
+  const timeColumn = roles.find((item) => item.role === "tempo")?.column || null;
+  const localColumn = roles.find((item) => item.role === "local")?.column || null;
+  const numericProfiles = columns
+    .filter((column) => !isExcludedMeasureColumn(column, data))
+    .map((column) => numericProfileForColumn(rows, column))
+    .filter(Boolean)
+    .sort((a, b) => (b.stddev * b.count) - (a.stddev * a.count));
+  const primary = numericProfiles[0] || null;
+
+  const anomalies = [];
+  numericProfiles.slice(0, 6).forEach((profile) => {
+    if (!profile.stddev) return;
+    profile.values.forEach((item) => {
+      const z = Math.abs((item.value - profile.avg) / profile.stddev);
+      if (z >= 2) {
+        const record = rows[item.index] || {};
+        const period = timeColumn ? safeText(record[timeColumn.name]) : "";
+        const place = localColumn ? safeText(record[localColumn.name]) : "";
+        anomalies.push({
+          field: profile.column.label || profile.column.name,
+          value: item.value,
+          expected: profile.avg,
+          delta: item.value - profile.avg,
+          row: item.index + 1,
+          z,
+          direction: item.value >= profile.avg ? "acima" : "abaixo",
+          severity: z >= 3 ? "alta" : z >= 2.5 ? "média" : "ligeira",
+          period,
+          place,
+        });
+      }
+    });
+  });
+  anomalies.sort((a, b) => b.z - a.z);
+
+  const timeBuckets = new Map();
+  if (primary) {
+    primary.values.forEach((item) => {
+      const record = rows[item.index] || {};
+      const period = timeColumn ? safeText(record[timeColumn.name] || "sem período") : `#${item.index + 1}`;
+      timeBuckets.set(period, (timeBuckets.get(period) || 0) + item.value);
+    });
+  }
+  const running = [...timeBuckets.entries()]
+    .sort(([a], [b]) => safeText(a).localeCompare(safeText(b), "pt-PT", {numeric: true}))
+    .reduce((acc, [period, value]) => {
+      const total = (acc.at(-1)?.total || 0) + value;
+      acc.push({period, value, total});
+      return acc;
+    }, []);
+
+  return {
+    rows,
+    timeColumn,
+    localColumn,
+    numericProfiles,
+    primary,
+    anomalies: anomalies.slice(0, 4),
+    anomalyTotal: anomalies.length,
+    running,
+  };
+}
+
+function renderQuickEmpty(message) {
+  if (!quickAnalysisMeta) return;
+  quickAnalysisMeta.textContent = message;
+  [quickAnalysisKpis, quickKeyVariables, quickTrendChart, quickDistributionChart, quickAnomalyList].forEach((node) => {
+    if (node) clearElement(node);
+  });
+}
+
+function addQuickKpi(label, value, detail) {
+  const card = document.createElement("div");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const small = document.createElement("small");
+  small.textContent = detail;
+  card.append(span, strong, small);
+  quickAnalysisKpis.appendChild(card);
+}
+
+function renderQuickVariables(analysis) {
+  clearElement(quickKeyVariables);
+  const items = [
+    ["Tempo", analysis.timeColumn?.label || analysis.timeColumn?.name || "não identificado", "eixo para tendência"],
+    ["Local", analysis.localColumn?.label || analysis.localColumn?.name || "não identificado", "território ou entidade"],
+    ["Medida principal", analysis.primary?.column?.label || analysis.primary?.column?.name || "sem medida contínua", "maior variação útil"],
+  ];
+  analysis.numericProfiles.slice(1, 3).forEach((profile) => {
+    items.push(["Medida", profile.column.label || profile.column.name, `${formatNumber(Math.round(profile.sum))} total`]);
+  });
+  if (analysis.numericProfiles.length > 3) {
+    items.push(["Outras medidas", `${analysis.numericProfiles.length - 3}`, "disponíveis na amostra"]);
+  }
+  const fragment = document.createDocumentFragment();
+  items.forEach(([label, value, detail]) => {
+    const item = document.createElement("div");
+    item.className = "quick-key-item";
+    const top = document.createElement("span");
+    top.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = compactTitle(value, 46);
+    strong.title = value;
+    const small = document.createElement("small");
+    small.textContent = detail;
+    item.append(top, strong, small);
+    fragment.appendChild(item);
+  });
+  quickKeyVariables.appendChild(fragment);
+}
+
+function renderQuickTrend(analysis) {
+  clearElement(quickTrendChart);
+  const width = Math.max(360, quickTrendChart.closest(".quick-chart-wrap")?.clientWidth || 360);
+  const height = 210;
+  quickTrendChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const points = analysis.running;
+  if (!points.length) {
+    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
+    empty.textContent = "Sem medida contínua para acumular.";
+    quickTrendChart.appendChild(empty);
+    return;
+  }
+  const left = 46;
+  const right = width - 22;
+  const top = 28;
+  const bottom = height - 38;
+  const max = Math.max(...points.map((point) => point.total), 1);
+  const xStep = points.length > 1 ? (right - left) / (points.length - 1) : 0;
+  const coords = points.map((point, index) => ({
+    x: left + index * xStep,
+    y: bottom - (point.total / max) * (bottom - top),
+    point,
+  }));
+  const axis = svgNode("g", {class: "quick-chart-axis"});
+  axis.append(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom}), svgNode("line", {x1: left, y1: top, x2: left, y2: bottom}));
+  quickTrendChart.appendChild(axis);
+  const path = svgNode("path", {class: "quick-trend-line", d: coords.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" ")});
+  quickTrendChart.appendChild(path);
+  coords.forEach((coord, index) => {
+    if (points.length > 8 && index % Math.ceil(points.length / 6)) return;
+    const group = svgNode("g", {class: "quick-trend-point", transform: `translate(${coord.x}, ${coord.y})`});
+    const title = svgNode("title");
+    title.textContent = `${coord.point.period}: ${formatNumber(Math.round(coord.point.total))}`;
+    group.append(title, svgNode("circle", {r: 3.5}));
+    const label = svgNode("text", {y: 18, "text-anchor": coord.x > width - 80 ? "end" : "middle"});
+    label.textContent = compactTitle(coord.point.period, 12);
+    group.appendChild(label);
+    quickTrendChart.appendChild(group);
+  });
+}
+
+function renderQuickDistribution(analysis) {
+  clearElement(quickDistributionChart);
+  const width = Math.max(360, quickDistributionChart.closest(".quick-chart-wrap")?.clientWidth || 360);
+  const height = 210;
+  quickDistributionChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const profile = analysis.primary;
+  if (!profile || !profile.values.length) {
+    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
+    empty.textContent = "Sem distribuição numérica.";
+    quickDistributionChart.appendChild(empty);
+    return;
+  }
+  const binCount = 6;
+  const span = profile.max - profile.min || 1;
+  const bins = Array.from({length: binCount}, (_, index) => ({
+    start: profile.min + (span / binCount) * index,
+    end: profile.min + (span / binCount) * (index + 1),
+    count: 0,
+  }));
+  profile.values.forEach((item) => {
+    const index = Math.min(binCount - 1, Math.floor(((item.value - profile.min) / span) * binCount));
+    bins[index].count += 1;
+  });
+  const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
+  const left = 34;
+  const right = width - 18;
+  const bottom = height - 34;
+  const top = 24;
+  const gap = 8;
+  const barWidth = ((right - left) - gap * (binCount - 1)) / binCount;
+  bins.forEach((bin, index) => {
+    const h = (bin.count / maxCount) * (bottom - top);
+    const x = left + index * (barWidth + gap);
+    const y = bottom - h;
+    const rect = svgNode("rect", {class: "quick-distribution-bar", x, y, width: barWidth, height: Math.max(2, h), rx: 4});
+    const title = svgNode("title");
+    title.textContent = `${formatNumber(Math.round(bin.start))} a ${formatNumber(Math.round(bin.end))}: ${formatNumber(bin.count)} registos`;
+    rect.appendChild(title);
+    quickDistributionChart.appendChild(rect);
+    if (index === 0 || index === bins.length - 1) {
+      const label = svgNode("text", {x: x + barWidth / 2, y: bottom + 18, "text-anchor": "middle"});
+      label.textContent = formatNumber(Math.round(bin.start));
+      quickDistributionChart.appendChild(label);
+    }
+  });
+}
+
+function renderQuickAnomalies(analysis) {
+  clearElement(quickAnomalyList);
+  if (!analysis.anomalies.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Nada salta à vista nesta amostra. Boa notícia para triagem rápida, mas confirma na tabela se o dataset for crítico.";
+    quickAnomalyList.appendChild(empty);
+    return;
+  }
+  const intro = document.createElement("div");
+  intro.className = "quick-anomaly-note";
+  intro.textContent = `${formatNumber(analysis.anomalyTotal || analysis.anomalies.length)} sinais fora do padrão. Mostro os mais fortes; confirma unidade, período e entidade antes de concluir.`;
+  quickAnomalyList.appendChild(intro);
+  const fragment = document.createDocumentFragment();
+  analysis.anomalies.forEach((anomaly) => {
+    const item = document.createElement("div");
+    item.className = `quick-anomaly-item severity-${anomaly.severity}`;
+    const badge = document.createElement("span");
+    badge.className = "quick-anomaly-badge";
+    badge.textContent = anomaly.severity === "alta" ? "Priorizar validação" : anomaly.severity === "média" ? "Ver contexto" : "Sinal leve";
+    const strong = document.createElement("strong");
+    strong.textContent = compactTitle(anomaly.field, 38);
+    strong.title = anomaly.field;
+    const summary = document.createElement("p");
+    summary.textContent = `${formatNumber(Math.round(Math.abs(anomaly.delta)))} ${anomaly.direction} do padrão da amostra.`;
+    const facts = document.createElement("div");
+    facts.className = "quick-anomaly-facts";
+    [
+      ["Valor", formatNumber(Math.round(anomaly.value))],
+      ["Esperado", formatNumber(Math.round(anomaly.expected))],
+      ["Linha", `#${anomaly.row}`],
+      ["Desvio", `${anomaly.z.toFixed(1)} sigma`],
+    ].forEach(([label, value]) => {
+      const fact = document.createElement("span");
+      fact.textContent = `${label}: ${value}`;
+      facts.appendChild(fact);
+    });
+    const context = document.createElement("small");
+    const contextParts = [anomaly.period && `período ${compactTitle(anomaly.period, 18)}`, anomaly.place && `local ${compactTitle(anomaly.place, 18)}`].filter(Boolean);
+    context.textContent = contextParts.length ? contextParts.join(" · ") : "Sem eixo temporal/local detetado para contextualizar.";
+    const action = document.createElement("em");
+    action.textContent = anomaly.severity === "alta"
+      ? "Validar na fonte e procurar mudança de definição."
+      : "Confirmar se é efeito real, falta de registos ou codificação.";
+    item.append(badge, strong, summary, facts, context, action);
+    fragment.appendChild(item);
+  });
+  quickAnomalyList.appendChild(fragment);
+}
+
+function renderQuickAnalysis(data, columns) {
+  if (!quickAnalysisMeta) return;
+  const analysis = buildQuickAnalysis(data, columns);
+  if (!analysis.rows.length) {
+    renderQuickEmpty("Sem registos suficientes para análise rápida.");
+    return;
+  }
+  clearElement(quickAnalysisKpis);
+  quickAnalysisMeta.textContent = `${formatNumber(analysis.rows.length)} linhas analisadas na janela atual. Heurística exploratória, não validação estatística final.`;
+  addQuickKpi("Medidas contínuas", formatNumber(analysis.numericProfiles.length), analysis.primary ? compactTitle(analysis.primary.column.label || analysis.primary.column.name, 28) : "sem medida principal");
+  addQuickKpi("Running total", analysis.running.length ? formatNumber(Math.round(analysis.running.at(-1).total)) : "-", analysis.timeColumn ? `por ${analysis.timeColumn.label || analysis.timeColumn.name}` : "ordem da amostra");
+  addQuickKpi("Anomalias", formatNumber(analysis.anomalyTotal || analysis.anomalies.length), "fora do padrão da amostra");
+  addQuickKpi("Local", analysis.localColumn ? "sim" : "não", analysis.localColumn?.label || analysis.localColumn?.name || "campo não detetado");
+  renderQuickVariables(analysis);
+  renderQuickTrend(analysis);
+  renderQuickDistribution(analysis);
+  renderQuickAnomalies(analysis);
+}
+
 function renderRecentTable() {
   const data = state.recentData;
   const selected = state.selectedDataset;
@@ -837,8 +1174,9 @@ function renderRecentTable() {
     if (!selected || !tableWrap || !tableFrame) {
       recentDataTable.hidden = true;
       recentDataEmpty.hidden = false;
-      recentDataEmpty.textContent = "Sem dataset selecionado.";
-      recentDataMeta.textContent = "Seleciona um dataset para consultar registos recentes da API.";
+      recentDataEmpty.textContent = "Escolhe um dataset.";
+      recentDataMeta.textContent = "Amostra recente da API.";
+      renderQuickEmpty("Escolhe um dataset para ativar a leitura rápida.");
       return;
     }
   }
@@ -851,8 +1189,9 @@ function renderRecentTable() {
   if (!selected) {
     recentDataTable.hidden = true;
     recentDataEmpty.hidden = false;
-    recentDataEmpty.textContent = "Sem dataset selecionado.";
-    recentDataMeta.textContent = "Seleciona um dataset para consultar registos recentes da API.";
+    recentDataEmpty.textContent = "Escolhe um dataset.";
+    recentDataMeta.textContent = "Amostra recente da API.";
+    renderQuickEmpty("Escolhe um dataset para ativar a leitura rápida.");
     return;
   }
 
@@ -861,6 +1200,7 @@ function renderRecentTable() {
     recentDataEmpty.hidden = false;
     recentDataEmpty.textContent = "Sem registos recentes disponíveis para este dataset.";
     recentDataMeta.textContent = "Sem dados recentes para este dataset com o filtro atual.";
+    renderQuickEmpty("Sem amostra para analisar.");
     return;
   }
 
@@ -896,6 +1236,7 @@ function renderRecentTable() {
     });
     tbody.appendChild(row);
   });
+  renderQuickAnalysis(data, columns);
 }
 
 function showRecordsError(error) {
@@ -903,6 +1244,7 @@ function showRecordsError(error) {
   recentDataEmpty.hidden = false;
   recentDataEmpty.textContent = error.message;
   recentDataMeta.textContent = "Falha ao consultar registos recentes.";
+  renderQuickEmpty("Falha ao carregar a amostra para análise rápida.");
 }
 
 function stripHtml(value) {
@@ -984,7 +1326,10 @@ function setupEvents() {
     if (state.selectedDataset) loadRecentRecords(state.selectedDataset).catch(showRecordsError);
   });
 
+  window.addEventListener("scroll", hideTooltip, {passive: true});
+
   window.addEventListener("resize", () => {
+    hideTooltip();
     debounceRender();
   });
 }
