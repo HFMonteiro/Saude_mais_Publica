@@ -76,14 +76,53 @@ const semanticGraphLegend = document.getElementById("semanticGraphLegend");
 let analysisLoadTimer = null;
 let filterTimer = null;
 let resizeTimer = null;
+let activeAnalysisRequest = 0;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function clearElement(element) {
   element.replaceChildren();
 }
 
+function repairEncoding(value) {
+  return String(value)
+    .replace(/Ã¡/g, "á").replace(/Ã /g, "à").replace(/Ã¢/g, "â").replace(/Ã£/g, "ã")
+    .replace(/Ã©/g, "é").replace(/Ãª/g, "ê").replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó").replace(/Ã´/g, "ô").replace(/Ãµ/g, "õ")
+    .replace(/Ãº/g, "ú").replace(/Ã§/g, "ç")
+    .replace(/Ã/g, "Á").replace(/Ã‰/g, "É").replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó").replace(/Ãš/g, "Ú").replace(/Ã‡/g, "Ç")
+    .replace(/Ã—/g, "×").replace(/Â·/g, "·").replace(/Â /g, " ")
+    .replace(/â€¦/g, "...").replace(/â€”/g, "-").replace(/â€“/g, "-")
+    .replace(/â†’/g, "→").replace(/â†/g, "←");
+}
+
 function safeText(value) {
-  return value == null ? "" : String(value);
+  return value == null ? "" : repairEncoding(value);
+}
+
+async function fetchJson(url, {timeoutMs = 22000} = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {signal: controller.signal});
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || `Pedido falhou (${response.status})`);
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("A API demorou demasiado tempo. Tenta atualizar novamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function setBoundedCache(map, key, value, maxSize) {
@@ -224,6 +263,18 @@ function compactTitle(value, max = 46) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
+function compactGraphLabel(value, max = 22) {
+  const text = safeText(value).replace(/\s+/g, " ").trim();
+  if (text.length <= max) return [text];
+
+  const separators = /\s+(?:por|de|da|do|das|dos|em|e)\s+/i;
+  const parts = text.split(separators).map((part) => part.trim()).filter(Boolean);
+  const first = compactTitle(parts[0] || text, max);
+  const tailSource = parts.length > 1 ? parts[parts.length - 1] : text.slice(Math.max(0, text.length - max));
+  const second = compactTitle(tailSource, Math.max(14, max - 4));
+  return first === second ? [first] : [first, second];
+}
+
 function classifySemanticField(field) {
   const normalized = safeText(field).toLowerCase();
   if (/(tempo|periodo|ano|data|trimestre|semana|mes|dia)/.test(normalized)) return "temporal";
@@ -245,7 +296,7 @@ function semanticClassLabel(kind) {
 
 function fieldRisk(kind) {
   if (kind === "generico" || kind === "medida") return "validar granularidade";
-  if (kind === "temporal" || kind === "territorial" || kind === "entidade") return "boa chave candidata";
+  if (kind === "temporal" || kind === "territorial" || kind === "entidade") return "boa base de cruzamento";
   return "validar";
 }
 
@@ -297,11 +348,11 @@ function getPairRows(selectedDataset, selectedField, links, visibleDatasets) {
 }
 
 async function loadAnalysis() {
+  const requestId = ++activeAnalysisRequest;
   statusEl.textContent = "A carregar…";
   try {
-  const response = await fetch(`/api/analysis?min_score=${state.minScore}`);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Erro a carregar análise");
+  const payload = await fetchJson(`/api/analysis?min_score=${state.minScore}`);
+  if (requestId !== activeAnalysisRequest) return;
 
     state.datasets = payload.datasets || [];
     state.links = payload.links || [];
@@ -631,7 +682,7 @@ function renderPairTable() {
   }
 
   const rowNode = document.createElement("tr");
-  ["Dataset A", "Dataset B", "Score", "Áreas", "Chaves"].forEach((label) => {
+  ["Dataset A", "Dataset B", "Score", "Áreas", "Campos comuns"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     rowNode.appendChild(th);
@@ -847,16 +898,16 @@ function renderSemanticGraph() {
 
   if (!datasets.length || !fields.length) {
     const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
-    empty.textContent = "Sem relações semânticas para os filtros atuais.";
+    empty.textContent = "Sem ligações semânticas para os filtros atuais.";
     semanticGraph.appendChild(empty);
     return;
   }
 
-  const sideInset = Math.max(188, Math.min(220, width * 0.24));
+  const sideInset = Math.max(238, Math.min(285, width * 0.3));
   const leftX = sideInset;
   const rightX = width - sideInset;
   const fieldX = width / 2;
-  const datasetLabelMax = width < 820 ? 16 : 18;
+  const datasetLabelMax = width < 820 ? 20 : 24;
   const datasetYStep = height / (datasets.length + 1);
   const fieldYStep = height / (fields.length + 1);
   const datasetPositions = new Map();
@@ -930,13 +981,25 @@ function renderSemanticGraph() {
     const pos = datasetPositions.get(dataset.dataset_id);
     const group = svgNode("g", {class: "semantic-dataset", transform: `translate(${pos.x}, ${pos.y})`});
     group.style.setProperty("--node-theme", getThemeColor(dataset.mega_theme || "Outros"));
+    const fullTitle = displayTitle(dataset);
+    const titleNode = svgNode("title");
+    titleNode.textContent = fullTitle;
+    group.appendChild(titleNode);
     group.appendChild(svgNode("circle", {r: 13}));
     const title = svgNode("text", {
       x: pos.side === "left" ? -18 : 18,
-      y: 4,
+      y: -4,
       "text-anchor": pos.side === "left" ? "end" : "start",
+      class: "semantic-dataset-label",
     });
-    title.textContent = compactTitle(displayTitle(dataset), datasetLabelMax);
+    compactGraphLabel(fullTitle, datasetLabelMax).forEach((line, index) => {
+      const tspan = svgNode("tspan", {
+        x: pos.side === "left" ? -18 : 18,
+        dy: index === 0 ? 0 : 13,
+      });
+      tspan.textContent = line;
+      title.appendChild(tspan);
+    });
     group.appendChild(title);
     group.addEventListener("click", () => {
       setSelectedDataset(dataset.dataset_id);
@@ -990,7 +1053,7 @@ function renderCrossDetail() {
   connection.className = "cross-detail-item";
 
   const title = document.createElement("h3");
-  title.textContent = "Conexão direta";
+  title.textContent = "Ligação direta";
   const titlesRow = document.createElement("div");
   titlesRow.className = "cross-detail-title";
   titlesRow.textContent = `${compactTitle(displayTitle(datasetA), 80)} ↔ ${compactTitle(displayTitle(datasetB), 80)}`;
@@ -1080,10 +1143,10 @@ function buildJoinRecipe(fields, datasetA, datasetB) {
   const crossTheme = datasetA?.mega_theme && datasetB?.mega_theme && datasetA.mega_theme !== datasetB.mega_theme;
 
   return {
-    keys: (preferred.length ? preferred : fields.slice(0, 3)).join(", ") || "validar chave manualmente",
+    keys: (preferred.length ? preferred : fields.slice(0, 3)).join(", ") || "validar campo de ligação manualmente",
     joinType: hasEntityOrTerritory ? "left join com reconciliação de entidades" : "inner join exploratório",
     validations: "tipo, nulos, duplicados e cardinalidade 1:N",
-    risk: hasMeasure || hasGeneric || crossTheme ? "médio: granularidade a confirmar" : "baixo: chave candidata estável",
+    risk: hasMeasure || hasGeneric || crossTheme ? "médio: granularidade a confirmar" : "baixo: campo comum consistente",
   };
 }
 

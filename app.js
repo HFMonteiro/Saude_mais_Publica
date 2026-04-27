@@ -81,8 +81,46 @@ let analysisLoadTimer = null;
 let filterTimer = null;
 let resizeTimer = null;
 
+function repairEncoding(value) {
+  return String(value)
+    .replace(/Ã¡/g, "á").replace(/Ã /g, "à").replace(/Ã¢/g, "â").replace(/Ã£/g, "ã")
+    .replace(/Ã©/g, "é").replace(/Ãª/g, "ê").replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó").replace(/Ã´/g, "ô").replace(/Ãµ/g, "õ")
+    .replace(/Ãº/g, "ú").replace(/Ã§/g, "ç")
+    .replace(/Ã/g, "Á").replace(/Ã‰/g, "É").replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó").replace(/Ãš/g, "Ú").replace(/Ã‡/g, "Ç")
+    .replace(/Ã—/g, "×").replace(/Â·/g, "·").replace(/Â /g, " ")
+    .replace(/â€¦/g, "...").replace(/â€”/g, "-").replace(/â€“/g, "-")
+    .replace(/â†’/g, "→").replace(/â†/g, "←");
+}
+
 function safeText(value) {
-  return value == null ? "" : String(value);
+  return value == null ? "" : repairEncoding(value);
+}
+
+async function fetchJson(url, {timeoutMs = 18000} = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {signal: controller.signal});
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || `Pedido falhou (${response.status})`);
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("A API demorou demasiado tempo. Tenta atualizar novamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function clearElement(element) {
@@ -181,11 +219,7 @@ function debounceRender() {
 async function loadAnalysis() {
   syncState.textContent = "A sincronizar…";
   const url = `/api/analysis?min_score=${state.minScore}`;
-  const response = await fetch(url);
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Erro ao carregar análise");
-  }
+  const payload = await fetchJson(url, {timeoutMs: 24000});
   state.datasets = payload.datasets || [];
   state.links = payload.links || [];
   state.opportunities = payload.opportunities || [];
@@ -310,7 +344,7 @@ function renderThemeCards() {
     theme: "Todos",
     dataset_count: state.datasets.length,
     link_score: state.links.reduce((acc, link) => acc + link.score, 0),
-    description: "Visão global do catálogo e das relações mais fortes para arrancar uma exploração transversal.",
+    description: "Visão global do catálogo e das ligações mais fortes para arrancar uma exploração transversal.",
     value: "",
   };
   [allCard, ...state.themes].forEach((theme) => {
@@ -452,7 +486,7 @@ function graphData() {
       .map((dataset) => dataset.dataset_id),
   );
   return {
-    scope: "Top relações do catálogo",
+    scope: "Top ligações do catálogo",
     nodes: visible.filter((dataset) => ids.has(dataset.dataset_id)),
     links: topLinks.filter((link) => ids.has(link.source) && ids.has(link.target)),
   };
@@ -773,9 +807,8 @@ async function selectDataset(datasetId) {
     if (cacheEntry && Date.now() - cacheEntry.timestamp < META_DATA_CACHE_TTL_MS) {
       return;
     }
-    const response = await fetch(`/api/dataset/${encodeURIComponent(datasetId)}`);
-    const payload = await response.json();
-    if (response.ok && payload?.metas?.default?.description && state.selectedDataset === datasetId) {
+    const payload = await fetchJson(`/api/dataset/${encodeURIComponent(datasetId)}`);
+    if (payload?.metas?.default?.description && state.selectedDataset === datasetId) {
       setBoundedCache(
         state._datasetMetaCache,
         datasetId,
@@ -786,8 +819,6 @@ async function selectDataset(datasetId) {
       container.className = "meta description";
       container.textContent = stripHtml(payload.metas.default.description);
       selectedModel.appendChild(container);
-    } else if (!response.ok) {
-      throw new Error(payload.error || "Não foi possível carregar a descrição do dataset.");
     }
   } catch {
     // Metadata enrichment is optional. The main analysis is already rendered.
@@ -808,11 +839,7 @@ async function loadRecentRecords(datasetId) {
   }
 
   recentDataMeta.textContent = "A carregar registos recentes…";
-  const response = await fetch(`/api/recent/${encodeURIComponent(datasetId)}?limit=60`);
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Erro ao consultar registos recentes");
-  }
+  const payload = await fetchJson(`/api/recent/${encodeURIComponent(datasetId)}?limit=60`);
   if (state.selectedDataset !== datasetId) {
     return;
   }
@@ -853,26 +880,119 @@ function isExcludedMeasureColumn(column, data) {
   return /(telefone|telemovel|telemóvel|fax|email|e-mail|codigo|código|cod_|^cod$|postal|nif|nipc|niss|id_|^id$|url|link|latitude|longitude)/i.test(name);
 }
 
+function quantile(sortedValues, q) {
+  if (!sortedValues.length) return null;
+  const position = (sortedValues.length - 1) * q;
+  const base = Math.floor(position);
+  const rest = position - base;
+  if (sortedValues[base + 1] === undefined) {
+    return sortedValues[base];
+  }
+  return sortedValues[base] + rest * (sortedValues[base + 1] - sortedValues[base]);
+}
+
+function robustStats(values) {
+  const nums = values.map((value) => Number(value)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!nums.length) return null;
+  const median = quantile(nums, 0.5);
+  const q1 = quantile(nums, 0.25);
+  const q3 = quantile(nums, 0.75);
+  const iqr = Math.max(0, q3 - q1);
+  const deviations = nums.map((value) => Math.abs(value - median)).sort((a, b) => a - b);
+  const mad = quantile(deviations, 0.5) || 0;
+  const sum = nums.reduce((acc, value) => acc + value, 0);
+  const avg = sum / nums.length;
+  const variance = nums.reduce((acc, value) => acc + ((value - avg) ** 2), 0) / nums.length;
+  const stddev = Math.sqrt(variance);
+  const robustScale = mad > 0 ? mad / 0.6745 : iqr > 0 ? iqr / 1.349 : stddev;
+  return {
+    count: nums.length,
+    sum,
+    avg,
+    median,
+    q1,
+    q3,
+    iqr,
+    mad,
+    robustScale,
+    stddev,
+    min: nums[0],
+    max: nums[nums.length - 1],
+  };
+}
+
 function numericProfileForColumn(rows, column) {
   const values = rows
     .map((row, index) => ({index, value: parseNumericValue(row[column.name])}))
     .filter((item) => item.value !== null);
   if (values.length < Math.max(3, Math.ceil(rows.length * 0.25))) return null;
   const nums = values.map((item) => item.value);
-  const sum = nums.reduce((acc, value) => acc + value, 0);
-  const avg = sum / nums.length;
-  const variance = nums.reduce((acc, value) => acc + ((value - avg) ** 2), 0) / nums.length;
+  const stats = robustStats(nums);
+  const uniqueCount = new Set(nums.map((value) => String(value))).size;
   return {
     column,
     values,
-    count: nums.length,
-    sum,
-    avg,
-    min: Math.min(...nums),
-    max: Math.max(...nums),
-    stddev: Math.sqrt(variance),
+    count: stats.count,
+    sum: stats.sum,
+    avg: stats.avg,
+    median: stats.median,
+    q1: stats.q1,
+    q3: stats.q3,
+    iqr: stats.iqr,
+    mad: stats.mad,
+    robustScale: stats.robustScale,
+    min: stats.min,
+    max: stats.max,
+    stddev: stats.stddev,
+    uniqueCount,
     missing: rows.length - nums.length,
   };
+}
+
+function groupValuesByContext(profile, rows, column) {
+  const groups = new Map();
+  if (!column) return groups;
+  profile.values.forEach((item) => {
+    const key = safeText(rows[item.index]?.[column.name]).trim();
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item.value);
+  });
+  return groups;
+}
+
+function baselineForItem(profile, rows, item, timeColumn, localColumn) {
+  const record = rows[item.index] || {};
+  const candidates = [];
+  const period = timeColumn ? safeText(record[timeColumn.name]).trim() : "";
+  const place = localColumn ? safeText(record[localColumn.name]).trim() : "";
+
+  if (profile.periodGroups?.has(period)) {
+    candidates.push({kind: "período", label: period, values: profile.periodGroups.get(period)});
+  }
+  if (profile.localGroups?.has(place)) {
+    candidates.push({kind: "local", label: place, values: profile.localGroups.get(place)});
+  }
+  candidates.push({kind: "amostra", label: "amostra global", values: profile.values.map((entry) => entry.value)});
+
+  for (const candidate of candidates) {
+    if ((candidate.values || []).length < 8) continue;
+    const stats = robustStats(candidate.values);
+    if (!stats || !stats.robustScale) continue;
+    return {...candidate, stats};
+  }
+  return null;
+}
+
+function anomalyScore(itemValue, stats) {
+  if (!stats || !stats.robustScale) return null;
+  const modifiedZ = 0.6745 * (itemValue - stats.median) / (stats.mad || stats.robustScale * 0.6745);
+  const robustZ = (itemValue - stats.median) / stats.robustScale;
+  const iqrHigh = stats.q3 + 1.5 * stats.iqr;
+  const iqrLow = stats.q1 - 1.5 * stats.iqr;
+  const beyondIqr = stats.iqr > 0 && (itemValue > iqrHigh || itemValue < iqrLow);
+  const score = Math.max(Math.abs(modifiedZ), Math.abs(robustZ));
+  return {score, modifiedZ, robustZ, beyondIqr, iqrHigh, iqrLow};
 }
 
 function buildQuickAnalysis(data, columns) {
@@ -885,26 +1005,36 @@ function buildQuickAnalysis(data, columns) {
     .map((column) => numericProfileForColumn(rows, column))
     .filter(Boolean)
     .sort((a, b) => (b.stddev * b.count) - (a.stddev * a.count));
+  numericProfiles.forEach((profile) => {
+    profile.periodGroups = groupValuesByContext(profile, rows, timeColumn);
+    profile.localGroups = groupValuesByContext(profile, rows, localColumn);
+  });
   const primary = numericProfiles[0] || null;
 
   const anomalies = [];
   numericProfiles.slice(0, 6).forEach((profile) => {
-    if (!profile.stddev) return;
+    if (profile.count < 8 || profile.uniqueCount < 4) return;
     profile.values.forEach((item) => {
-      const z = Math.abs((item.value - profile.avg) / profile.stddev);
-      if (z >= 2) {
+      const baseline = baselineForItem(profile, rows, item, timeColumn, localColumn);
+      const score = anomalyScore(item.value, baseline?.stats);
+      if (score && (Math.abs(score.modifiedZ) >= 3.5 || (score.beyondIqr && score.score >= 2.8))) {
         const record = rows[item.index] || {};
         const period = timeColumn ? safeText(record[timeColumn.name]) : "";
         const place = localColumn ? safeText(record[localColumn.name]) : "";
         anomalies.push({
           field: profile.column.label || profile.column.name,
           value: item.value,
-          expected: profile.avg,
-          delta: item.value - profile.avg,
+          expected: baseline.stats.median,
+          baselineKind: baseline.kind,
+          baselineLabel: baseline.label,
+          baselineCount: baseline.stats.count,
+          delta: item.value - baseline.stats.median,
           row: item.index + 1,
-          z,
-          direction: item.value >= profile.avg ? "acima" : "abaixo",
-          severity: z >= 3 ? "alta" : z >= 2.5 ? "média" : "ligeira",
+          z: score.score,
+          modifiedZ: score.modifiedZ,
+          iqrFlag: score.beyondIqr,
+          direction: item.value >= baseline.stats.median ? "acima" : "abaixo",
+          severity: Math.abs(score.modifiedZ) >= 5 || score.score >= 5 ? "alta" : Math.abs(score.modifiedZ) >= 3.5 ? "média" : "ligeira",
           period,
           place,
         });
@@ -1090,7 +1220,7 @@ function renderQuickAnomalies(analysis) {
   }
   const intro = document.createElement("div");
   intro.className = "quick-anomaly-note";
-  intro.textContent = `${formatNumber(analysis.anomalyTotal || analysis.anomalies.length)} sinais fora do padrão. Mostro os mais fortes; confirma unidade, período e entidade antes de concluir.`;
+  intro.textContent = `${formatNumber(analysis.anomalyTotal || analysis.anomalies.length)} sinais robustos fora do padrão. A comparação usa mediana/MAD e, quando possível, grupos por período ou local; confirma unidade, cobertura e definição antes de concluir.`;
   quickAnomalyList.appendChild(intro);
   const fragment = document.createDocumentFragment();
   analysis.anomalies.forEach((anomaly) => {
@@ -1103,26 +1233,31 @@ function renderQuickAnomalies(analysis) {
     strong.textContent = compactTitle(anomaly.field, 38);
     strong.title = anomaly.field;
     const summary = document.createElement("p");
-    summary.textContent = `${formatNumber(Math.round(Math.abs(anomaly.delta)))} ${anomaly.direction} do padrão da amostra.`;
+    summary.textContent = `${formatNumber(Math.round(Math.abs(anomaly.delta)))} ${anomaly.direction} da mediana de referência.`;
     const facts = document.createElement("div");
     facts.className = "quick-anomaly-facts";
     [
       ["Valor", formatNumber(Math.round(anomaly.value))],
-      ["Esperado", formatNumber(Math.round(anomaly.expected))],
+      ["Mediana ref.", formatNumber(Math.round(anomaly.expected))],
       ["Linha", `#${anomaly.row}`],
-      ["Desvio", `${anomaly.z.toFixed(1)} sigma`],
+      ["Desvio", `${anomaly.z.toFixed(1)} robusto`],
+      ["Base", `${anomaly.baselineKind} · n=${formatNumber(anomaly.baselineCount)}`],
     ].forEach(([label, value]) => {
       const fact = document.createElement("span");
       fact.textContent = `${label}: ${value}`;
       facts.appendChild(fact);
     });
     const context = document.createElement("small");
-    const contextParts = [anomaly.period && `período ${compactTitle(anomaly.period, 18)}`, anomaly.place && `local ${compactTitle(anomaly.place, 18)}`].filter(Boolean);
+    const contextParts = [
+      anomaly.period && `período ${compactTitle(anomaly.period, 18)}`,
+      anomaly.place && `local ${compactTitle(anomaly.place, 18)}`,
+      anomaly.baselineLabel && `comparado com ${compactTitle(anomaly.baselineLabel, 24)}`,
+    ].filter(Boolean);
     context.textContent = contextParts.length ? contextParts.join(" · ") : "Sem eixo temporal/local detetado para contextualizar.";
     const action = document.createElement("em");
     action.textContent = anomaly.severity === "alta"
-      ? "Validar na fonte e procurar mudança de definição."
-      : "Confirmar se é efeito real, falta de registos ou codificação.";
+      ? "Validar fonte, duplicados e mudança de definição antes de interpretar."
+      : "Confirmar se é efeito real, falta de registos, codificação ou grupo pouco comparável.";
     item.append(badge, strong, summary, facts, context, action);
     fragment.appendChild(item);
   });

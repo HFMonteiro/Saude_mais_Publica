@@ -12,6 +12,7 @@ const state = {
   selectedPublicHealthKey: "",
   selectedPublicHealthMatrixCell: "",
   selectedLocalPriorityCell: "",
+  selectedPredictiveIndicator: "",
   activePublicHealthLayer: "impact",
   publicHealthRenderLimit: 40,
   publicHealthSort: "priority",
@@ -24,6 +25,8 @@ const state = {
     key: "",
     correlations: [],
     dimensions: [],
+    publicHealthKey: "",
+    publicHealthRows: null,
   },
 };
 
@@ -59,10 +62,12 @@ const dataPcaChart = document.getElementById("dataPcaChart");
 const predictiveMeta = document.getElementById("predictiveMeta");
 const predictiveDataButton = document.getElementById("predictiveDataButton");
 const predictiveKpis = document.getElementById("predictiveKpis");
+const predictiveIndicatorFilter = document.getElementById("predictiveIndicatorFilter");
 const predictiveForecastChart = document.getElementById("predictiveForecastChart");
 const predictiveDrivers = document.getElementById("predictiveDrivers");
 const predictiveScenarios = document.getElementById("predictiveScenarios");
 const predictiveRisk = document.getElementById("predictiveRisk");
+const predictiveDatasetCandidates = document.getElementById("predictiveDatasetCandidates");
 const analyticsTabs = Array.from(document.querySelectorAll("[data-analytics-tab]"));
 const analyticsPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
 const topOpportunities = document.getElementById("analyticsTopOpportunities");
@@ -121,7 +126,7 @@ const PUBLIC_HEALTH_GEO = [
     h: 82,
     labelX: 284,
     labelY: 108,
-    match: /(norte|porto|braga|viana|vila real|braganca|bragança|uls)/,
+    match: /(norte|porto|braga|viana|vila real|braganca|bragança|sao joao|são joão|santo antonio|santo antónio|tamega|tâmega|sousa|gaia|espinho|matosinhos|alto minho|medio ave|médio ave|tras-os-montes|trás-os-montes|nordeste)/,
   },
   {
     id: "centro",
@@ -132,7 +137,7 @@ const PUBLIC_HEALTH_GEO = [
     h: 82,
     labelX: 284,
     labelY: 200,
-    match: /(centro|coimbra|leiria|viseu|guarda|castelo branco|aveiro)/,
+    match: /(centro|coimbra|leiria|viseu|guarda|castelo branco|aveiro|cova da beira|baixo mondego|dao lafoes|dão lafões|beira interior|baixo vouga)/,
   },
   {
     id: "lisboa",
@@ -143,7 +148,7 @@ const PUBLIC_HEALTH_GEO = [
     h: 82,
     labelX: 284,
     labelY: 292,
-    match: /(lisboa|tejo|setubal|setúbal|santarem|santarém|oeste|aml)/,
+    match: /(lisboa|tejo|setubal|setúbal|santarem|santarém|oeste|aml|amadora|sintra|loures|odivelas|almada|seixal|arrabida|arrábida|arco ribeirinho|leziria|lezíria|medio tejo|médio tejo|estuário)/,
   },
   {
     id: "alentejo",
@@ -201,6 +206,51 @@ const PUBLIC_HEALTH_NATIONAL_GEO = {
   labelY: 111,
   match: /nacional/,
 };
+const PUBLIC_HEALTH_AGGREGATION_GEO = {
+  id: "agregar",
+  label: "Entidade por validar",
+  x: 346,
+  y: 174,
+  w: 132,
+  h: 84,
+  labelX: 412,
+  labelY: 209,
+  match: /$/,
+};
+const ULS_REGION_RULES = [
+  ["norte", "Alto Minho", /alto minho|viana do castelo/],
+  ["norte", "Braga / Médio Ave", /braga|medio ave|médio ave|barcelos|famalicao|famalicão/],
+  ["norte", "São João", /sao joao|são joão|maia|valongo/],
+  ["norte", "Santo António", /santo antonio|santo antónio|porto/],
+  ["norte", "Gaia/Espinho", /gaia|espinho/],
+  ["norte", "Matosinhos", /matosinhos/],
+  ["norte", "Póvoa/Vila do Conde", /povoa|póvoa|vila do conde/],
+  ["norte", "Tâmega e Sousa", /tamega|tâmega|sousa|penafiel|paredes/],
+  ["norte", "Trás-os-Montes e Alto Douro", /tras os montes|trás os montes|alto douro|vila real|chaves|braganca|bragança|nordeste/],
+  ["centro", "Guarda", /guarda/],
+  ["centro", "Castelo Branco", /castelo branco/],
+  ["centro", "Cova da Beira", /cova da beira|covilha|covilhã/],
+  ["centro", "Coimbra / Baixo Mondego", /coimbra|baixo mondego|figueira da foz/],
+  ["centro", "Dão Lafões", /dao lafoes|dão lafões|viseu|tondela/],
+  ["centro", "Leiria", /leiria|pombal|alcobaca|alcobaça/],
+  ["lisboa", "Amadora-Sintra", /amadora|sintra|fernando fonseca/],
+  ["lisboa", "Lisboa Norte", /lisboa norte|santa maria|pulido valente/],
+  ["lisboa", "São José", /sao jose|são josé|lisboa central|sacavem|sacavém|gama pinto/],
+  ["lisboa", "Lisboa Ocidental", /lisboa ocidental|oeiras|cascais|egas moniz|sao francisco xavier|são francisco xavier/],
+  ["lisboa", "Loures-Odivelas", /loures|odivelas|beatriz angelo|beatriz ângelo/],
+  ["lisboa", "Oeste", /oeste|caldas da rainha|peniche|torres vedras/],
+  ["lisboa", "Médio Tejo", /medio tejo|médio tejo|abrantes|tomar|torres novas/],
+  ["lisboa", "Lezíria", /leziria|lezíria|santarem|santarém/],
+  ["lisboa", "Estuário do Tejo", /estuario|estuário|vila franca de xira/],
+  ["lisboa", "Arrábida", /arrabida|arrábida|setubal|setúbal/],
+  ["lisboa", "Almada-Seixal", /almada|seixal/],
+  ["lisboa", "Arco Ribeirinho", /arco ribeirinho|barreiro|montijo/],
+  ["alentejo", "Alentejo Central", /alentejo central|evora|évora/],
+  ["alentejo", "Alto Alentejo", /alto alentejo|portalegre|norte alentejano/],
+  ["alentejo", "Baixo Alentejo", /baixo alentejo|beja/],
+  ["alentejo", "Litoral Alentejano", /litoral alentejano|santiago do cacem|santiago do cacém/],
+  ["algarve", "Algarve", /algarve|faro|portimao|portimão|lagos|tavira/],
+];
 const PNS_TERMS = [
   "desigualdade",
   "vulneravel",
@@ -240,12 +290,60 @@ function clearElement(element) {
   element.replaceChildren();
 }
 
+function repairEncoding(value) {
+  return String(value)
+    .replace(/Ã¡/g, "á").replace(/Ã /g, "à").replace(/Ã¢/g, "â").replace(/Ã£/g, "ã")
+    .replace(/Ã©/g, "é").replace(/Ãª/g, "ê").replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó").replace(/Ã´/g, "ô").replace(/Ãµ/g, "õ")
+    .replace(/Ãº/g, "ú").replace(/Ã§/g, "ç")
+    .replace(/Ã/g, "Á").replace(/Ã‰/g, "É").replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó").replace(/Ãš/g, "Ú").replace(/Ã‡/g, "Ç")
+    .replace(/Ã—/g, "×").replace(/Â·/g, "·").replace(/Â /g, " ")
+    .replace(/â€¦/g, "...").replace(/â€”/g, "-").replace(/â€“/g, "-")
+    .replace(/â†’/g, "→").replace(/â†/g, "←");
+}
+
 function safeText(value) {
-  return value == null ? "" : String(value);
+  return value == null ? "" : repairEncoding(value);
+}
+
+async function fetchJson(url, {timeoutMs = 22000} = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {signal: controller.signal});
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || `Pedido falhou (${response.status})`);
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("A API demorou demasiado tempo. Tenta atualizar novamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function formatNumber(value) {
   return new Intl.NumberFormat("pt-PT").format(value || 0);
+}
+
+function formatDisplayValue(value, digits = 2) {
+  const text = safeText(value).trim();
+  if (!text) return "-";
+  const normalized = text.replace(/\s+/g, "").replace(",", ".");
+  if (/^-?\d+(?:\.\d+)?$/.test(normalized)) {
+    return formatDecimal(Number(normalized), digits);
+  }
+  return text;
 }
 
 function compactTitle(value, max = 58) {
@@ -297,7 +395,7 @@ function relationKey(item) {
 }
 
 function invalidateFilterCache() {
-  state._filterCache = {key: "", correlations: [], dimensions: []};
+  state._filterCache = {key: "", correlations: [], dimensions: [], publicHealthKey: "", publicHealthRows: null};
 }
 
 function activeFilterKey() {
@@ -325,30 +423,43 @@ function renderDatasetMode() {
   dataManualMode?.classList.toggle("is-active", state.datasetMode === "manual");
 }
 
-function setActiveTab(tab) {
-  state.activeTab = tab || "data";
+function setActiveTab(tab, {syncUrl = true, force = false} = {}) {
+  const nextTab = tab || "data";
+  if (!force && state.activeTab === nextTab) {
+    return;
+  }
+  state.activeTab = nextTab;
   analyticsTabs.forEach((button) => {
     const isActive = button.dataset.analyticsTab === state.activeTab;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.setAttribute("role", "tab");
+    button.tabIndex = isActive ? 0 : -1;
   });
   analyticsPanels.forEach((panel) => {
     const panels = (panel.dataset.tabPanel || "").split(/\s+/);
     panel.hidden = !panels.includes(state.activeTab);
+    panel.setAttribute("role", "tabpanel");
   });
+  if (syncUrl && window.history?.replaceState) {
+    const params = new URLSearchParams(window.location.search);
+    if (state.activeTab === "data") {
+      params.delete("tab");
+    } else {
+      params.set("tab", state.activeTab);
+    }
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }
   renderAll();
 }
 
 async function loadAnalytics() {
   const requestId = ++activeRequest;
   analyticsStatus.textContent = "A carregar...";
-  const response = await fetch(`/api/analytics?min_score=${state.minScore}`);
-  const payload = await response.json();
+  const payload = await fetchJson(`/api/analytics?min_score=${state.minScore}`, {timeoutMs: 26000});
   if (requestId !== activeRequest) {
     return;
-  }
-  if (!response.ok) {
-    throw new Error(payload.error || "Erro ao carregar analytics");
   }
   state.payload = payload;
   invalidateFilterCache();
@@ -405,12 +516,10 @@ async function loadDataAnalytics() {
   if (!state.selectedDataDataset) return;
   const requestId = ++activeDataRequest;
   dataAnalyticsStatus.textContent = "A analisar amostra...";
-  const response = await fetch(`/api/data-analytics?dataset_id=${encodeURIComponent(state.selectedDataDataset)}&limit=${state.dataLimit}`);
-  const payload = await response.json();
+  const payload = await fetchJson(`/api/data-analytics?dataset_id=${encodeURIComponent(state.selectedDataDataset)}&limit=${state.dataLimit}`, {
+    timeoutMs: 26000,
+  });
   if (requestId !== activeDataRequest) return;
-  if (!response.ok) {
-    throw new Error(payload.error || "Erro ao analisar dados");
-  }
   state.dataPayload = payload;
   dataAnalyticsStatus.textContent = `Amostra atualizada · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   if (state.activeTab === "predictive") {
@@ -505,6 +614,24 @@ function normalizeSearchText(value) {
     .toLowerCase();
 }
 
+function resolveUlsRegion(text) {
+  const normalized = normalizeSearchText(text);
+  for (const [regionId, label, pattern] of ULS_REGION_RULES) {
+    if (pattern.test(normalized)) {
+      const geo = PUBLIC_HEALTH_GEO.find((entry) => entry.id === regionId);
+      if (geo) {
+        return {
+          ...geo,
+          resolution: "mapped",
+          matchedEntity: label,
+          mappingConfidence: "alta",
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function priorityDecision(score, row) {
   if ((row.risk || 0) >= 7 || row.viability < 4) return "Validar antes";
   if (score >= 72) return "Priorizar";
@@ -530,7 +657,14 @@ function matchedGeo(item) {
     ...(item.shared_fields || []),
     ...((item.public_health_model || {}).matched_areas || []),
   ].join(" "));
-  return PUBLIC_HEALTH_GEO.find((geo) => geo.match.test(text)) || PUBLIC_HEALTH_NATIONAL_GEO;
+  const mapped = resolveUlsRegion(text);
+  if (mapped) return mapped;
+  const regional = PUBLIC_HEALTH_GEO.find((geo) => geo.match.test(text));
+  if (regional) return {...regional, resolution: "direct", mappingConfidence: "media"};
+  if (/\b(uls|unidade local de saude|hospital|centro hospitalar|ch |epe|aces|usf|ucsp)\b/.test(text)) {
+    return {...PUBLIC_HEALTH_AGGREGATION_GEO, resolution: "pending", mappingConfidence: "baixa"};
+  }
+  return {...PUBLIC_HEALTH_NATIONAL_GEO, resolution: "national"};
 }
 
 function pnsAlignment(item) {
@@ -546,6 +680,11 @@ function pnsAlignment(item) {
 }
 
 function publicHealthPriorityRows() {
+  const key = activeFilterKey() + "|" + state.publicHealthSort + "|" + (state.dataPayload?.generated_at || "");
+  if (state._filterCache.publicHealthKey === key && state._filterCache.publicHealthRows) {
+    return state._filterCache.publicHealthRows;
+  }
+
   const rows = filteredCorrelations().map((item) => {
     const model = item.public_health_model || {};
     const likelihoodRank = {alta: 3, media: 2, baixa: 1}[model.likelihood?.level || "baixa"];
@@ -587,7 +726,10 @@ function publicHealthPriorityRows() {
     risk: (a, b) => b.risk - a.risk || b.priority - a.priority,
     viability: (a, b) => b.viability - a.viability || b.priority - a.priority,
   };
-  return rows.sort(sorters[state.publicHealthSort] || sorters.priority);
+  const result = rows.sort(sorters[state.publicHealthSort] || sorters.priority);
+  state._filterCache.publicHealthKey = key;
+  state._filterCache.publicHealthRows = result;
+  return result;
 }
 
 function publicHealthReason(row) {
@@ -599,7 +741,8 @@ function publicHealthReason(row) {
   if (row.decision === "Explorar") parts.push("potencial exploratório ainda incompleto");
   if (row.decision === "Validar antes") parts.push("validar risco, granularidade ou viabilidade");
   if (drivers.length) parts.push(`drivers: ${drivers.slice(0, 2).join(", ")}`);
-  if (row.geo.label !== "Nacional") parts.push(`área: ${row.geo.label}`);
+  if (row.geo.resolution === "mapped") parts.push(`entidade reconhecida: ${row.geo.matchedEntity}`);
+  if (row.geo.id !== "nacional") parts.push(`área: ${row.geo.label}`);
   return parts.join(" · ");
 }
 
@@ -622,6 +765,7 @@ function questionForPriority(row) {
 
 function aggregateHealthGeo(rows) {
   const base = new Map(PUBLIC_HEALTH_GEO.map((geo) => [geo.id, {...geo, count: 0, priority: 0, impact: 0, likelihood: 0, risk: 0, entities: 0}]));
+  base.set("agregar", {...PUBLIC_HEALTH_AGGREGATION_GEO, count: 0, priority: 0, impact: 0, likelihood: 0, risk: 0, entities: 0});
   base.set("nacional", {...PUBLIC_HEALTH_NATIONAL_GEO, count: 0, priority: 0, impact: 0, likelihood: 0, risk: 0, entities: 0});
   rows.forEach((row) => {
     const entry = base.get(row.geo.id) || base.get("nacional");
@@ -668,7 +812,7 @@ function renderTopOpportunities() {
     const title = document.createElement("strong");
     title.textContent = `${compactTitle(item.source_title, 34)} / ${compactTitle(item.target_title, 34)}`;
     const meta = document.createElement("small");
-    meta.textContent = `${likelihoodLabel(model.likelihood?.level || "baixa")} likelihood · ${impactLabel(model.impact?.level || "baixo")} impact · ${(item.risk_flags || []).length ? "validar risco" : "baixo risco"}`;
+    meta.textContent = `${likelihoodLabel(model.likelihood?.level || "baixa")} viabilidade · ${impactLabel(model.impact?.level || "baixo")} impacto · ${(item.risk_flags || []).length ? "validar risco" : "baixo risco"}`;
     const keys = document.createElement("em");
     keys.textContent = (item.join_recipe?.suggested_keys || item.shared_fields || []).slice(0, 3).join(", ") || "chave a validar";
     card.append(rank, title, meta, keys);
@@ -753,8 +897,8 @@ function renderDataCorrelations(payload) {
     const item = document.createElement("div");
     item.className = row.correlation >= 0 ? "data-correlation-row is-positive" : "data-correlation-row is-negative";
     const label = document.createElement("span");
-    label.textContent = `${compactTitle(row.label_a, 20)} / ${compactTitle(row.label_b, 20)}`;
-    label.title = `${row.label_a} / ${row.label_b}`;
+    label.textContent = `${compactTitle(row.label_a, 28)} / ${compactTitle(row.label_b, 28)}`;
+    label.title = `${safeText(row.label_a)} / ${safeText(row.label_b)}`;
     const bar = document.createElement("i");
     bar.style.width = `${Math.max(4, row.abs_correlation * 100)}%`;
     const value = document.createElement("strong");
@@ -828,7 +972,7 @@ function renderFeatureDetail(row) {
   const action = document.createElement("button");
   action.type = "button";
   action.className = "ghost-button";
-  action.textContent = "Filtrar relações";
+  action.textContent = "Filtrar ligações";
   action.addEventListener("click", () => {
     analyticsSearch.value = row.field;
     state.search = row.field;
@@ -920,7 +1064,7 @@ function renderNumericProfiles(payload) {
       ["desvio", formatDecimal(row.stddev, 2)],
     ].forEach(([label, value]) => {
       const chip = document.createElement("span");
-      chip.textContent = `${label}: ${value}`;
+      chip.textContent = `${label}: ${formatDisplayValue(value)}`;
       stats.appendChild(chip);
     });
     item.append(title, meta, stats);
@@ -951,7 +1095,8 @@ function renderCategoricalProfiles(payload) {
     (row.top_values || []).slice(0, 5).forEach((value) => {
       const valueRow = document.createElement("span");
       const name = document.createElement("b");
-      name.textContent = compactTitle(value.value, 36);
+      name.textContent = compactTitle(formatDisplayValue(value.value), 36);
+      name.title = formatDisplayValue(value.value);
       const bar = document.createElement("i");
       bar.style.width = `${Math.max(4, (value.count / max) * 100)}%`;
       const count = document.createElement("em");
@@ -1031,16 +1176,8 @@ function renderDataTrend(payload) {
   });
 }
 
-function bestPredictiveTrend(payload) {
-  const trends = (payload?.trends || []).filter((trend) => (trend.points || []).length >= 2);
-  return trends
-    .slice()
-    .sort((a, b) => (b.points?.length || 0) - (a.points?.length || 0))
-    [0] || null;
-}
-
-function predictiveEligibility(trend) {
-  const points = (trend?.points || [])
+function trendPoints(trend) {
+  return (trend?.points || [])
     .map((point, index) => ({
       x: index,
       period: point.period,
@@ -1048,25 +1185,145 @@ function predictiveEligibility(trend) {
       observed: true,
     }))
     .filter((point) => Number.isFinite(point.value));
+}
+
+function predictiveEligibility(trend, payload = null) {
+  const points = trendPoints(trend);
+  const sampleSize = payload?.sample_size || 0;
+  const recordsPerPeriod = points.length ? sampleSize / points.length : 0;
   if (points.length < 4) {
-    return {ok: false, points, reason: "Poucos períodos para projetar com decência."};
+    return {ok: false, points, reason: "Poucos períodos para projetar com fiabilidade.", score: 0};
   }
   if (points.length > 50) {
-    return {ok: false, points, reason: "Série longa: precisa de agregação, sazonalidade ou modelo próprio."};
+    return {ok: false, points, reason: "Série longa: precisa de agregação, sazonalidade ou modelo próprio.", score: 0};
+  }
+  if (sampleSize && recordsPerPeriod < 8) {
+    return {ok: false, points, reason: "Volume baixo por período: comparação instável.", score: 0};
   }
   const values = points.map((point) => point.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const mean = values.reduce((acc, value) => acc + value, 0) / values.length;
   const span = max - min;
-  if (!span || Math.abs(span / (Math.abs(mean) || 1)) < 0.015) {
-    return {ok: false, points, reason: "Variação baixa: a projeção não acrescenta valor."};
+  const relativeSpan = Math.abs(span / (Math.abs(mean) || 1));
+  const uniqueValues = new Set(values.map((value) => formatDecimal(value, 6))).size;
+  if (uniqueValues < 3) {
+    return {ok: false, points, reason: "Valores quase constantes: não há sinal útil para projetar.", score: 0};
   }
-  return {ok: true, points, reason: ""};
+  if (!span || relativeSpan < 0.015) {
+    return {ok: false, points, reason: "Variação baixa: a projeção não acrescenta valor.", score: 0};
+  }
+  const score = Math.min(
+    100,
+    Math.round(
+      Math.min(40, points.length * 5)
+      + Math.min(30, recordsPerPeriod || sampleSize / 4)
+      + Math.min(20, relativeSpan * 180)
+      + Math.min(10, uniqueValues * 1.5)
+    )
+  );
+  return {ok: true, points, reason: "", score};
 }
 
-function forecastFromTrend(trend) {
-  const eligibility = predictiveEligibility(trend);
+function predictiveIndicatorCandidates(payload) {
+  const trends = (payload?.trends || []).filter((trend) => (trend.points || []).length >= 2);
+  return trends
+    .map((trend) => {
+      const eligibility = predictiveEligibility(trend, payload);
+      return {
+        trend,
+        eligibility,
+        label: trend.label || "Série temporal",
+        points: eligibility.points.length,
+      };
+    })
+    .filter((row) => row.eligibility.ok)
+    .sort((a, b) => (b.eligibility.score - a.eligibility.score) || (b.points - a.points));
+}
+
+function predictiveDatasetCandidatesFromCatalog() {
+  const datasets = state.payload?.datasets || [];
+  return datasets
+    .map((dataset) => {
+      const text = normalizeSearchText(`${dataset.dataset_id || ""} ${dataset.title || ""}`);
+      let score = 0;
+      const reasons = [];
+      if (/mensal|mes|m[eê]s/.test(text)) {
+        score += 45;
+        reasons.push("mensal");
+      }
+      if (/trimestr|quarter/.test(text)) {
+        score += 36;
+        reasons.push("trimestral");
+      }
+      if (/diari|dia|tempo real/.test(text)) {
+        score += 30;
+        reasons.push("diário");
+      }
+      if (/evolucao|evolu[cç][aã]o|historico|hist[oó]rico|sazonal|serie|s[eé]rie/.test(text)) {
+        score += 26;
+        reasons.push("evolução");
+      }
+      if ((dataset.metric_candidate_count || 0) > 0) {
+        score += Math.min(20, dataset.metric_candidate_count * 4);
+        reasons.push(`${dataset.metric_candidate_count} medida(s) provável(eis)`);
+      }
+      if ((dataset.field_count || 0) >= 6) {
+        score += 8;
+        reasons.push("schema rico");
+      }
+      return {dataset, score, reasons};
+    })
+    .filter((row) => row.score >= 30)
+    .sort((a, b) => b.score - a.score || (b.dataset.metric_candidate_count || 0) - (a.dataset.metric_candidate_count || 0))
+    .slice(0, 10);
+}
+
+function renderPredictiveDatasetCandidates() {
+  if (!predictiveDatasetCandidates) return;
+  clearElement(predictiveDatasetCandidates);
+  const rows = predictiveDatasetCandidatesFromCatalog();
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Ainda não há sugestões temporais no catálogo carregado.";
+    predictiveDatasetCandidates.appendChild(empty);
+    return;
+  }
+  rows.forEach(({dataset, score, reasons}) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = dataset.dataset_id === state.selectedDataDataset ? "predictive-dataset-card is-active" : "predictive-dataset-card";
+    const title = document.createElement("strong");
+    title.textContent = compactTitle(dataset.title || dataset.dataset_id, 70);
+    title.title = dataset.title || dataset.dataset_id;
+    const meta = document.createElement("small");
+    meta.textContent = `${dataset.mega_theme || "Catálogo"} · ${reasons.slice(0, 3).join(" · ")} · score ${formatDecimal(score, 0)}`;
+    const action = document.createElement("span");
+    action.textContent = dataset.dataset_id === state.selectedDataDataset ? "em análise" : "analisar";
+    button.append(title, meta, action);
+    button.addEventListener("click", () => {
+      state.selectedDataDataset = dataset.dataset_id;
+      if (dataDatasetSelect) dataDatasetSelect.value = dataset.dataset_id;
+      state.datasetMode = "manual";
+      renderDatasetMode();
+      loadDataAnalytics().then(() => setActiveTab("predictive")).catch(showDataError);
+    });
+    predictiveDatasetCandidates.appendChild(button);
+  });
+}
+
+function bestPredictiveTrend(payload, selectedLabel = "") {
+  const candidates = predictiveIndicatorCandidates(payload);
+  if (selectedLabel) {
+    const selected = candidates.find((row) => row.label === selectedLabel);
+    if (selected) return selected.trend;
+  }
+  return candidates[0]?.trend || null;
+}
+
+function forecastFromTrend(trend, payload = null) {
+  const eligibility = predictiveEligibility(trend, payload);
   const points = eligibility.points;
   if (!eligibility.ok) return {available: false, label: trend?.label || "Série temporal", points, reason: eligibility.reason};
   const n = points.length;
@@ -1096,6 +1353,31 @@ function forecastFromTrend(trend) {
     error,
     last: points.at(-1),
   };
+}
+
+function renderPredictiveIndicatorFilter(candidates) {
+  if (!predictiveIndicatorFilter) return;
+  clearElement(predictiveIndicatorFilter);
+  if (!candidates.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Sem indicadores com fiabilidade suficiente";
+    predictiveIndicatorFilter.appendChild(option);
+    predictiveIndicatorFilter.disabled = true;
+    state.selectedPredictiveIndicator = "";
+    return;
+  }
+  predictiveIndicatorFilter.disabled = false;
+  candidates.forEach((row) => {
+    const option = document.createElement("option");
+    option.value = row.label;
+    option.textContent = `${compactTitle(row.label, 54)} · ${row.points} períodos · score ${row.eligibility.score}`;
+    predictiveIndicatorFilter.appendChild(option);
+  });
+  if (!candidates.some((row) => row.label === state.selectedPredictiveIndicator)) {
+    state.selectedPredictiveIndicator = candidates[0].label;
+  }
+  predictiveIndicatorFilter.value = state.selectedPredictiveIndicator;
 }
 
 function predictiveConfidence(payload, forecast) {
@@ -1274,9 +1556,11 @@ function renderPredictiveRisk(payload, forecast) {
 
 function renderPredictiveAnalytics() {
   clearPredictive();
+  renderPredictiveDatasetCandidates();
   const payload = state.dataPayload;
   if (!payload) {
     predictiveMeta.textContent = "Escolhe ou analisa um dataset em Dados reais para ativar a projeção.";
+    renderPredictiveIndicatorFilter([]);
     if (state.selectedDataDataset && state._predictiveLoadDataset !== state.selectedDataDataset) {
       state._predictiveLoadDataset = state.selectedDataDataset;
       loadDataAnalytics().catch(showDataError);
@@ -1285,15 +1569,17 @@ function renderPredictiveAnalytics() {
     return;
   }
   state._predictiveLoadDataset = "";
-  const trend = bestPredictiveTrend(payload);
-  const forecast = forecastFromTrend(trend);
+  const candidates = predictiveIndicatorCandidates(payload);
+  renderPredictiveIndicatorFilter(candidates);
+  const trend = bestPredictiveTrend(payload, state.selectedPredictiveIndicator);
+  const forecast = forecastFromTrend(trend, payload);
   const confidence = predictiveConfidence(payload, forecast);
   const slope = forecast?.available ? forecast.slope : null;
-  predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · confiança ${confidence}.`;
+  predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · fiabilidade ${confidence}.`;
   addPredictiveKpi("Série", trend ? compactTitle(trend.label, 26) : "indisponível", trend ? `${trend.points.length} períodos` : "sem eixo temporal");
   addPredictiveKpi("Projeção", forecast?.available ? "ativa" : "não aplicável", forecast?.available ? "linear curta" : (forecast?.reason || "sem série elegível"));
+  addPredictiveKpi("Elegíveis", formatNumber(candidates.length), "indicadores com volume suficiente");
   addPredictiveKpi("Tendência", slope === null ? "-" : `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)}`, "variação média por período");
-  addPredictiveKpi("Drivers", formatNumber((payload.feature_importance || []).length), "Boruta-like exploratório");
   renderPredictiveForecast(forecast);
   renderPredictiveDrivers(payload);
   renderPredictiveScenarios(forecast);
@@ -1369,7 +1655,7 @@ function renderInsightCards() {
     addInsightCard({
       label: "Juntas limpas",
       value: formatNumber(lowRiskCount),
-      meta: state.lowRiskOnly ? "Filtro ativo · clicar para limpar" : `${formatNumber(correlations.length)} relações visíveis`,
+      meta: state.lowRiskOnly ? "Filtro ativo · clicar para limpar" : `${formatNumber(correlations.length)} ligações visíveis`,
       tone: lowRiskCount ? "confidence-alta" : "confidence-exploratoria",
       active: state.lowRiskOnly,
       onClick: () => {
@@ -1383,7 +1669,7 @@ function renderInsightCards() {
     addInsightCard({
       label: "Mix dominante",
       value: kindLabel(dominantKind),
-      meta: `${formatNumber(dominantKindCount)} ocorrências nas relações`,
+      meta: `${formatNumber(dominantKindCount)} ocorrências nas ligações`,
       tone: `analytics-kind-${dominantKind}`,
       onClick: dominantKind !== "-"
         ? () => {
@@ -1399,7 +1685,7 @@ function renderInsightCards() {
 function renderDistribution() {
   clearElement(distribution);
   const correlations = filteredCorrelations();
-  distributionMeta.textContent = `${formatNumber(correlations.length)} relações alimentam esta distribuição.`;
+  distributionMeta.textContent = `${formatNumber(correlations.length)} ligações alimentam esta distribuição.`;
   const confidenceRows = [
     ["alta", "Alta"],
     ["media", "Média"],
@@ -1464,11 +1750,11 @@ function renderSemanticModel() {
   const width = Math.max(760, semanticModel.closest(".analytics-model-wrap")?.clientWidth || 760);
   const height = 330;
   semanticModel.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  modelMeta.textContent = `${formatNumber(correlations.length)} relações filtradas · temas no arco exterior, dimensões no núcleo.`;
+  modelMeta.textContent = `${formatNumber(correlations.length)} ligações filtradas · temas no arco exterior, dimensões no núcleo.`;
 
   if (!correlations.length) {
     const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
-    empty.textContent = "Sem relações para desenhar o modelo.";
+    empty.textContent = "Sem ligações para desenhar o modelo.";
     semanticModel.appendChild(empty);
     return;
   }
@@ -1614,13 +1900,17 @@ function renderPublicHealthKpis(rows) {
   clearElement(publicHealthKpis);
   const priorityCount = rows.filter((row) => row.decision === "Priorizar").length;
   const nationalCount = rows.filter((row) => row.geo.id === "nacional").length;
+  const aggregateCount = rows.filter((row) => row.geo.id === "agregar").length;
+  const mappedCount = rows.filter((row) => row.geo.resolution === "mapped").length;
   const avgPriority = rows.length ? rows.reduce((sum, row) => sum + row.priority, 0) / rows.length : 0;
   const geoCount = new Set(rows.map((row) => row.geo.id)).size;
   [
     ["Score médio", formatDecimal(avgPriority, 0)],
     ["Priorizar", formatNumber(priorityCount)],
     ["Âmbitos", formatNumber(geoCount)],
-    ["Sem região", formatNumber(nationalCount)],
+    ["Agregados", formatNumber(mappedCount)],
+    ["Por validar", formatNumber(aggregateCount)],
+    ["Nacional", formatNumber(nationalCount)],
   ].forEach(([label, value]) => {
     const card = document.createElement("div");
     const span = document.createElement("span");
@@ -1672,7 +1962,13 @@ function renderPublicHealthPriorityList(rows, total) {
     title.textContent = `${compactTitle(row.item.source_title, 34)} / ${compactTitle(row.item.target_title, 34)}`;
     title.title = `${row.item.source_title} / ${row.item.target_title}`;
     const meta = document.createElement("small");
-    const scope = row.geo.id === "nacional" ? "Nacional · sem match regional" : `${row.geo.label} · match regional`;
+    const scope = row.geo.id === "nacional"
+      ? "Nacional · não regional"
+      : row.geo.id === "agregar"
+        ? "Entidade territorial · por validar"
+        : row.geo.resolution === "mapped"
+          ? `${row.geo.label} · ${row.geo.matchedEntity}`
+          : `${row.geo.label} · região inferida`;
     meta.textContent = `${scope} · score ${row.priority} · viabilidade ${formatDecimal(row.viability, 0)}`;
     button.append(head, title, meta);
     button.addEventListener("click", () => {
@@ -1707,22 +2003,27 @@ function renderNationalSummary(rows, nationalEntry) {
   clearElement(publicHealthNationalSummary);
   const selected = rows.find((row) => row.key === state.selectedPublicHealthKey);
   const nationalRows = rows.filter((row) => row.geo.id === "nacional");
-  const nationalRatio = rows.length ? nationalRows.length / rows.length : 0;
+  const aggregateRows = rows.filter((row) => row.geo.id === "agregar");
+  const mappedRows = rows.filter((row) => row.geo.resolution === "mapped");
+  const pendingCount = aggregateRows.length + nationalRows.length;
+  const pendingRatio = rows.length ? pendingCount / rows.length : 0;
   const card = document.createElement("button");
   card.type = "button";
-  card.className = `national-summary-card ${nationalRatio >= 0.7 ? "is-warning" : ""}`.trim();
-  if (selected?.geo.id === "nacional") card.classList.add("is-active");
+  card.className = `national-summary-card ${pendingRatio >= 0.7 ? "is-warning" : ""}`.trim();
+  if (selected?.geo.id === "nacional" || selected?.geo.id === "agregar") card.classList.add("is-active");
   const label = document.createElement("span");
-  label.textContent = nationalRatio >= 0.7 ? "Cobertura regional fraca" : "Vista nacional";
+  label.textContent = aggregateRows.length ? "Entidade territorial por validar" : "Vista nacional";
   const value = document.createElement("strong");
-  value.textContent = `${formatNumber(nationalEntry?.count || 0)} relações sem região`;
+  value.textContent = aggregateRows.length
+    ? `${formatNumber(aggregateRows.length)} hipóteses sem região segura`
+    : `${formatNumber(nationalEntry?.count || 0)} hipóteses nacionais`;
   const detail = document.createElement("small");
-  detail.textContent = nationalRatio >= 0.7
-    ? "A maioria das hipóteses não tem match territorial explícito. O mapa mostra só o subconjunto regional; usa a matriz abaixo para separar o backlog nacional."
-    : "Não aparece no mapa: classificar por ULS, hospital, ARS ou região antes de usar como layer regional.";
+  detail.textContent = aggregateRows.length
+    ? `${formatNumber(mappedRows.length)} hipóteses já foram agregadas por correspondência ULS/hospital→Região. As restantes têm sinal territorial indireto, mas faltam nomes reconhecíveis para classificar com segurança.`
+    : "Não é erro: são hipóteses de leitura nacional. Só devem entrar no mapa regional quando houver ULS, hospital, ARS, concelho/distrito ou região.";
   card.append(label, value, detail);
   card.addEventListener("click", () => {
-    const candidate = nationalRows[0];
+    const candidate = aggregateRows[0] || mappedRows[0] || nationalRows[0];
     if (candidate) {
       state.selectedPublicHealthKey = candidate.key;
       renderPublicHealthMatrix();
@@ -1756,7 +2057,9 @@ function renderPublicHealthMap(rows) {
       class: `health-map-region layer-${state.activePublicHealthLayer} level-${level} ${selected?.geo.id === entry.id ? "is-selected" : ""}`.trim(),
     });
     const titleNode = svgNode("title");
-    titleNode.textContent = `${entry.label}: ${formatNumber(entry.count)} matches regionais · score médio ${formatDecimal(entry.avgPriority, 0)}`;
+    titleNode.textContent = entry.id === "agregar"
+      ? `${entry.label}: ${formatNumber(entry.count)} hipóteses com entidade territorial por validar · score médio ${formatDecimal(entry.avgPriority, 0)}`
+      : `${entry.label}: ${formatNumber(entry.count)} matches regionais · score médio ${formatDecimal(entry.avgPriority, 0)}`;
     group.appendChild(titleNode);
     group.appendChild(svgNode("rect", {x: entry.x, y: entry.y, width: entry.w, height: entry.h, rx: 8}));
     const labelX = entry.labelX || entry.x + entry.w / 2;
@@ -1764,7 +2067,9 @@ function renderPublicHealthMap(rows) {
     const label = svgNode("text", {x: labelX, y: labelY - 3, "text-anchor": "middle"});
     label.textContent = compactTitle(entry.label, entry.id === "lisboa" ? 15 : 18);
     const count = svgNode("text", {x: labelX, y: labelY + 15, "text-anchor": "middle", class: "health-map-count"});
-    count.textContent = entry.count ? `${formatNumber(entry.count)} match` : "sem match";
+    count.textContent = entry.count
+      ? `${formatNumber(entry.count)} ${entry.id === "agregar" ? "validar" : "match"}`
+      : "sem match";
     group.append(label, count);
     group.addEventListener("click", () => {
       const candidate = rows.find((row) => row.geo.id === entry.id);
@@ -1809,7 +2114,7 @@ function renderPublicHealthMap(rows) {
   [
     ["Cor", "layer ativo"],
     ["Bloco", "região SNS"],
-    ["Ponto", "hipótese regional"],
+    ["Ponto", "hipótese regional/validar"],
   ].forEach(([label, value], index) => {
     const x = 22 + index * 145;
     const y = 488;
@@ -1838,8 +2143,12 @@ function renderPublicHealthDecisionDetail(row) {
   const scope = document.createElement("p");
   scope.className = "decision-scope";
   scope.textContent = row.geo.id === "nacional"
-    ? "Âmbito: vista nacional, sem match regional detetado."
-    : `Âmbito: ${row.geo.label}, com match regional.`;
+    ? "Âmbito: vista nacional, sem granularidade regional."
+    : row.geo.id === "agregar"
+      ? "Âmbito: entidade territorial detetada, mas sem correspondência regional segura."
+      : row.geo.resolution === "mapped"
+        ? `Âmbito: ${row.geo.label}, agregado por correspondência ${row.geo.matchedEntity} → Região de Saúde (${row.geo.mappingConfidence}).`
+        : `Âmbito: ${row.geo.label}, com match regional heurístico (${row.geo.mappingConfidence || "média"}).`;
   const reason = document.createElement("p");
   reason.className = "meta";
   reason.textContent = row.reason;
@@ -1865,7 +2174,18 @@ function renderPublicHealthDecisionDetail(row) {
   validation.className = "meta";
   const keys = (row.item.join_recipe?.suggested_keys || row.item.shared_fields || []).slice(0, 4).join(", ") || "chave a validar";
   validation.textContent = `Validação antes do uso: confirmar tipo, nulos, duplicados, cardinalidade e granularidade das chaves (${keys}).`;
-  publicHealthDecisionDetail.append(title, relation, scope, reason, drivers, validation);
+  const geoChecklist = document.createElement("div");
+  geoChecklist.className = "geo-validation-note";
+  const geoTitle = document.createElement("strong");
+  geoTitle.textContent = row.geo.id === "agregar" ? "Como resolver este âmbito" : "Validação territorial";
+  const geoText = document.createElement("span");
+  geoText.textContent = row.geo.id === "agregar"
+    ? "Procurar nome de ULS/hospital/ACES no dataset original ou acrescentar regra à tabela de correspondência antes de pintar uma região."
+    : row.geo.resolution === "mapped"
+      ? "Confirmar que a entidade pertence à região sugerida e que o período/dataset usa a hierarquia SNS atual."
+      : "Confirmar se o campo territorial representa região, ARS, concelho, distrito, ULS ou hospital antes de decidir.";
+  geoChecklist.append(geoTitle, geoText);
+  publicHealthDecisionDetail.append(title, relation, scope, reason, drivers, geoChecklist, validation);
 }
 
 function renderPublicHealthQuestions(rows) {
@@ -1894,17 +2214,20 @@ function renderPublicHealthPriorityTable(rows, total) {
   clearElement(publicHealthHypothesisMatrix);
   clearElement(publicHealthHypothesisDetail);
   const nationalCount = rows.filter((row) => row.geo.id === "nacional").length;
-  const regionalCount = rows.length - nationalCount;
-  publicHealthTableMeta.textContent = `${formatNumber(total)} hipóteses · ${formatNumber(regionalCount)} regionais · ${formatNumber(nationalCount)} sem match territorial.`;
+  const aggregateCount = rows.filter((row) => row.geo.id === "agregar").length;
+  const mappedCount = rows.filter((row) => row.geo.resolution === "mapped").length;
+  const regionalCount = rows.length - nationalCount - aggregateCount;
+  publicHealthTableMeta.textContent = `${formatNumber(total)} hipóteses · ${formatNumber(regionalCount)} regionais (${formatNumber(mappedCount)} por entidade reconhecida) · ${formatNumber(aggregateCount)} por validar · ${formatNumber(nationalCount)} nacionais.`;
 
   const decisions = ["Priorizar", "Acompanhar", "Explorar", "Validar antes"];
   const scopes = [
     ["regional", "Regional"],
-    ["nacional", "Sem região"],
+    ["agregar", "Por validar"],
+    ["nacional", "Nacional"],
   ];
   const buckets = new Map();
   rows.forEach((row) => {
-    const scope = row.geo.id === "nacional" ? "nacional" : "regional";
+    const scope = row.geo.id === "nacional" ? "nacional" : row.geo.id === "agregar" ? "agregar" : "regional";
     const key = `${row.decision}|${scope}`;
     const bucket = buckets.get(key) || {decision: row.decision, scope, rows: [], score: 0, risk: 0};
     bucket.rows.push(row);
@@ -1969,7 +2292,11 @@ function renderHypothesisCellDetail(bucket, allRows) {
     publicHealthHypothesisDetail.appendChild(empty);
     return;
   }
-  const scopeLabel = bucket.scope === "nacional" ? "sem match territorial" : "com match regional";
+  const scopeLabel = bucket.scope === "nacional"
+    ? "leitura nacional"
+    : bucket.scope === "agregar"
+      ? "entidade por validar"
+      : "com match regional";
   const title = document.createElement("strong");
   title.className = "hypothesis-detail-title";
   title.textContent = `${bucket.decision} · ${scopeLabel}`;
@@ -1979,8 +2306,10 @@ function renderHypothesisCellDetail(bucket, allRows) {
   const explanation = document.createElement("p");
   explanation.className = "decision-scope";
   explanation.textContent = bucket.scope === "nacional"
-    ? "Estas relações podem ser relevantes, mas ainda não devem alimentar o mapa. Primeiro é preciso confirmar se existe campo de ULS, hospital, ARS, concelho/distrito ou região nos dados de origem."
-    : "Estas relações já têm sinal territorial suficiente para análise regional inicial. Ainda assim, valida granularidade, duplicados e período antes de cruzar datasets.";
+    ? "Estas hipóteses têm leitura nacional. Não devem ser forçadas para uma região sem campo territorial adicional."
+    : bucket.scope === "agregar"
+      ? "Estas hipóteses têm sinal de ULS/hospital/ACES/USF, mas ainda não têm nome reconhecido ou regra de correspondência suficiente para pintar uma Região de Saúde."
+      : "Estas hipóteses já têm sinal territorial suficiente para análise regional inicial. Ainda assim, valida granularidade, duplicados e período antes de cruzar datasets.";
   const list = document.createElement("div");
   list.className = "hypothesis-detail-list";
   bucket.rows.slice(0, 6).forEach((row) => {
@@ -2143,8 +2472,8 @@ function renderLocalPriorityMatrix(rows) {
     ["baixa", "Necessidade baixa"],
   ];
   const capacityBands = [
-    ["pronta", "Capacidade pronta"],
-    ["limitada", "Capacidade limitada"],
+    ["pronta", "Pronta"],
+    ["limitada", "A preparar"],
   ];
   const buckets = new Map();
   rows.forEach((row) => {
@@ -2162,7 +2491,7 @@ function renderLocalPriorityMatrix(rows) {
   }
   const corner = document.createElement("div");
   corner.className = "local-priority-axis";
-  corner.textContent = "Necessidade × capacidade";
+  corner.textContent = "Necessidade / capacidade";
   localPriorityMatrix.appendChild(corner);
   capacityBands.forEach(([, label]) => {
     const axis = document.createElement("div");
@@ -2207,6 +2536,7 @@ function renderLocalPriorityDetail(bucket, rows) {
     return;
   }
   const title = document.createElement("strong");
+  title.className = "local-priority-detail-title";
   title.textContent = `${formatNumber(bucket.rows.length)} hipóteses para planeamento`;
   const explanation = document.createElement("p");
   explanation.className = "decision-scope";
@@ -2239,7 +2569,7 @@ function renderLocalSurveillance(rows) {
   meta.className = "local-note";
   meta.textContent = state.dataPayload?.trends?.length
     ? "Existe amostra temporal ativa: estes sinais podem apoiar monitorização exploratória."
-    : "Surveillance depende sobretudo de campos temporais nos metadados; carrega uma amostra real para validar tendências.";
+    : "A vigilância depende sobretudo de campos temporais nos metadados; carrega uma amostra real para validar tendências.";
   localSurveillance.appendChild(meta);
   candidates.forEach((row) => {
     const card = document.createElement("div");
@@ -2247,7 +2577,7 @@ function renderLocalSurveillance(rows) {
     const strong = document.createElement("strong");
     strong.textContent = compactTitle(`${row.item.source_title} / ${row.item.target_title}`, 72);
     const small = document.createElement("small");
-    small.textContent = `surveillance ${formatDecimal(row.surveillanceReadiness, 0)} · ${row.readiness === "regional" ? "com leitura territorial" : "sem território local"} · ${row.item.confidence}`;
+    small.textContent = `vigilância ${formatDecimal(row.surveillanceReadiness, 0)} · ${row.readiness === "regional" ? "com leitura territorial" : "sem território local"} · ${row.item.confidence}`;
     card.append(strong, small, createLocalMetric("Sinal temporal", row.surveillanceReadiness));
     localSurveillance.appendChild(card);
   });
@@ -2261,9 +2591,9 @@ function renderLocalRiskMatrix(rows) {
     ["baixo", "Impacto baixo"],
   ];
   const likelihoods = [
-    ["alta", "Prob. alta"],
-    ["media", "Prob. média"],
-    ["baixa", "Prob. baixa"],
+    ["alta", "Probabilidade alta"],
+    ["media", "Probabilidade média"],
+    ["baixa", "Probabilidade baixa"],
   ];
   const buckets = new Map();
   rows.forEach((row) => {
@@ -2278,7 +2608,7 @@ function renderLocalRiskMatrix(rows) {
   });
   const corner = document.createElement("div");
   corner.className = "local-risk-axis";
-  corner.textContent = "Impacto × prob.";
+  corner.textContent = "Impacto / probabilidade";
   localRiskMatrix.appendChild(corner);
   likelihoods.forEach(([, label]) => {
     const axis = document.createElement("div");
@@ -2355,7 +2685,7 @@ function renderPublicHealthMatrix() {
   const correlations = filteredCorrelations();
   const priorityRows = publicHealthPriorityRows();
   const cells = summarizePublicHealthCells(correlations);
-  publicHealthMeta.textContent = `${formatNumber(correlations.length)} relações filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} hipóteses a priorizar · layer ativo: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
+  publicHealthMeta.textContent = `${formatNumber(correlations.length)} hipóteses de cruzamento filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} a validar primeiro · layer ativo: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
   renderPublicHealthCockpit(priorityRows);
 
   const likelihoodLevels = ["alta", "media", "baixa"];
@@ -2364,7 +2694,7 @@ function renderPublicHealthMatrix() {
 
   const corner = document.createElement("div");
   corner.className = "public-health-axis public-health-corner";
-  corner.textContent = "Likelihood × impacto";
+  corner.textContent = "Viabilidade × impacto";
   publicHealthMatrix.appendChild(corner);
   impactLevels.forEach((impact) => {
     const axis = document.createElement("div");
@@ -2386,10 +2716,10 @@ function renderPublicHealthMatrix() {
       const count = document.createElement("strong");
       count.textContent = formatNumber(cell?.count || 0);
       const label = document.createElement("span");
-      label.textContent = "relações";
+      label.textContent = "hipóteses";
       const dominantArea = dominantEntry([...(cell?.areas || new Map()).entries()]);
       const area = document.createElement("small");
-      area.textContent = dominantArea[1] ? `${dominantArea[0]} · ${formatNumber(dominantArea[1])}` : "sem relações";
+      area.textContent = dominantArea[1] ? `${dominantArea[0]} · ${formatNumber(dominantArea[1])}` : "sem hipóteses";
       const fill = document.createElement("i");
       fill.className = `fill-${Math.max(0, Math.min(5, Math.ceil(((cell?.count || 0) / maxCount) * 5)))}`;
       item.append(count, label, area, fill);
@@ -2411,16 +2741,16 @@ function renderPublicHealthStrata(cell, likelihood, impact) {
   const title = document.createElement("div");
   title.className = "public-health-strata-title";
   const titleLabel = document.createElement("strong");
-  titleLabel.textContent = `${likelihoodLabel(likelihood)} likelihood × ${impactLabel(impact)} impact`;
+  titleLabel.textContent = `${likelihoodLabel(likelihood)} viabilidade × ${impactLabel(impact)} impacto`;
   const titleCount = document.createElement("span");
-  titleCount.textContent = `${formatNumber(cell?.count || 0)} relações`;
+  titleCount.textContent = `${formatNumber(cell?.count || 0)} hipóteses`;
   title.append(titleLabel, titleCount);
   publicHealthStrata.appendChild(title);
 
   if (!cell || !cell.count) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem relações nesta célula para os filtros atuais.";
+    empty.textContent = "Sem hipóteses nesta célula para os filtros atuais.";
     publicHealthStrata.appendChild(empty);
     return;
   }
@@ -2459,7 +2789,7 @@ function renderBubbleChart() {
   const width = Math.max(760, bubbleChart.closest(".analytics-chart-wrap")?.clientWidth || 760);
   const height = 380;
   bubbleChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  chartMeta.textContent = `${formatNumber(dimensions.length)} dimensões visíveis · raio por cobertura, eixo X por datasets, eixo Y por relações.`;
+  chartMeta.textContent = `${formatNumber(dimensions.length)} dimensões visíveis · raio por cobertura, eixo X por datasets, eixo Y por ligações.`;
 
   const axis = svgNode("g", {class: "analytics-axis"});
   const xLine = svgNode("line", {x1: 58, y1: height - 42, x2: width - 28, y2: height - 42});
@@ -2577,7 +2907,7 @@ function renderMatrices() {
   }));
   renderMatrix(dimensionMatrix, payload.dimension_matrix || [], (row) => ({
     label: row.source === row.target ? kindLabel(row.source) : `${kindLabel(row.source)} / ${kindLabel(row.target)}`,
-    value: `${formatNumber(row.count)} relações`,
+    value: `${formatNumber(row.count)} ligações`,
   }));
 }
 
@@ -2585,7 +2915,7 @@ function renderCorrelationTable() {
   const allRows = filteredCorrelations();
   const rows = allRows.slice(0, 80);
   state.filteredCorrelations = allRows;
-  correlationMeta.textContent = `${formatNumber(rows.length)}/${formatNumber(allRows.length)} relações na tabela · exporta o filtro completo.`;
+  correlationMeta.textContent = `${formatNumber(rows.length)}/${formatNumber(allRows.length)} ligações na tabela · exporta o filtro completo.`;
   const thead = correlationTable.querySelector("thead");
   const tbody = correlationTable.querySelector("tbody");
   clearElement(thead);
@@ -2707,7 +3037,11 @@ function setupEvents() {
     button.addEventListener("click", () => setActiveTab(button.dataset.analyticsTab));
   });
   predictiveDataButton?.addEventListener("click", () => setActiveTab("data"));
-  setActiveTab(state.activeTab);
+  predictiveIndicatorFilter?.addEventListener("change", () => {
+    state.selectedPredictiveIndicator = predictiveIndicatorFilter.value;
+    renderPredictiveAnalytics();
+  });
+  setActiveTab(state.activeTab, {syncUrl: false, force: true});
 
   analyticsSearch.addEventListener("input", () => {
     clearTimeout(searchTimer);

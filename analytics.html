@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transparência SNS - Analytics</title>
+    <title>Saúde+ Pública - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=quick-predictive-20260425" />
+    <link rel="stylesheet" href="styles.css?v=geo-mapping-20260427" />
   </head>
   <body>
     <main class="analytics-layout">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Transparência SNS</p>
-          <h1>Analytics SNS</h1>
+          <p class="eyebrow">Saúde+ Pública</p>
+          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública - Analytics</h1>
           <p class="meta">Amostras reais, sinais fortes, prioridades e tabelas de validação.</p>
         </div>
         <div class="topbar-actions">
@@ -28,7 +28,7 @@
         <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
         <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
         <button class="analytics-tab" type="button" data-analytics-tab="local">Planos Locais</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="tables">Tabelas</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="tables">Validação</button>
       </nav>
 
       <section class="panel analytics-panel data-analytics-panel" data-tab-panel="data">
@@ -149,6 +149,17 @@
 
         <section id="predictiveKpis" class="predictive-kpis" aria-label="Resumo preditivo"></section>
 
+        <section class="predictive-filter-bar" aria-label="Filtro de indicadores preditivos">
+          <div>
+            <strong>Indicador com fiabilidade</strong>
+            <span>Mostra apenas séries com volume e variação suficientes para leitura exploratória.</span>
+          </div>
+          <label>
+            <span>Indicador</span>
+            <select id="predictiveIndicatorFilter" name="predictive-indicator-filter"></select>
+          </label>
+        </section>
+
         <section class="predictive-grid predictive-grid-primary">
           <article class="predictive-card predictive-forecast-card">
             <div class="panel-heading">
@@ -183,12 +194,22 @@
             <div id="predictiveRisk" class="predictive-list"></div>
           </article>
         </section>
+
+        <section class="predictive-card predictive-candidates-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Datasets com potencial temporal</h2>
+              <p class="meta">Sugestões do catálogo com sinais de mês, trimestre, evolução ou campos temporais.</p>
+            </div>
+          </div>
+          <div id="predictiveDatasetCandidates" class="predictive-dataset-candidates"></div>
+        </section>
       </section>
 
       <section class="analytics-toolbar analytics-filter-panel" data-tab-panel="semantic health local tables" hidden>
         <div class="toolbar-title">
           <strong>Filtros</strong>
-          <span>foca relações úteis</span>
+          <span>foca ligações úteis</span>
         </div>
         <label>
           <span>Pesquisar relação</span>
@@ -230,7 +251,7 @@
           <strong id="analyticsStatDatasets">-</strong>
         </div>
         <div>
-          <span>Relações elegíveis</span>
+          <span>Cruzamentos candidatos</span>
           <strong id="analyticsStatLinks">-</strong>
         </div>
         <div>
@@ -243,11 +264,26 @@
         </div>
       </section>
 
+      <section class="semantic-explainer" data-tab-panel="semantic" hidden aria-label="Como usar a análise semântica">
+        <div>
+          <strong>Para que serve</strong>
+          <span>Descobre que datasets podem ser cruzados porque partilham campos, dimensões ou temas próximos.</span>
+        </div>
+        <div>
+          <strong>Como ler</strong>
+          <span>Começa pelas oportunidades, confirma os campos comuns e valida granularidade antes de juntar dados.</span>
+        </div>
+        <div>
+          <strong>O que não é</strong>
+          <span>Não prova causalidade nem qualidade oficial do join; é uma triagem para investigação e planeamento.</span>
+        </div>
+      </section>
+
       <section class="panel analytics-panel top-opportunities-panel" data-tab-panel="semantic" hidden>
         <div class="panel-heading">
           <div>
             <h2>Oportunidades agora</h2>
-            <p class="meta">Combina score semântico, likelihood, impact e baixo risco.</p>
+            <p class="meta">Combina score semântico, viabilidade técnica, impacto e baixo risco.</p>
           </div>
         </div>
         <div id="analyticsTopOpportunities" class="top-opportunity-list"></div>
@@ -259,7 +295,7 @@
           <div class="panel-heading">
             <div>
               <h2>Distribuição filtrada</h2>
-              <p id="analyticsDistributionMeta" class="meta">Confiança e tipos de dimensão nas relações visíveis.</p>
+              <p id="analyticsDistributionMeta" class="meta">Confiança e tipos de dimensão nas ligações visíveis.</p>
             </div>
           </div>
           <div id="analyticsDistribution" class="analytics-distribution"></div>
@@ -270,7 +306,7 @@
         <div class="panel-heading">
           <div>
             <h2>Modelo semântico</h2>
-            <p id="analyticsModelMeta" class="meta">Temas ligados por dimensões comuns nas relações filtradas.</p>
+            <p id="analyticsModelMeta" class="meta">Temas ligados por dimensões comuns nas ligações filtradas.</p>
           </div>
         </div>
         <div class="analytics-model-wrap">
@@ -282,21 +318,40 @@
         <div class="panel-heading">
           <div>
             <h2>Leitura de saúde pública</h2>
-            <p id="publicHealthMeta" class="meta">Hipóteses exploratórias por likelihood, impacto, área e qualidade de cruzamento.</p>
+            <p id="publicHealthMeta" class="meta">Hipóteses exploratórias por viabilidade técnica, impacto, área e qualidade de cruzamento.</p>
           </div>
         </div>
 
         <section id="publicHealthKpis" class="public-health-kpis" aria-label="Resumo de prioridade em saúde pública"></section>
 
+        <section class="health-guidance" aria-label="Como usar a leitura de saúde pública">
+          <div>
+            <strong>1. Escolhe uma hipótese</strong>
+            <span>Usa a lista à esquerda para selecionar um tema de análise prioritário.</span>
+          </div>
+          <div>
+            <strong>2. Valida a matriz</strong>
+            <span>Procura alta viabilidade e alto impacto; confirma território, tempo e entidade.</span>
+          </div>
+          <div>
+            <strong>3. Lê o âmbito</strong>
+            <span>O cartograma separa leitura regional, entidades territoriais por validar e vista nacional.</span>
+          </div>
+          <div>
+            <strong>4. Usa com cautela</strong>
+            <span>É triagem exploratória para perguntas e validações, não recomendação oficial.</span>
+          </div>
+        </section>
+
         <div class="public-health-layout public-health-layout-primary">
           <section>
             <div class="panel-heading">
               <div>
-                <h2>Matriz likelihood × impacto</h2>
-                <p class="meta">Primeira leitura: probabilidade técnica de cruzar vs impacto potencial em saúde pública.</p>
+                <h2>Matriz viabilidade técnica × impacto</h2>
+                <p class="meta">Viabilidade técnica nas linhas, impacto potencial nas colunas. Priorizar validação no canto superior direito.</p>
               </div>
             </div>
-            <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de likelihood versus impact"></div>
+            <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de viabilidade técnica versus impacto"></div>
           </section>
           <aside>
             <h3>Estratificação por área matched</h3>
@@ -363,7 +418,7 @@
         <div class="panel-heading">
           <div>
             <h2>Cockpit de Planos Locais de Saúde</h2>
-            <p id="localPlanMeta" class="meta">Diagnóstico, prioridades, surveillance, risco e plano de ação a partir dos cruzamentos disponíveis.</p>
+            <p id="localPlanMeta" class="meta">Diagnóstico, prioridades, vigilância, risco e plano de ação a partir dos cruzamentos disponíveis.</p>
           </div>
         </div>
 
@@ -384,7 +439,7 @@
             <div class="panel-heading">
               <div>
                 <h2>Prioridades</h2>
-                <p class="meta">Matriz necessidade × capacidade de análise.</p>
+                <p class="meta">Necessidade local versus capacidade analítica. Clica numa célula para ver hipóteses e validações.</p>
               </div>
             </div>
             <div class="local-priority-layout">
@@ -398,7 +453,7 @@
           <article class="local-plan-card">
             <div class="panel-heading">
               <div>
-                <h2>Surveillance</h2>
+                <h2>Vigilância</h2>
                 <p class="meta">Sinal temporal, capacidade de monitorização e qualidade da série.</p>
               </div>
             </div>
@@ -451,7 +506,7 @@
       <section class="panel analytics-panel analytics-table-panel tables-primary-panel" data-tab-panel="tables" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Relações candidatas para cruzar dados</h2>
+            <h2>Ligações candidatas para cruzar dados</h2>
             <p id="analyticsCorrelationMeta" class="meta">Ordenadas por score semântico.</p>
           </div>
         </div>
@@ -485,14 +540,19 @@
           <div class="panel-heading">
             <div>
               <h2>Cruzamento de dimensões</h2>
-              <p class="meta">Mostra os tipos de chave que aparecem em mais relações.</p>
+              <p class="meta">Mostra os tipos de chave que aparecem em mais ligações.</p>
             </div>
           </div>
           <div id="analyticsDimensionMatrix" class="analytics-matrix"></div>
         </details>
       </section>
+      <footer class="legal-strip" aria-label="Fonte e nota legal">
+        <div><strong>Fonte dos dados:</strong> Portal Transparência SNS / dados abertos Opendatasoft.</div>
+        <div>Análises exploratórias e heurísticas, sem valor oficial, clínico ou decisório isolado. Validar sempre fonte, granularidade, atualização e contexto antes de interpretar.</div>
+        <div>Informação preparada para transparência, investigação, literacia e planeamento público. Não utilizar para fins comerciais, publicidade, profiling individual ou conclusões sobre pessoas.</div>
+      </footer>
     </main>
 
-    <script src="analytics.js?v=quick-predictive-20260425-3" defer></script>
+    <script src="analytics.js?v=geo-mapping-20260427" defer></script>
   </body>
 </html>

@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transparência SNS - Cruzamentos</title>
+    <title>Saúde+ Pública - Cruzamentos</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=ux-20260425" />
+    <link rel="stylesheet" href="styles.css?v=pt-copy-20260427" />
   </head>
   <body>
     <main class="crosswalk-layout">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Transparência SNS</p>
-          <h1>Cruzamentos de dados</h1>
+          <p class="eyebrow">Saúde+ Pública</p>
+          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública - Cruzamentos</h1>
           <p class="meta">Chaves comuns, pares fortes e caminhos de integração.</p>
         </div>
         <div class="topbar-actions">
@@ -44,7 +44,7 @@
         </label>
         <button id="crossReloadButton" class="ghost-button" type="button">Atualizar</button>
         <button id="crossExportButton" class="ghost-button" type="button">Exportar JSON</button>
-        <div id="crossStatus" class="sync-state">A carregar…</div>
+        <div id="crossStatus" class="sync-state">A carregar...</div>
       </section>
 
       <section class="crosswalk-summary" aria-label="Resumo de cruzamentos">
@@ -53,7 +53,7 @@
           <strong id="crossStatFields">-</strong>
         </div>
         <div>
-          <span>Pares candidatos</span>
+          <span>Pares sugeridos</span>
           <strong id="crossStatPairs">-</strong>
         </div>
         <div>
@@ -71,7 +71,7 @@
           <div class="panel-heading">
             <div>
               <h2 id="semanticGraphTitle">Modelo sugerido</h2>
-              <p id="semanticGraphMeta" class="meta">A preparar relações.</p>
+              <p id="semanticGraphMeta" class="meta">A preparar ligações.</p>
             </div>
             <div id="semanticGraphLegend" class="semantic-legend"></div>
           </div>
@@ -89,7 +89,10 @@
             <p class="meta">Seleciona um dataset, campo ou par para calcular recomendação.</p>
           </div>
           <div id="crossDetail" class="cross-detail-grid">
-            <div class="empty-state">Seleciona uma linha para abrir o detalhe de ligação.</div>
+            <div class="empty-state">
+              <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="" />
+              <span>Seleciona uma linha para abrir o detalhe de ligação.</span>
+            </div>
           </div>
         </aside>
       </section>
@@ -116,7 +119,10 @@
               <thead></thead>
               <tbody></tbody>
             </table>
-            <div id="pairsEmpty" class="empty-state">Sem pares para este filtro.</div>
+            <div id="pairsEmpty" class="empty-state">
+              <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="" />
+              <span>Sem pares para este filtro.</span>
+            </div>
           </div>
         </section>
 
@@ -131,8 +137,13 @@
           <div id="crossPaths" class="cross-paths"></div>
         </aside>
       </section>
+      <footer class="legal-strip" aria-label="Fonte e nota legal">
+        <div><strong>Fonte dos dados:</strong> Portal Transparência SNS / dados abertos Opendatasoft.</div>
+        <div>Análises exploratórias e heurísticas, sem valor oficial, clínico ou decisório isolado. Validar sempre fonte, granularidade, atualização e contexto antes de interpretar.</div>
+        <div>Informação preparada para transparência, investigação, literacia e planeamento público. Não utilizar para fins comerciais, publicidade, profiling individual ou conclusões sobre pessoas.</div>
+      </footer>
     </main>
 
-    <script src="crosswalk.js?v=ux-20260425" defer></script>
+    <script src="crosswalk.js?v=pt-copy-20260427" defer></script>
   </body>
 </html>

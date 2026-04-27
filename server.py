@@ -10,12 +10,15 @@ proxy so the browser does not hit CORS issues.
 from __future__ import annotations
 
 import json
+import logging
 import math
+import random
 import re
 import threading
 import time
 import unicodedata
 from datetime import date
+from email.utils import parsedate_to_datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlencode
@@ -26,6 +29,9 @@ CACHE_TTL_SECONDS = 60 * 5
 MAX_CACHE_ENTRIES = 80
 MAX_CACHE_BYTES = 12 * 1024 * 1024
 MAX_CACHE_ENTRY_BYTES = 2 * 1024 * 1024
+ODS_MAX_RETRIES = 3
+ODS_BACKOFF_BASE_SECONDS = 0.45
+ODS_BACKOFF_MAX_SECONDS = 4.0
 MAX_DATASET_LIMIT = 100
 ANALYSIS_DATASET_LIMIT = 600
 MAX_ANALYSIS_LINKS = 12000
@@ -189,11 +195,17 @@ ALLOWED_STATIC_PATHS = {
     "/analytics.html",
     "/analytics.js",
     "/metodologia.html",
+    "/visual_assets/logo.jpg",
+    "/visual_assets/background.jpg",
 }
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOGGER = logging.getLogger("transparencia_connect")
 
-_cache: dict[str, tuple[float, int, dict]] = {}
+_cache: dict[str, dict] = {}
 _cache_lock = threading.Lock()
+_fetch_locks: dict[str, threading.Lock] = {}
+_fetch_locks_lock = threading.Lock()
 _analysis_lock = threading.Lock()
 _rate_limit_lock = threading.Lock()
 _rate_limit_hits: dict[str, list[float]] = {}
@@ -203,23 +215,38 @@ def _now() -> float:
     return time.time()
 
 
-def _cache_get(key: str):
+def _cache_entry_is_fresh(entry: dict) -> bool:
+    return _now() - float(entry.get("timestamp", 0)) <= CACHE_TTL_SECONDS
+
+
+def _cache_get_entry(key: str, *, fresh_only: bool = True) -> dict | None:
     with _cache_lock:
         entry = _cache.get(key)
         if not entry:
             return None
-        timestamp, _size, payload = entry
-        if _now() - timestamp > CACHE_TTL_SECONDS:
-            del _cache[key]
+        if fresh_only and not _cache_entry_is_fresh(entry):
             return None
-        return payload
+        return dict(entry)
+
+
+def _cache_get(key: str):
+    entry = _cache_get_entry(key, fresh_only=True)
+    return entry.get("payload") if entry else None
 
 
 def _payload_size_bytes(payload: dict) -> int:
     return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
-def _cache_set(key: str, payload: dict, *, cacheable: bool = True):
+def _cache_set(
+    key: str,
+    payload: dict,
+    *,
+    cacheable: bool = True,
+    etag: str | None = None,
+    last_modified: str | None = None,
+    status: str = "fresh",
+):
     if not cacheable:
         return
     payload_size = _payload_size_bytes(payload)
@@ -230,14 +257,67 @@ def _cache_set(key: str, payload: dict, *, cacheable: bool = True):
             del _cache[key]
         while _cache and (
             len(_cache) >= MAX_CACHE_ENTRIES
-            or sum(size for _timestamp, size, _payload in _cache.values()) + payload_size > MAX_CACHE_BYTES
+            or sum(int(entry.get("size", 0)) for entry in _cache.values()) + payload_size > MAX_CACHE_BYTES
         ):
-            oldest_key = min(_cache.items(), key=lambda item: item[1][0])[0]
+            oldest_key = min(_cache.items(), key=lambda item: item[1].get("timestamp", 0))[0]
             del _cache[oldest_key]
         if len(_cache) >= MAX_CACHE_ENTRIES:
-            oldest_key = min(_cache.items(), key=lambda item: item[1][0])[0]
+            oldest_key = min(_cache.items(), key=lambda item: item[1].get("timestamp", 0))[0]
             del _cache[oldest_key]
-        _cache[key] = (_now(), payload_size, payload)
+        _cache[key] = {
+            "timestamp": _now(),
+            "fetched_at": int(_now()),
+            "size": payload_size,
+            "payload": payload,
+            "etag": etag,
+            "last_modified": last_modified,
+            "cache_status": status,
+        }
+
+
+def _cache_mark_revalidated(key: str) -> dict | None:
+    with _cache_lock:
+        entry = _cache.get(key)
+        if not entry:
+            return None
+        entry["timestamp"] = _now()
+        entry["fetched_at"] = int(_now())
+        entry["cache_status"] = "revalidated"
+        return dict(entry)
+
+
+def _cache_meta_public(key: str, *, default_status: str = "bypass") -> dict:
+    entry = _cache_get_entry(key, fresh_only=False)
+    if not entry:
+        return {
+            "cache_status": default_status,
+            "source_headers": {"etag": False, "last_modified": False},
+        }
+    return {
+        "cache_status": entry.get("cache_status", default_status),
+        "source_headers": {
+            "etag": bool(entry.get("etag")),
+            "last_modified": bool(entry.get("last_modified")),
+        },
+    }
+
+
+def _cache_key(path: str, params: dict[str, str] | None = None) -> str:
+    return path + "?" + urlencode(params or {}, doseq=True)
+
+
+def _fetch_lock_for(key: str) -> threading.Lock:
+    with _fetch_locks_lock:
+        if len(_fetch_locks) > MAX_CACHE_ENTRIES * 4:
+            cached_keys = set(_cache.keys())
+            for stale_key in list(_fetch_locks):
+                if stale_key not in cached_keys:
+                    _fetch_locks.pop(stale_key, None)
+        lock = _fetch_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _fetch_locks[key] = lock
+        return lock
 
 
 def _rate_limit_retry_after(client_id: str) -> int | None:
@@ -347,6 +427,43 @@ def _extract_year(value) -> int | None:
     return None
 
 
+def _extract_period_key(value, field_name: str | None = None) -> tuple[str, str] | None:
+    """Return stable sortable period key and compact display label."""
+    year = _extract_year(value)
+    if year is None:
+        return None
+    text = _normalize_token(str(value))
+    field_text = _normalize_token(field_name or "")
+
+    month = None
+    match = re.search(r"(?:^|\D)(20\d{2}|19\d{2})[-/._ ](0?[1-9]|1[0-2])(?:\D|$)", text)
+    if match:
+        month = int(match.group(2))
+    if month is None:
+        match = re.search(r"(?:^|\D)(0?[1-9]|1[0-2])[-/._ ](20\d{2}|19\d{2})(?:\D|$)", text)
+        if match:
+            month = int(match.group(1))
+    if month is None:
+        match = re.search(r"(20\d{2}|19\d{2})(0[1-9]|1[0-2])", text)
+        if match:
+            month = int(match.group(2))
+    if month is not None and ("mes" in field_text or "mensal" in text or "mes" in text or re.search(r"[-/._ ]", text)):
+        return (f"{year:04d}-{month:02d}", f"{year:04d}-{month:02d}")
+
+    quarter = None
+    match = re.search(r"(?:q|t|trimestre)[-/._ ]?([1-4])", text)
+    if match:
+        quarter = int(match.group(1))
+    elif "trimestre" in field_text:
+        match = re.search(r"(?:^|\D)([1-4])(?:\D|$)", text)
+        if match:
+            quarter = int(match.group(1))
+    if quarter is not None:
+        return (f"{year:04d}-T{quarter}", f"{year:04d} T{quarter}")
+
+    return (f"{year:04d}", f"{year:04d}")
+
+
 def _is_recent_record(record: dict, temporal_field: str | None, min_year: int) -> bool:
     candidate_values = []
     if temporal_field and temporal_field in record:
@@ -373,6 +490,69 @@ def _pick_temporal_field(fields: list[dict]) -> str | None:
     return None
 
 
+def _pick_stable_order_field(fields: list[dict]) -> str | None:
+    preferred = ["datasetid", "recordid", "id", "codigo", "cod", "entidade", "regiao", "periodo"]
+    names = [field.get("name") for field in fields if field.get("name")]
+    normalized_by_name = {_normalize_token(name): name for name in names}
+    for preferred_name in preferred:
+        for normalized, original in normalized_by_name.items():
+            if normalized == preferred_name or normalized.endswith(f" {preferred_name}"):
+                return original
+    return names[0] if names else None
+
+
+def _canonical_field_type(field: dict) -> str:
+    raw_type = _normalize_token(str(field.get("type") or field.get("annotations", {}).get("type") or ""))
+    name = _normalize_token(str(field.get("name") or field.get("label") or ""))
+    if raw_type in {"date", "datetime"} or re.search(r"\b(data|date|tempo|periodo|ano|mes|trimestre)\b", name):
+        return "date"
+    if raw_type in {"int", "integer", "long"}:
+        return "integer"
+    if raw_type in {"double", "float", "decimal", "number"}:
+        return "float"
+    if raw_type in {"geo point", "geo shape", "geopoint", "geoshape"} or re.search(r"\b(latitude|longitude|geo|geograf)\b", name):
+        return "geo"
+    if raw_type in {"text", "string"} and re.search(r"\b(tipo|grupo|categoria|regiao|ars|uls|hospital|entidade|sexo|idade)\b", name):
+        return "category"
+    return "text"
+
+
+def _is_identifier_or_contact_field(field: dict) -> bool:
+    name = _normalize_token(str(field.get("name") or field.get("label") or ""))
+    return bool(
+        re.search(
+            r"\b(telefone|telemovel|fax|email|mail|codigo|cod|postal|nif|nipc|niss|id|url|link|latitude|longitude)\b",
+            name,
+        )
+    )
+
+
+def _is_measure_candidate(field: dict) -> bool:
+    if _is_identifier_or_contact_field(field):
+        return False
+    canonical_type = _canonical_field_type(field)
+    if canonical_type in {"date", "geo", "category"}:
+        return False
+    return canonical_type in {"integer", "float"} or canonical_type == "text"
+
+
+def _schema_quality(fields: list[dict], observed_columns: list[str] | None = None) -> dict:
+    observed = set(observed_columns or [])
+    scoped_fields = [field for field in fields if not observed or field.get("name") in observed]
+    typed = [_canonical_field_type(field) for field in scoped_fields]
+    return {
+        "field_count": len(scoped_fields),
+        "typed_fields": sum(1 for field_type in typed if field_type != "text"),
+        "temporal_fields": sum(1 for field_type in typed if field_type == "date"),
+        "territorial_fields": sum(
+            1
+            for field in scoped_fields
+            if re.search(r"\b(regiao|ars|uls|hospital|concelho|distrito|entidade|unidade|territorio)\b", _normalize_token(str(field.get("name") or field.get("label") or "")))
+        ),
+        "ignored_identifier_fields": sum(1 for field in scoped_fields if _is_identifier_or_contact_field(field)),
+    }
+
+
 def _build_ods_url(path: str, params: dict[str, str] | None = None) -> str:
     query = ""
     if params:
@@ -381,25 +561,107 @@ def _build_ods_url(path: str, params: dict[str, str] | None = None) -> str:
     return f"{ODS_BASE}{path}{query}"
 
 
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, min(float(value), ODS_BACKOFF_MAX_SECONDS))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError, OverflowError):
+            return None
+        delay = parsed.timestamp() - _now()
+        return max(0.0, min(delay, ODS_BACKOFF_MAX_SECONDS))
+
+
+def _backoff_delay(attempt: int, retry_after: str | None = None) -> float:
+    explicit = _retry_after_seconds(retry_after)
+    if explicit is not None and explicit > 0:
+        return explicit
+    cap = min(ODS_BACKOFF_MAX_SECONDS, ODS_BACKOFF_BASE_SECONDS * (2**attempt))
+    return random.uniform(0, cap)
+
+
 def _ods_fetch(path: str, params: dict[str, str] | None = None, *, cacheable: bool = True) -> dict:
-    cache_key = path + "?" + urlencode(params or {}, doseq=True)
+    cache_key = _cache_key(path, params)
     if cacheable:
         cached = _cache_get(cache_key)
         if cached is not None:
             return cached
 
-    request = Request(_build_ods_url(path, params))
-    request.add_header("Accept", "application/json")
-    request.add_header("User-Agent", "transparencia-connect/1.0 (+https://github.com/hfmonteiro)")
-    try:
-        with urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            _cache_set(cache_key, payload, cacheable=cacheable)
-            return payload
-    except HTTPError as exc:
-        raise RuntimeError(f"ODS HTTP {exc.code} on {path}") from exc
-    except URLError as exc:
-        raise RuntimeError("Cannot reach ODS API") from exc
+    lock = _fetch_lock_for(cache_key)
+    with lock:
+        if cacheable:
+            cached = _cache_get(cache_key)
+            if cached is not None:
+                return cached
+        stale_entry = _cache_get_entry(cache_key, fresh_only=False) if cacheable else None
+        last_error: Exception | None = None
+
+        for attempt in range(ODS_MAX_RETRIES):
+            request = Request(_build_ods_url(path, params))
+            request.add_header("Accept", "application/json")
+            request.add_header("User-Agent", "transparencia-connect/1.0 (+https://github.com/hfmonteiro)")
+            if stale_entry and stale_entry.get("etag"):
+                request.add_header("If-None-Match", str(stale_entry["etag"]))
+            if stale_entry and stale_entry.get("last_modified"):
+                request.add_header("If-Modified-Since", str(stale_entry["last_modified"]))
+
+            started_at = _now()
+            try:
+                with urlopen(request, timeout=30) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    headers = response.headers
+                    _cache_set(
+                        cache_key,
+                        payload,
+                        cacheable=cacheable,
+                        etag=headers.get("ETag"),
+                        last_modified=headers.get("Last-Modified"),
+                        status="fresh" if cacheable else "bypass",
+                    )
+                    LOGGER.info(
+                        "ODS %s status=%s cache=%s attempt=%s latency_ms=%s",
+                        path,
+                        getattr(response, "status", 200),
+                        "fresh" if cacheable else "bypass",
+                        attempt + 1,
+                        round((_now() - started_at) * 1000),
+                    )
+                    return payload
+            except HTTPError as exc:
+                last_error = exc
+                if exc.code == 304 and stale_entry and stale_entry.get("payload") is not None:
+                    revalidated = _cache_mark_revalidated(cache_key)
+                    LOGGER.info("ODS %s status=304 cache=revalidated attempt=%s", path, attempt + 1)
+                    return revalidated["payload"] if revalidated else stale_entry["payload"]
+                if exc.code in {429, 503} and attempt < ODS_MAX_RETRIES - 1:
+                    delay = _backoff_delay(attempt, exc.headers.get("Retry-After"))
+                    LOGGER.info("ODS %s status=%s retry_after=%s attempt=%s", path, exc.code, round(delay, 2), attempt + 1)
+                    time.sleep(delay)
+                    continue
+                break
+            except URLError as exc:
+                last_error = exc
+                if attempt < ODS_MAX_RETRIES - 1:
+                    delay = _backoff_delay(attempt)
+                    LOGGER.info("ODS %s url_error retry_after=%s attempt=%s", path, round(delay, 2), attempt + 1)
+                    time.sleep(delay)
+                    continue
+                break
+
+        if stale_entry and stale_entry.get("payload") is not None:
+            with _cache_lock:
+                if cache_key in _cache:
+                    _cache[cache_key]["cache_status"] = "stale_fallback"
+            LOGGER.warning("ODS %s cache=stale_fallback error=%s", path, type(last_error).__name__ if last_error else "unknown")
+            return stale_entry["payload"]
+        if isinstance(last_error, HTTPError):
+            raise RuntimeError(f"ODS HTTP {last_error.code} on {path}") from last_error
+        if isinstance(last_error, URLError):
+            raise RuntimeError("Cannot reach ODS API") from last_error
+        raise RuntimeError("Cannot reach ODS API")
 
 
 def _get_datasets() -> dict:
@@ -686,6 +948,11 @@ def _public_health_impact(source: dict, target: dict, fields: list[str], kinds: 
 
 
 def _build_analytics(analysis: dict, min_score: int) -> dict:
+    cache_key = f"analytics:{analysis.get('generated_at')}:{min_score}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     datasets = analysis.get("datasets", []) or []
     dataset_by_id = {dataset["dataset_id"]: dataset for dataset in datasets}
     links = [link for link in (analysis.get("links", []) or []) if link.get("score", 0) >= min_score]
@@ -861,7 +1128,7 @@ def _build_analytics(analysis: dict, min_score: int) -> dict:
         )
 
     high_confidence = sum(1 for item in correlations if item["confidence"] == "alta")
-    return {
+    result = {
         "summary": {
             "dataset_count": len(datasets),
             "link_count": len(links),
@@ -889,22 +1156,40 @@ def _build_analytics(analysis: dict, min_score: int) -> dict:
         "themes": analysis.get("themes", []),
         "generated_at": analysis.get("generated_at"),
     }
+    _cache_set(cache_key, result)
+    return result
 
 
 def _recent_records(dataset_id: str, limit: int) -> dict:
-    dataset = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}", None)
+    cache_key = f"recent:{dataset_id}:{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    dataset_path = f"/catalog/datasets/{quote(dataset_id)}"
+    dataset = _ods_fetch(dataset_path, None)
     fields = dataset.get("fields", []) or []
     temporal_field = _pick_temporal_field(fields)
     min_year = date.today().year - 2
     safe_limit = min(max(limit, 1), MAX_RECENT_LIMIT)
     params = {"limit": str(safe_limit)}
+    ordering = "api_default"
     if temporal_field:
         params["order_by"] = f"{temporal_field} desc"
+        ordering = "temporal_desc"
+    else:
+        stable_field = _pick_stable_order_field(fields)
+        if stable_field:
+            params["order_by"] = f"{stable_field} asc"
+            ordering = "stable_field"
 
+    records_path = f"/catalog/datasets/{quote(dataset_id)}/records"
     try:
-        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", params, cacheable=False)
+        payload = _ods_fetch(records_path, params, cacheable=True)
     except Exception:
-        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", {"limit": str(safe_limit)}, cacheable=False)
+        params = {"limit": str(safe_limit)}
+        ordering = "api_default"
+        payload = _ods_fetch(records_path, params, cacheable=True)
 
     records = payload.get("results", []) or []
     recent = [record for record in records if _is_recent_record(record, temporal_field, min_year)]
@@ -915,19 +1200,25 @@ def _recent_records(dataset_id: str, limit: int) -> dict:
     for field in fields:
         name = field.get("name")
         if name and any(name in record for record in recent[:20]):
-            columns.append({"name": name, "label": field.get("label") or name, "type": field.get("type")})
+            columns.append({"name": name, "label": field.get("label") or name, "type": _canonical_field_type(field)})
         if len(columns) >= 12:
             break
 
-    return {
+    meta = _cache_meta_public(_cache_key(records_path, params))
+    result = {
         "dataset_id": dataset_id,
         "temporal_field": temporal_field,
         "min_year": min_year,
+        "ordering": ordering,
+        "schema_quality": _schema_quality(fields, [column["name"] for column in columns]),
+        **meta,
         "columns": columns,
         "records": recent[:safe_limit],
         "returned_count": len(recent[:safe_limit]),
         "source_count": len(records),
     }
+    _cache_set(cache_key, result)
+    return result
 
 
 def _coerce_number(value) -> float | None:
@@ -1152,19 +1443,35 @@ def _build_feature_importance(
 
 
 def _build_data_analytics(dataset_id: str, limit: int) -> dict:
-    dataset = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}")
+    cache_key = f"data_analytics:{dataset_id}:{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    dataset_path = f"/catalog/datasets/{quote(dataset_id)}"
+    dataset = _ods_fetch(dataset_path)
     fields = dataset.get("fields", []) or []
     field_by_name = {field.get("name"): field for field in fields if field.get("name")}
     temporal_field = _pick_temporal_field(fields)
     safe_limit = min(max(limit, 1), MAX_DATA_ANALYTICS_LIMIT)
     params = {"limit": str(safe_limit)}
+    ordering = "api_default"
     if temporal_field:
         params["order_by"] = f"{temporal_field} desc"
+        ordering = "temporal_desc"
+    else:
+        stable_field = _pick_stable_order_field(fields)
+        if stable_field:
+            params["order_by"] = f"{stable_field} asc"
+            ordering = "stable_field"
 
+    records_path = f"/catalog/datasets/{quote(dataset_id)}/records"
     try:
-        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", params, cacheable=False)
+        payload = _ods_fetch(records_path, params, cacheable=True)
     except Exception:
-        payload = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}/records", {"limit": str(safe_limit)}, cacheable=False)
+        params = {"limit": str(safe_limit)}
+        ordering = "api_default"
+        payload = _ods_fetch(records_path, params, cacheable=True)
 
     records = payload.get("results", []) or []
     observed_columns = []
@@ -1180,6 +1487,7 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
     categorical_profiles = []
     for column in observed_columns:
         field = field_by_name.get(column, {"name": column})
+        canonical_type = _canonical_field_type(field)
         raw_values = [record.get(column) for record in records]
         non_empty = [value for value in raw_values if value not in (None, "")]
         numeric_pairs = [(idx, _coerce_number(value)) for idx, value in enumerate(raw_values)]
@@ -1187,14 +1495,14 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         numeric_values = list(numeric_values_by_idx.values())
         numeric_ratio = len(numeric_values) / len(non_empty) if non_empty else 0
 
-        if len(numeric_values) >= 5 and numeric_ratio >= 0.65:
+        if _is_measure_candidate(field) and len(numeric_values) >= 5 and numeric_ratio >= 0.65:
             avg = _mean(numeric_values)
             numeric_by_column[column] = numeric_values_by_idx
             numeric_profiles.append(
                 {
                     "field": column,
                     "label": _safe_label(field),
-                    "type": field.get("type") or "number",
+                    "type": canonical_type if canonical_type in {"integer", "float"} else "float",
                     "count": len(numeric_values),
                     "missing": len(raw_values) - len(numeric_values),
                     "min": round(min(numeric_values), 4),
@@ -1217,7 +1525,7 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
                 {
                     "field": column,
                     "label": _safe_label(field),
-                    "type": field.get("type") or "text",
+                    "type": canonical_type,
                     "count": len(non_empty),
                     "missing": len(raw_values) - len(non_empty),
                     "unique": len(counts),
@@ -1255,23 +1563,25 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
     trends = []
     if temporal_field:
         for profile in numeric_profiles[:4]:
-            buckets: dict[int, list[float]] = {}
+            buckets: dict[str, dict[str, object]] = {}
             values_by_idx = numeric_by_column.get(profile["field"], {})
             for idx, record in enumerate(records):
                 value = values_by_idx.get(idx)
                 if value is None:
                     continue
-                year = _extract_year(record.get(temporal_field))
-                if year is None:
+                period = _extract_period_key(record.get(temporal_field), temporal_field)
+                if period is None:
                     continue
-                buckets.setdefault(year, []).append(value)
+                key, label = period
+                bucket = buckets.setdefault(key, {"label": label, "values": []})
+                bucket["values"].append(value)
             points = [
-                {"period": year, "avg": round(_mean(values), 4), "count": len(values)}
-                for year, values in sorted(buckets.items())
-                if values
+                {"period": bucket["label"], "avg": round(_mean(bucket["values"]), 4), "count": len(bucket["values"])}
+                for _, bucket in sorted(buckets.items())
+                if bucket["values"]
             ]
             if len(points) >= 2:
-                trends.append({"field": profile["field"], "label": profile["label"], "points": points[-8:]})
+                trends.append({"field": profile["field"], "label": profile["label"], "points": points[-24:]})
 
     insights = []
     if correlations:
@@ -1303,12 +1613,16 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
             }
         )
 
-    return {
+    meta = _cache_meta_public(_cache_key(records_path, params))
+    result = {
         "dataset_id": dataset_id,
         "title": _get_dataset_title(dataset.get("metas", {}) or {}) or dataset_id,
         "sample_size": len(records),
         "requested_limit": safe_limit,
         "temporal_field": temporal_field,
+        "ordering": ordering,
+        "schema_quality": _schema_quality(fields, observed_columns),
+        **meta,
         "numeric_profiles": numeric_profiles[:12],
         "categorical_profiles": categorical_profiles[:10],
         "correlations": correlations[:20],
@@ -1318,11 +1632,20 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         "insights": insights[:4],
         "generated_at": int(_now()),
     }
+    _cache_set(cache_key, result)
+    return result
 
 
 class TransparenciaHandler(SimpleHTTPRequestHandler):
-    server_version = "TransparenciaConnect"
+    server_version = "SaudeMaisPublica/1.0"
     sys_version = ""
+
+    extensions_map = SimpleHTTPRequestHandler.extensions_map.copy()
+    extensions_map.update({
+        ".html": "text/html; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+    })
 
     def _set_security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -1331,7 +1654,7 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), usb=(), payment=()")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'",
+            "default-src 'self'; connect-src 'self'; img-src * data: blob:; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'",
         )
         origin = _normalize_origin(self.headers.get("Origin"))
         if origin:
@@ -1426,7 +1749,9 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
             if path == "/api/datasets":
                 try:
                     limit = _parse_int_param((query.get("limit") or [None])[0], MAX_DATASET_LIMIT, 1, MAX_DATASET_LIMIT, "limit")
-                    payload = _ods_fetch("/catalog/datasets", {"limit": str(limit)})
+                    ods_params = {"limit": str(limit)}
+                    payload = dict(_ods_fetch("/catalog/datasets", ods_params))
+                    payload.update(_cache_meta_public(_cache_key("/catalog/datasets", ods_params)))
                     self._json(200, payload, cache_control="public, max-age=60")
                 except Exception as exc:
                     self._send_exception_json(exc)
@@ -1456,7 +1781,10 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
             if path.startswith("/api/dataset/"):
                 try:
                     dataset_id = _parse_dataset_id(path.split("/api/dataset/", 1)[1])
-                    dataset = _ods_fetch(f"/catalog/datasets/{quote(dataset_id)}")
+                    dataset_path = f"/catalog/datasets/{quote(dataset_id)}"
+                    dataset = dict(_ods_fetch(dataset_path))
+                    dataset.update(_cache_meta_public(_cache_key(dataset_path)))
+                    dataset["schema_quality"] = _schema_quality(dataset.get("fields", []) or [])
                     self._json(200, dataset, cache_control="public, max-age=300")
                 except Exception as exc:
                     self._send_exception_json(exc)
@@ -1466,11 +1794,15 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                 try:
                     dataset_id = _parse_dataset_id(path.split("/api/records/", 1)[1])
                     limit = _parse_int_param((query.get("limit") or [None])[0], 50, 1, MAX_RECENT_LIMIT, "limit")
+                    records_path = f"/catalog/datasets/{quote(dataset_id)}/records"
+                    records_params = {"limit": str(limit)}
                     records = _ods_fetch(
-                        f"/catalog/datasets/{quote(dataset_id)}/records",
-                        {"limit": str(limit)},
-                        cacheable=False,
+                        records_path,
+                        records_params,
+                        cacheable=True,
                     )
+                    records = dict(records)
+                    records.update(_cache_meta_public(_cache_key(records_path, records_params)))
                     self._json(200, records, cache_control="no-store")
                 except Exception as exc:
                     self._send_exception_json(exc)
@@ -1489,14 +1821,17 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/":
-            self.path = "/index.html"
-        elif path in ALLOWED_STATIC_PATHS:
-            self.path = path
-        else:
-            self.send_error(404, "Static asset not found")
-            return
+            path = "/index.html"
 
-        return super().do_GET()
+        clean_path = "/" + path.lstrip("/")
+        if clean_path in ALLOWED_STATIC_PATHS:
+            self.path = clean_path.lstrip("/")
+            LOGGER.info("Serving static: %s -> %s", clean_path, self.path)
+            return super().do_GET()
+
+        LOGGER.warning("404 Static not found: %s", path)
+        self._send_error_json(404, f"Static asset not found: {path}")
+        return
 
     def list_directory(self, path):
         self.send_error(404, "Directory listing disabled")

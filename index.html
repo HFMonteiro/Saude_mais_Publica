@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transparência SNS - Radar de dados</title>
+    <title>Saúde+ Pública - Radar de dados</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=home-cleanup-20260425" />
+    <link rel="stylesheet" href="styles.css?v=pt-copy-20260427" />
     <script
       src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
       integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
@@ -16,8 +16,8 @@
     <main class="layout">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Transparência SNS</p>
-          <h1>Radar de dados SNS</h1>
+          <p class="eyebrow">Saúde+ Pública</p>
+          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública</h1>
         </div>
         <div class="topbar-actions">
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
@@ -86,7 +86,7 @@
         <section class="panel workspace">
           <div class="panel-heading">
             <h2>Mapa de ligações</h2>
-            <span id="graphScope">Top relações</span>
+            <span id="graphScope">Top ligações</span>
           </div>
           <div id="graphContainer">
             <svg id="linkGraph"></svg>
@@ -121,7 +121,10 @@
                 <thead></thead>
                 <tbody></tbody>
               </table>
-              <div id="recentDataEmpty" class="empty-state">Sem dataset selecionado.</div>
+              <div id="recentDataEmpty" class="empty-state">
+                <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="Sem dados" />
+                <span>Sem dataset selecionado.</span>
+              </div>
             </div>
             <span class="table-edge table-edge-right" aria-hidden="true"></span>
           </div>
@@ -158,6 +161,11 @@
           </section>
         </section>
       </section>
+      <footer class="legal-strip" aria-label="Fonte e nota legal">
+        <div><strong>Fonte dos dados:</strong> Portal Transparência SNS / dados abertos Opendatasoft.</div>
+        <div>Análises exploratórias e heurísticas, sem valor oficial, clínico ou decisório isolado. Validar sempre fonte, granularidade, atualização e contexto antes de interpretar.</div>
+        <div>Informação preparada para transparência, investigação, literacia e planeamento público. Não utilizar para fins comerciais, publicidade, profiling individual ou conclusões sobre pessoas.</div>
+      </footer>
     </main>
 
     <template id="edgeTooltipTemplate">
@@ -166,6 +174,6 @@
       Campos partilhados: {{fields}}
     </template>
 
-    <script src="app.js?v=home-cleanup-20260425" defer></script>
+    <script src="app.js?v=pt-copy-20260427" defer></script>
   </body>
 </html>
