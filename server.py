@@ -676,7 +676,7 @@ def _get_datasets() -> dict:
             {
                 "limit": str(limit),
                 "offset": str(offset),
-                "select": "dataset_id,fields",
+                "select": "dataset_id,fields,metas",
             },
         )
         results = page.get("results", []) or []
@@ -1636,6 +1636,105 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
     return result
 
 
+def _pick_finprod_trend(trends: list[dict], *, mode: str) -> dict | None:
+    if not trends:
+        return None
+    keywords = {
+        "financial": r"\b(custo|despesa|encargo|pagamento|contrato|valor|orcamento|orçamento)\b",
+        "production": r"\b(producao|produção|consulta|urgencia|urgência|cirurgia|episodio|episódio|atendimento|atividade)\b",
+    }.get(mode, r"$^")
+    for trend in trends:
+        label = _normalize_token(str(trend.get("label") or trend.get("field") or ""))
+        if re.search(keywords, label):
+            return trend
+    return trends[0]
+
+
+def _build_finance_production(financial_dataset: str, production_dataset: str, limit: int) -> dict:
+    cache_key = f"finprod:{financial_dataset}:{production_dataset}:{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    financial = _build_data_analytics(financial_dataset, limit)
+    production = _build_data_analytics(production_dataset, limit)
+    financial_trend = _pick_finprod_trend(financial.get("trends", []), mode="financial")
+    production_trend = _pick_finprod_trend(production.get("trends", []), mode="production")
+
+    financial_points = {
+        str(point.get("period")): float(point.get("avg"))
+        for point in (financial_trend or {}).get("points", [])
+        if point.get("period") is not None and _coerce_number(point.get("avg")) is not None
+    }
+    production_points = {
+        str(point.get("period")): float(point.get("avg"))
+        for point in (production_trend or {}).get("points", [])
+        if point.get("period") is not None and _coerce_number(point.get("avg")) is not None
+    }
+    shared_periods = sorted(set(financial_points) & set(production_points))
+    rows = []
+    pairs = []
+    for period in shared_periods:
+        expense_value = financial_points[period]
+        output_value = production_points[period]
+        unit_cost = expense_value / output_value if output_value > 0 else None
+        rows.append(
+            {
+                "period": period,
+                "financial_value": round(expense_value, 4),
+                "production_value": round(output_value, 4),
+                "unit_cost": round(unit_cost, 4) if unit_cost is not None else None,
+            }
+        )
+        if output_value > 0:
+            pairs.append((expense_value, output_value))
+
+    unit_cost_values = [row["unit_cost"] for row in rows if isinstance(row.get("unit_cost"), (int, float))]
+    unit_cost_avg = round(_mean(unit_cost_values), 4) if unit_cost_values else None
+    unit_cost_median = round(sorted(unit_cost_values)[len(unit_cost_values) // 2], 4) if unit_cost_values else None
+    correlation = _pearson(pairs)
+    correlation_label = "insuficiente"
+    if correlation is not None:
+        if abs(correlation) >= 0.7:
+            correlation_label = "forte"
+        elif abs(correlation) >= 0.4:
+            correlation_label = "moderada"
+        else:
+            correlation_label = "fraca"
+
+    result = {
+        "financial_dataset": {
+            "dataset_id": financial.get("dataset_id"),
+            "title": financial.get("title"),
+            "temporal_field": financial.get("temporal_field"),
+            "trend_label": (financial_trend or {}).get("label"),
+        },
+        "production_dataset": {
+            "dataset_id": production.get("dataset_id"),
+            "title": production.get("title"),
+            "temporal_field": production.get("temporal_field"),
+            "trend_label": (production_trend or {}).get("label"),
+        },
+        "summary": {
+            "matched_periods": len(rows),
+            "avg_unit_cost": unit_cost_avg,
+            "median_unit_cost": unit_cost_median,
+            "expense_output_correlation": round(correlation, 4) if correlation is not None else None,
+            "correlation_strength": correlation_label,
+        },
+        "rows": rows[-24:],
+        "diagnostics": {
+            "financial_trends": len(financial.get("trends", [])),
+            "production_trends": len(production.get("trends", [])),
+            "financial_samples": financial.get("sample_size", 0),
+            "production_samples": production.get("sample_size", 0),
+        },
+        "generated_at": int(_now()),
+    }
+    _cache_set(cache_key, result)
+    return result
+
+
 class TransparenciaHandler(SimpleHTTPRequestHandler):
     server_version = "SaudeMaisPublica/1.0"
     sys_version = ""
@@ -1742,6 +1841,23 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                         "limit",
                     )
                     self._json(200, _build_data_analytics(dataset_id, limit), cache_control="no-store")
+                except Exception as exc:
+                    self._send_exception_json(exc)
+                return
+
+            if path == "/api/finprod":
+                try:
+                    financial_dataset = _parse_dataset_id((query.get("financial_dataset") or [None])[0])
+                    production_dataset = _parse_dataset_id((query.get("production_dataset") or [None])[0])
+                    limit = _parse_int_param(
+                        (query.get("limit") or [None])[0],
+                        DEFAULT_DATA_ANALYTICS_LIMIT,
+                        20,
+                        MAX_DATA_ANALYTICS_LIMIT,
+                        "limit",
+                    )
+                    payload = _build_finance_production(financial_dataset, production_dataset, limit)
+                    self._json(200, payload, cache_control="no-store")
                 except Exception as exc:
                     self._send_exception_json(exc)
                 return

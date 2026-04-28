@@ -24,6 +24,7 @@
 
       <nav class="analytics-tabs" aria-label="Secções de analytics">
         <button class="analytics-tab is-active" type="button" data-analytics-tab="data">Dados reais</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="finprod">Financeiro × Produção</button>
         <button class="analytics-tab" type="button" data-analytics-tab="predictive">Preditiva</button>
         <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
         <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
@@ -136,6 +137,34 @@
             <div id="dataCategoricalProfiles" class="data-profile-list"></div>
           </section>
         </section>
+      </section>
+
+      <section class="panel analytics-panel" data-tab-panel="finprod" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Cruzamento financeiro × produção</h2>
+            <p id="finProdMeta" class="meta">Seleciona um dataset financeiro e um de produção para comparar custo unitário por período.</p>
+          </div>
+          <div id="finProdStatus" class="sync-state">A aguardar seleção...</div>
+        </div>
+        <div class="data-analytics-toolbar">
+          <label>
+            <span>Dataset financeiro</span>
+            <select id="finProdFinancialDataset"></select>
+          </label>
+          <label>
+            <span>Dataset produção</span>
+            <select id="finProdProductionDataset"></select>
+          </label>
+          <button id="finProdRefreshButton" class="ghost-button" type="button">Cruzar datasets</button>
+        </div>
+        <section id="finProdKpis" class="predictive-kpis" aria-label="Resumo financeiro versus produção"></section>
+        <div class="analytics-table-wrap">
+          <table id="finProdTable" class="analytics-table analytics-relation-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="panel analytics-panel predictive-panel" data-tab-panel="predictive" hidden>
