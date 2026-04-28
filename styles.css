@@ -1781,6 +1781,50 @@ td.numeric {
   accent-color: var(--accent);
 }
 
+.finprod-check-panel,
+.finprod-trend-panel {
+  padding: 10px;
+}
+
+.finprod-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.finprod-check {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  display: grid;
+  gap: 4px;
+}
+
+.finprod-check.is-ok {
+  border-color: #7fbc8a;
+  background: #f2fbf4;
+}
+
+.finprod-check.is-warning {
+  border-color: #d4b06e;
+  background: #fff9ef;
+}
+
+.finprod-check.is-error {
+  border-color: #d98989;
+  background: #fff1f1;
+}
+
+.finprod-check strong {
+  font-size: 0.82rem;
+}
+
+.finprod-check small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .data-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

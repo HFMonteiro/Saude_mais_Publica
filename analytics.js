@@ -69,6 +69,11 @@ const finProdProductionDataset = document.getElementById("finProdProductionDatas
 const finProdRefreshButton = document.getElementById("finProdRefreshButton");
 const finProdKpis = document.getElementById("finProdKpis");
 const finProdTable = document.getElementById("finProdTable");
+const finProdChecks = document.getElementById("finProdChecks");
+const finProdTrendChart = document.getElementById("finProdTrendChart");
+const finProdOutliers = document.getElementById("finProdOutliers");
+const finProdBenchmark = document.getElementById("finProdBenchmark");
+const finProdDiagnostics = document.getElementById("finProdDiagnostics");
 const predictiveMeta = document.getElementById("predictiveMeta");
 const predictiveDataButton = document.getElementById("predictiveDataButton");
 const predictiveKpis = document.getElementById("predictiveKpis");
@@ -607,6 +612,10 @@ function addFinProdKpi(label, value, detail) {
 
 function renderFinProdAnalytics() {
   clearElement(finProdKpis);
+  clearElement(finProdChecks);
+  clearElement(finProdOutliers);
+  clearElement(finProdBenchmark);
+  clearElement(finProdTrendChart);
   const thead = finProdTable?.querySelector("thead");
   const tbody = finProdTable?.querySelector("tbody");
   if (thead) clearElement(thead);
@@ -615,8 +624,10 @@ function renderFinProdAnalytics() {
   const payload = state.finProdPayload;
   if (!payload) {
     finProdMeta.textContent = "Seleciona os dois datasets e clica em Cruzar datasets.";
+    finProdDiagnostics.textContent = "Sem cruzamento ativo.";
     return;
   }
+  renderFinProdChecks(payload.comparability?.checks || []);
   finProdMeta.textContent = `${payload.financial_dataset?.title || payload.financial_dataset?.dataset_id} × ${payload.production_dataset?.title || payload.production_dataset?.dataset_id}`;
   const summary = payload.summary || {};
   addFinProdKpi("Períodos em comum", formatNumber(summary.matched_periods || 0), "base temporal comparável");
@@ -627,9 +638,10 @@ function renderFinProdAnalytics() {
     summary.expense_output_correlation == null ? "-" : formatDecimal(summary.expense_output_correlation, 2),
     summary.correlation_strength || "insuficiente",
   );
+  addFinProdKpi("Spearman", summary.spearman_correlation == null ? "-" : formatDecimal(summary.spearman_correlation, 2), `robustez ${summary.robustness || "insuficiente"}`);
 
   const header = document.createElement("tr");
-  ["Período", "Financeiro", "Produção", "Custo unitário"].forEach((label) => {
+  ["Período", "Financeiro (norm.)", "Produção (norm.)", "Custo unitário"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     header.appendChild(th);
@@ -637,12 +649,121 @@ function renderFinProdAnalytics() {
   thead?.appendChild(header);
   (payload.rows || []).forEach((row) => {
     const tr = document.createElement("tr");
-    [row.period, formatDecimal(row.financial_value, 2), formatDecimal(row.production_value, 2), formatDecimal(row.unit_cost, 2)].forEach((value) => {
+    [row.period, formatDecimal(row.financial_normalized, 2), formatDecimal(row.production_normalized, 2), formatDecimal(row.unit_cost, 2)].forEach((value) => {
       const td = document.createElement("td");
       td.textContent = value;
       tr.appendChild(td);
     });
     tbody?.appendChild(tr);
+  });
+  renderFinProdTrend(payload);
+  renderFinProdOutliers(payload.outliers || []);
+  renderFinProdBenchmark(payload.entity_benchmark || []);
+  const norm = payload.normalization || {};
+  const warnings = payload.diagnostics?.warnings || [];
+  finProdDiagnostics.textContent = `Escalas: financeiro em ${norm.financial?.unit_label || "-"} · produção em ${norm.production?.unit_label || "-"}. ${warnings.length ? `Avisos: ${warnings.join(" · ")}` : "Sem avisos críticos."}`;
+}
+
+function renderFinProdChecks(checks) {
+  if (!checks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Checklist indisponível.";
+    finProdChecks.appendChild(empty);
+    return;
+  }
+  checks.forEach((check) => {
+    const row = document.createElement("div");
+    row.className = `finprod-check is-${check.status || "warning"}`;
+    const title = document.createElement("strong");
+    title.textContent = check.label || "Validação";
+    const detail = document.createElement("small");
+    detail.textContent = check.detail || "-";
+    row.append(title, detail);
+    finProdChecks.appendChild(row);
+  });
+}
+
+function renderFinProdTrend(payload) {
+  const rows = payload.rows || [];
+  const width = Math.max(560, finProdTrendChart.closest(".data-trend-wrap")?.clientWidth || 560);
+  const height = 250;
+  finProdTrendChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  if (rows.length < 2) {
+    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
+    empty.textContent = "Sem períodos suficientes para tendência.";
+    finProdTrendChart.appendChild(empty);
+    return;
+  }
+  const values = rows.map((row) => Number(row.unit_cost)).filter((value) => Number.isFinite(value));
+  if (values.length < 2) return;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const left = 42;
+  const right = width - 22;
+  const top = 20;
+  const bottom = height - 34;
+  const step = (right - left) / Math.max(rows.length - 1, 1);
+  const coords = rows.map((row, idx) => ({
+    x: left + (idx * step),
+    y: bottom - (((Number(row.unit_cost) - min) / span) * (bottom - top)),
+    period: row.period,
+    unitCost: row.unit_cost,
+  }));
+  finProdTrendChart.appendChild(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom, class: "data-trend-axis"}));
+  finProdTrendChart.appendChild(svgNode("line", {x1: left, y1: top, x2: left, y2: bottom, class: "data-trend-axis"}));
+  finProdTrendChart.appendChild(svgNode("path", {
+    class: "data-trend-line",
+    d: coords.map((coord, idx) => `${idx ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+  }));
+  coords.forEach((coord) => {
+    const group = svgNode("g", {class: "data-trend-point", transform: `translate(${coord.x}, ${coord.y})`});
+    group.appendChild(svgNode("circle", {r: 3.8}));
+    const title = svgNode("title");
+    title.textContent = `${coord.period}: ${formatDecimal(coord.unitCost, 2)}`;
+    group.appendChild(title);
+    finProdTrendChart.appendChild(group);
+  });
+}
+
+function renderFinProdOutliers(rows) {
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem outliers relevantes de custo unitário.";
+    finProdOutliers.appendChild(empty);
+    return;
+  }
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "analytics-dimension-row";
+    const strong = document.createElement("strong");
+    strong.textContent = row.period;
+    const meta = document.createElement("small");
+    meta.textContent = `Custo ${formatDecimal(row.unit_cost, 2)} · robust-z ${formatDecimal(row.robust_z, 2)}`;
+    item.append(strong, meta);
+    finProdOutliers.appendChild(item);
+  });
+}
+
+function renderFinProdBenchmark(rows) {
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem benchmark entidade/região comparável.";
+    finProdBenchmark.appendChild(empty);
+    return;
+  }
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "analytics-dimension-row";
+    const strong = document.createElement("strong");
+    strong.textContent = compactTitle(row.entity, 42);
+    const meta = document.createElement("small");
+    meta.textContent = `Financeiro ${formatDecimal((row.financial_share || 0) * 100, 1)}% · Produção ${formatDecimal((row.production_share || 0) * 100, 1)}% · gap ${formatDecimal((row.balance_gap || 0) * 100, 1)}pp`;
+    item.append(strong, meta);
+    finProdBenchmark.appendChild(item);
   });
 }
 

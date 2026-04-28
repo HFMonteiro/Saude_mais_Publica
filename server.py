@@ -1650,6 +1650,120 @@ def _pick_finprod_trend(trends: list[dict], *, mode: str) -> dict | None:
     return trends[0]
 
 
+def _finprod_period_key(label: str) -> str | None:
+    value = str(label or "").strip()
+    if not value:
+        return None
+    match = re.search(r"(20\d{2}|19\d{2})\s*[-/ ]?\s*(q([1-4])|t([1-4])|trimestre\s*([1-4]))", value, re.IGNORECASE)
+    if match:
+        quarter = match.group(3) or match.group(4) or match.group(5)
+        return f"{match.group(1)}-Q{quarter}"
+    match = re.search(r"(20\d{2}|19\d{2})\s*[-/ ]\s*(0?[1-9]|1[0-2])", value)
+    if match:
+        return f"{match.group(1)}-{int(match.group(2)):02d}"
+    match = re.search(r"(20\d{2}|19\d{2})", value)
+    if match:
+        return match.group(1)
+    normalized = _normalize_token(value)
+    return normalized or None
+
+
+def _normalize_measure_scale(values: list[float], *, mode: str) -> tuple[float, str]:
+    if not values:
+        return 1.0, "valor"
+    sorted_values = sorted(abs(value) for value in values if value is not None)
+    if not sorted_values:
+        return 1.0, "valor"
+    median = sorted_values[len(sorted_values) // 2]
+    if mode == "financial":
+        if median >= 1_000_000:
+            return 1_000_000.0, "M€"
+        if median >= 1_000:
+            return 1_000.0, "mil €"
+        return 1.0, "€"
+    if median >= 1_000_000:
+        return 1_000_000.0, "milhões"
+    if median >= 1_000:
+        return 1_000.0, "mil"
+    return 1.0, "unidade"
+
+
+def _spearman(pairs: list[tuple[float, float]]) -> float | None:
+    if len(pairs) < 8:
+        return None
+    xs = [pair[0] for pair in pairs]
+    ys = [pair[1] for pair in pairs]
+    rank_x = {value: index + 1 for index, value in enumerate(sorted(set(xs)))}
+    rank_y = {value: index + 1 for index, value in enumerate(sorted(set(ys)))}
+    ranked = [(rank_x[x], rank_y[y]) for x, y in pairs]
+    return _pearson([(float(rx), float(ry)) for rx, ry in ranked])
+
+
+def _robustness_band(pairs: list[tuple[float, float]], pearson: float | None, spearman: float | None) -> str:
+    sample = len(pairs)
+    if sample < 8 or pearson is None:
+        return "insuficiente"
+    coherence = abs((spearman or 0) - pearson)
+    if sample >= 16 and abs(pearson) >= 0.55 and coherence <= 0.25:
+        return "alta"
+    if sample >= 10 and abs(pearson) >= 0.35:
+        return "moderada"
+    return "baixa"
+
+
+def _detect_unit_cost_outliers(rows: list[dict]) -> list[dict]:
+    values = [row["unit_cost"] for row in rows if isinstance(row.get("unit_cost"), (int, float))]
+    if len(values) < 5:
+        return []
+    sorted_values = sorted(values)
+    median = sorted_values[len(sorted_values) // 2]
+    deviations = [abs(value - median) for value in values]
+    mad = sorted(deviations)[len(deviations) // 2] or 1e-9
+    outliers = []
+    for row in rows:
+        value = row.get("unit_cost")
+        if not isinstance(value, (int, float)):
+            continue
+        robust_z = abs(value - median) / (1.4826 * mad)
+        if robust_z >= 3:
+            outliers.append(
+                {
+                    "period": row.get("period"),
+                    "unit_cost": round(value, 4),
+                    "robust_z": round(robust_z, 2),
+                }
+            )
+    outliers.sort(key=lambda item: -item["robust_z"])
+    return outliers[:5]
+
+
+def _entity_benchmark(financial: dict, production: dict) -> list[dict]:
+    pattern = re.compile(r"\b(uls|hospital|entidade|unidade|ars|regiao|região|concelho|distrito)\b")
+    fin_fields = [row for row in financial.get("categorical_profiles", []) if pattern.search(_normalize_token(row.get("field", "")))]
+    prod_fields = [row for row in production.get("categorical_profiles", []) if pattern.search(_normalize_token(row.get("field", "")))]
+    if not fin_fields or not prod_fields:
+        return []
+    fin_top = fin_fields[0]
+    prod_top = prod_fields[0]
+    fin_count = max(fin_top.get("count", 1), 1)
+    prod_count = max(prod_top.get("count", 1), 1)
+    fin_share = {str(item.get("value")): (item.get("count", 0) / fin_count) for item in fin_top.get("top_values", [])}
+    prod_share = {str(item.get("value")): (item.get("count", 0) / prod_count) for item in prod_top.get("top_values", [])}
+    shared = sorted(set(fin_share) & set(prod_share))
+    rows = []
+    for key in shared:
+        rows.append(
+            {
+                "entity": key,
+                "financial_share": round(fin_share[key], 4),
+                "production_share": round(prod_share[key], 4),
+                "balance_gap": round(fin_share[key] - prod_share[key], 4),
+            }
+        )
+    rows.sort(key=lambda item: -abs(item["balance_gap"]))
+    return rows[:10]
+
+
 def _build_finance_production(financial_dataset: str, production_dataset: str, limit: int) -> dict:
     cache_key = f"finprod:{financial_dataset}:{production_dataset}:{limit}"
     cached = _cache_get(cache_key)
@@ -1662,14 +1776,14 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
     production_trend = _pick_finprod_trend(production.get("trends", []), mode="production")
 
     financial_points = {
-        str(point.get("period")): float(point.get("avg"))
+        _finprod_period_key(point.get("period")): float(point.get("avg"))
         for point in (financial_trend or {}).get("points", [])
-        if point.get("period") is not None and _coerce_number(point.get("avg")) is not None
+        if _finprod_period_key(point.get("period")) is not None and _coerce_number(point.get("avg")) is not None
     }
     production_points = {
-        str(point.get("period")): float(point.get("avg"))
+        _finprod_period_key(point.get("period")): float(point.get("avg"))
         for point in (production_trend or {}).get("points", [])
-        if point.get("period") is not None and _coerce_number(point.get("avg")) is not None
+        if _finprod_period_key(point.get("period")) is not None and _coerce_number(point.get("avg")) is not None
     }
     shared_periods = sorted(set(financial_points) & set(production_points))
     rows = []
@@ -1689,10 +1803,17 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
         if output_value > 0:
             pairs.append((expense_value, output_value))
 
+    expense_scale, expense_unit = _normalize_measure_scale([row["financial_value"] for row in rows], mode="financial")
+    production_scale, production_unit = _normalize_measure_scale([row["production_value"] for row in rows], mode="production")
+    for row in rows:
+        row["financial_normalized"] = round(row["financial_value"] / expense_scale, 4) if expense_scale else row["financial_value"]
+        row["production_normalized"] = round(row["production_value"] / production_scale, 4) if production_scale else row["production_value"]
+
     unit_cost_values = [row["unit_cost"] for row in rows if isinstance(row.get("unit_cost"), (int, float))]
     unit_cost_avg = round(_mean(unit_cost_values), 4) if unit_cost_values else None
     unit_cost_median = round(sorted(unit_cost_values)[len(unit_cost_values) // 2], 4) if unit_cost_values else None
     correlation = _pearson(pairs)
+    spearman = _spearman(pairs)
     correlation_label = "insuficiente"
     if correlation is not None:
         if abs(correlation) >= 0.7:
@@ -1701,6 +1822,31 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             correlation_label = "moderada"
         else:
             correlation_label = "fraca"
+    outliers = _detect_unit_cost_outliers(rows)
+    benchmark_rows = _entity_benchmark(financial, production)
+    robustness = _robustness_band(pairs, correlation, spearman)
+    comparability_checks = [
+        {
+            "label": "Eixo temporal nos dois datasets",
+            "status": "ok" if financial.get("temporal_field") and production.get("temporal_field") else "warning",
+            "detail": f"{financial.get('temporal_field') or '-'} / {production.get('temporal_field') or '-'}",
+        },
+        {
+            "label": "Períodos em comum",
+            "status": "ok" if len(rows) >= 6 else ("warning" if len(rows) >= 3 else "error"),
+            "detail": f"{len(rows)} períodos",
+        },
+        {
+            "label": "Produção com valores válidos",
+            "status": "ok" if len(pairs) >= 6 else ("warning" if pairs else "error"),
+            "detail": f"{len(pairs)} períodos com produção > 0",
+        },
+        {
+            "label": "Benchmark territorial/entidade",
+            "status": "ok" if benchmark_rows else "warning",
+            "detail": "Disponível" if benchmark_rows else "Sem interseção de entidades nas top categorias",
+        },
+    ]
 
     result = {
         "financial_dataset": {
@@ -1720,14 +1866,33 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "avg_unit_cost": unit_cost_avg,
             "median_unit_cost": unit_cost_median,
             "expense_output_correlation": round(correlation, 4) if correlation is not None else None,
+            "spearman_correlation": round(spearman, 4) if spearman is not None else None,
             "correlation_strength": correlation_label,
+            "robustness": robustness,
+            "sample_pairs": len(pairs),
+        },
+        "comparability": {"checks": comparability_checks},
+        "normalization": {
+            "financial": {"scale": expense_scale, "unit_label": expense_unit},
+            "production": {"scale": production_scale, "unit_label": production_unit},
         },
         "rows": rows[-24:],
+        "outliers": outliers,
+        "entity_benchmark": benchmark_rows,
         "diagnostics": {
             "financial_trends": len(financial.get("trends", [])),
             "production_trends": len(production.get("trends", [])),
             "financial_samples": financial.get("sample_size", 0),
             "production_samples": production.get("sample_size", 0),
+            "warnings": [
+                warning
+                for warning in [
+                    "Sem períodos em comum entre tendências selecionadas." if not rows else None,
+                    "Correlação com baixa robustez estatística." if robustness in {"baixa", "insuficiente"} else None,
+                    "Outliers detetados no custo unitário." if outliers else None,
+                ]
+                if warning
+            ],
         },
         "generated_at": int(_now()),
     }
