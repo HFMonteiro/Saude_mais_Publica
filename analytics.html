@@ -24,6 +24,7 @@
 
       <nav class="analytics-tabs" aria-label="Secções de analytics">
         <button class="analytics-tab is-active" type="button" data-analytics-tab="data">Dados reais</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="finprod">Financeiro × Produção</button>
         <button class="analytics-tab" type="button" data-analytics-tab="predictive">Preditiva</button>
         <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
         <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
@@ -136,6 +137,63 @@
             <div id="dataCategoricalProfiles" class="data-profile-list"></div>
           </section>
         </section>
+      </section>
+
+      <section class="panel analytics-panel" data-tab-panel="finprod" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Cruzamento financeiro × produção</h2>
+            <p id="finProdMeta" class="meta">Seleciona um dataset financeiro e um de produção para comparar custo unitário por período.</p>
+          </div>
+          <div id="finProdStatus" class="sync-state">A aguardar seleção...</div>
+        </div>
+        <div class="data-analytics-toolbar">
+          <label>
+            <span>Dataset financeiro</span>
+            <select id="finProdFinancialDataset"></select>
+          </label>
+          <label>
+            <span>Dataset produção</span>
+            <select id="finProdProductionDataset"></select>
+          </label>
+          <button id="finProdRefreshButton" class="ghost-button" type="button">Cruzar datasets</button>
+        </div>
+        <section class="panel analytics-panel finprod-check-panel">
+          <div class="panel-heading">
+            <h3>Checklist de comparabilidade</h3>
+          </div>
+          <div id="finProdChecks" class="finprod-checklist"></div>
+        </section>
+        <section id="finProdKpis" class="predictive-kpis" aria-label="Resumo financeiro versus produção"></section>
+        <section class="panel analytics-panel finprod-trend-panel">
+          <div class="panel-heading">
+            <h3>Tendência do custo unitário</h3>
+          </div>
+          <div class="data-trend-wrap">
+            <svg id="finProdTrendChart" role="img" aria-label="Tendência do custo unitário"></svg>
+          </div>
+        </section>
+        <div class="analytics-table-wrap">
+          <table id="finProdTable" class="analytics-table analytics-relation-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <section class="analytics-grid analytics-grid-wide">
+          <section class="panel analytics-panel">
+            <div class="panel-heading">
+              <h3>Outliers de custo unitário</h3>
+            </div>
+            <div id="finProdOutliers" class="analytics-list"></div>
+          </section>
+          <section class="panel analytics-panel">
+            <div class="panel-heading">
+              <h3>Benchmark entidade/região</h3>
+            </div>
+            <div id="finProdBenchmark" class="analytics-list"></div>
+          </section>
+        </section>
+        <div id="finProdDiagnostics" class="meta"></div>
       </section>
 
       <section class="panel analytics-panel predictive-panel" data-tab-panel="predictive" hidden>
