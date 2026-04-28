@@ -20,6 +20,9 @@ const state = {
   datasetMode: "rich",
   dataLimit: 80,
   dataPayload: null,
+  selectedFinancialDataset: "",
+  selectedProductionDataset: "",
+  finProdPayload: null,
   _predictiveLoadDataset: "",
   _filterCache: {
     key: "",
@@ -59,6 +62,13 @@ const dataFeatureImportance = document.getElementById("dataFeatureImportance");
 const featureDetailPanel = document.getElementById("featureDetailPanel");
 const dataPcaMeta = document.getElementById("dataPcaMeta");
 const dataPcaChart = document.getElementById("dataPcaChart");
+const finProdMeta = document.getElementById("finProdMeta");
+const finProdStatus = document.getElementById("finProdStatus");
+const finProdFinancialDataset = document.getElementById("finProdFinancialDataset");
+const finProdProductionDataset = document.getElementById("finProdProductionDataset");
+const finProdRefreshButton = document.getElementById("finProdRefreshButton");
+const finProdKpis = document.getElementById("finProdKpis");
+const finProdTable = document.getElementById("finProdTable");
 const predictiveMeta = document.getElementById("predictiveMeta");
 const predictiveDataButton = document.getElementById("predictiveDataButton");
 const predictiveKpis = document.getElementById("predictiveKpis");
@@ -464,6 +474,7 @@ async function loadAnalytics() {
   state.payload = payload;
   invalidateFilterCache();
   populateDataDatasetOptions();
+  populateFinProdOptions();
   analyticsStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   renderAll();
   if (state.selectedDataDataset && !state.dataPayload) {
@@ -512,6 +523,38 @@ function populateDataDatasetOptions() {
   renderDatasetMode();
 }
 
+function populateFinProdOptions() {
+  const datasets = state.payload?.datasets || [];
+  const financial = datasets
+    .filter((dataset) => dataset.mega_theme === "Finanças & Compras")
+    .sort((a, b) => (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0));
+  const production = datasets
+    .filter((dataset) => dataset.mega_theme === "Acesso & Produção")
+    .sort((a, b) => (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0));
+  clearElement(finProdFinancialDataset);
+  clearElement(finProdProductionDataset);
+  financial.forEach((dataset) => {
+    const option = document.createElement("option");
+    option.value = dataset.dataset_id;
+    option.textContent = compactTitle(dataset.title || dataset.dataset_id, 72);
+    finProdFinancialDataset.appendChild(option);
+  });
+  production.forEach((dataset) => {
+    const option = document.createElement("option");
+    option.value = dataset.dataset_id;
+    option.textContent = compactTitle(dataset.title || dataset.dataset_id, 72);
+    finProdProductionDataset.appendChild(option);
+  });
+  if (!financial.some((dataset) => dataset.dataset_id === state.selectedFinancialDataset)) {
+    state.selectedFinancialDataset = financial[0]?.dataset_id || "";
+  }
+  if (!production.some((dataset) => dataset.dataset_id === state.selectedProductionDataset)) {
+    state.selectedProductionDataset = production[0]?.dataset_id || "";
+  }
+  finProdFinancialDataset.value = state.selectedFinancialDataset;
+  finProdProductionDataset.value = state.selectedProductionDataset;
+}
+
 async function loadDataAnalytics() {
   if (!state.selectedDataDataset) return;
   const requestId = ++activeDataRequest;
@@ -534,6 +577,73 @@ function debounceLoadDataAnalytics() {
   dataLoadTimer = setTimeout(() => {
     loadDataAnalytics().catch(showDataError);
   }, 180);
+}
+
+async function loadFinProdAnalytics() {
+  if (!state.selectedFinancialDataset || !state.selectedProductionDataset) {
+    throw new Error("Seleciona dataset financeiro e de produção.");
+  }
+  finProdStatus.textContent = "A cruzar datasets...";
+  const payload = await fetchJson(
+    `/api/finprod?financial_dataset=${encodeURIComponent(state.selectedFinancialDataset)}&production_dataset=${encodeURIComponent(state.selectedProductionDataset)}&limit=${state.dataLimit}`,
+    {timeoutMs: 32000},
+  );
+  state.finProdPayload = payload;
+  finProdStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
+  renderFinProdAnalytics();
+}
+
+function addFinProdKpi(label, value, detail) {
+  const card = document.createElement("div");
+  const span = document.createElement("span");
+  span.textContent = label;
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const small = document.createElement("small");
+  small.textContent = detail;
+  card.append(span, strong, small);
+  finProdKpis.appendChild(card);
+}
+
+function renderFinProdAnalytics() {
+  clearElement(finProdKpis);
+  const thead = finProdTable?.querySelector("thead");
+  const tbody = finProdTable?.querySelector("tbody");
+  if (thead) clearElement(thead);
+  if (tbody) clearElement(tbody);
+
+  const payload = state.finProdPayload;
+  if (!payload) {
+    finProdMeta.textContent = "Seleciona os dois datasets e clica em Cruzar datasets.";
+    return;
+  }
+  finProdMeta.textContent = `${payload.financial_dataset?.title || payload.financial_dataset?.dataset_id} × ${payload.production_dataset?.title || payload.production_dataset?.dataset_id}`;
+  const summary = payload.summary || {};
+  addFinProdKpi("Períodos em comum", formatNumber(summary.matched_periods || 0), "base temporal comparável");
+  addFinProdKpi("Custo unitário médio", formatDecimal(summary.avg_unit_cost, 2), "despesa / produção");
+  addFinProdKpi("Mediana custo unitário", formatDecimal(summary.median_unit_cost, 2), "robusto a outliers");
+  addFinProdKpi(
+    "Correlação despesa-produção",
+    summary.expense_output_correlation == null ? "-" : formatDecimal(summary.expense_output_correlation, 2),
+    summary.correlation_strength || "insuficiente",
+  );
+
+  const header = document.createElement("tr");
+  ["Período", "Financeiro", "Produção", "Custo unitário"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    header.appendChild(th);
+  });
+  thead?.appendChild(header);
+  (payload.rows || []).forEach((row) => {
+    const tr = document.createElement("tr");
+    [row.period, formatDecimal(row.financial_value, 2), formatDecimal(row.production_value, 2), formatDecimal(row.unit_cost, 2)].forEach((value) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    tbody?.appendChild(tr);
+  });
 }
 
 function filteredCorrelations() {
@@ -2991,6 +3101,13 @@ function renderAll() {
     renderDataAnalytics();
     return;
   }
+  if (state.activeTab === "finprod") {
+    renderFinProdAnalytics();
+    if (!state.finProdPayload && state.selectedFinancialDataset && state.selectedProductionDataset) {
+      loadFinProdAnalytics().catch(showError);
+    }
+    return;
+  }
   if (state.activeTab === "predictive") {
     renderPredictiveAnalytics();
     return;
@@ -3028,7 +3145,7 @@ function setupEvents() {
   dataSampleLimit.value = state.dataLimit;
   dataSampleLimitValue.textContent = state.dataLimit;
   const initialTab = new URLSearchParams(window.location.search).get("tab");
-  if (["data", "predictive", "semantic", "health", "local", "tables"].includes(initialTab)) {
+  if (["data", "finprod", "predictive", "semantic", "health", "local", "tables"].includes(initialTab)) {
     state.activeTab = initialTab;
   }
   renderDatasetMode();
@@ -3040,6 +3157,21 @@ function setupEvents() {
   predictiveIndicatorFilter?.addEventListener("change", () => {
     state.selectedPredictiveIndicator = predictiveIndicatorFilter.value;
     renderPredictiveAnalytics();
+  });
+  finProdRefreshButton?.addEventListener("click", () => {
+    state.selectedFinancialDataset = finProdFinancialDataset.value;
+    state.selectedProductionDataset = finProdProductionDataset.value;
+    loadFinProdAnalytics().catch(showError);
+  });
+  finProdFinancialDataset?.addEventListener("change", () => {
+    state.selectedFinancialDataset = finProdFinancialDataset.value;
+    state.finProdPayload = null;
+    renderFinProdAnalytics();
+  });
+  finProdProductionDataset?.addEventListener("change", () => {
+    state.selectedProductionDataset = finProdProductionDataset.value;
+    state.finProdPayload = null;
+    renderFinProdAnalytics();
   });
   setActiveTab(state.activeTab, {syncUrl: false, force: true});
 
