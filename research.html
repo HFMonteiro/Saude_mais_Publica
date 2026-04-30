@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saúde+ Pública - Investigação</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css?v=research-scroll-20260430" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Saúde+ Pública · Investigação</p>
+          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Investigação</h1>
+        </div>
+        <div class="topbar-actions">
+          <a href="/" class="top-link">Vista principal</a>
+          <a href="crosswalk.html" class="top-link">Cruzamentos</a>
+          <a href="analytics.html" class="top-link">Analytics</a>
+          <a href="research.html" class="top-link is-active" aria-current="page">Investigação</a>
+          <a href="metodologia.html" class="top-link">Metodologia</a>
+          <div id="researchStatus" class="sync-state">A iniciar...</div>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <label class="research-dataset-control">
+          <span>Dataset para investigação</span>
+          <select id="researchDatasetSelect"></select>
+        </label>
+        <div class="research-threshold-wrap">
+          <div class="threshold-pill" id="borutaThresholds">A calcular referência...</div>
+        </div>
+      </section>
+
+      <section class="research-explainer" aria-label="Como ler esta investigação">
+        <div class="research-explainer-main">
+          <strong>Investigação de resultados</strong>
+          <span>Esta página resume o que a amostra do dataset mostra: indicadores medidos, evolução temporal, concentrações por categoria/território e associações úteis para formular hipóteses. A metodologia fica visível, mas não é o assunto principal.</span>
+        </div>
+        <div class="research-explainer-steps">
+          <div><b>1</b><span><strong>Resultados</strong><small>Começa pelos valores e padrões observados.</small></span></div>
+          <div><b>2</b><span><strong>Evolução</strong><small>Lê tendências só quando há eixo temporal.</small></span></div>
+          <div><b>3</b><span><strong>Segmentos</strong><small>Vê categorias, entidades e território com maior peso.</small></span></div>
+          <div><b>4</b><span><strong>Travões</strong><small>Confirma amostra, unidade, denominador e cobertura.</small></span></div>
+        </div>
+      </section>
+
+      <section id="researchOverview" class="research-overview" aria-label="Resumo da investigação"></section>
+
+      <section class="research-grid research-results-grid">
+        <section class="panel research-panel research-results-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Resultados do dataset</h2>
+              <p class="meta">Leitura substantiva da amostra: indicadores, valores extremos, distribuição e padrões observáveis.</p>
+            </div>
+          </div>
+          <div id="resultNarrative" class="research-narrative"></div>
+          <div id="keyFindings" class="research-finding-grid"></div>
+          <div id="numericResults" class="research-result-list"></div>
+        </section>
+
+        <section class="panel research-panel research-territory-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Evolução e segmentos</h2>
+              <p id="mapMeta" class="meta">Séries temporais, categorias e território quando existem campos reconhecíveis.</p>
+            </div>
+          </div>
+          <div id="trendExplorer" class="research-trend-panel"></div>
+          <div id="categoryResults" class="research-category-list"></div>
+          <div id="territorySummary" class="research-territory-summary"></div>
+          <div id="territoryBars" class="research-territory-bars"></div>
+          <div class="research-mini-grid">
+            <div>
+              <h3>Entidades</h3>
+              <div id="territoryEntities" class="research-chip-list"></div>
+            </div>
+            <div>
+              <h3>Leitura</h3>
+              <div id="territoryReadout" class="research-readout"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel research-panel research-method-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Validação da leitura</h2>
+              <p class="meta">Limites que impedem transformar a leitura exploratória em conclusão oficial.</p>
+            </div>
+          </div>
+          <div id="territorialKpis" class="research-kpi-grid"></div>
+          <div id="qualityWarnings" class="research-warning-list"></div>
+
+          <div class="panel-heading research-driver-heading">
+            <h2>Campos que explicam sinal</h2>
+          </div>
+          <div id="associationResults" class="research-association-list"></div>
+          <div id="confirmedDrivers" class="list"></div>
+        </aside>
+      </section>
+
+      <footer class="legal-strip">
+        <div><strong>Resultados:</strong> Leitura exploratória da amostra real devolvida pela API; não extrapolar quando a cobertura é baixa.</div>
+        <div><strong>Território:</strong> Agregação por Região SNS apenas quando existe campo territorial reconhecível.</div>
+        <div><strong>Atenção:</strong> Resultados exploratórios. Não substituem validação clínica ou oficial.</div>
+      </footer>
+    </main>
+
+    <script src="research.js?v=research-null-target-20260430" defer></script>
+  </body>
+</html>

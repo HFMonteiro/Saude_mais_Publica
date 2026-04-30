@@ -9,6 +9,8 @@ proxy so the browser does not hit CORS issues.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import logging
 import math
@@ -40,11 +42,15 @@ MAX_OPPORTUNITY_DATASETS = 80
 MAX_RECENT_LIMIT = 100
 DEFAULT_DATA_ANALYTICS_LIMIT = 80
 MAX_DATA_ANALYTICS_LIMIT = 100
+ANALYTICS_METHOD_VERSION = "2026-04-29.validation-v1"
 DEFAULT_MIN_SCORE = 1
 MAX_MIN_SCORE = 10
 DEFAULT_RECENT_LIMIT = 60
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_REQUESTS = 180
+EXPENSIVE_RATE_LIMIT_WINDOW_SECONDS = 60
+EXPENSIVE_RATE_LIMIT_MAX_REQUESTS = 36
+MAX_CONCURRENT_EXPENSIVE_REQUESTS = 3
 DEFAULT_ORIGINS = {
     "http://localhost:8000",
     "http://127.0.0.1:8000",
@@ -88,7 +94,9 @@ MEGA_THEMES = {
             "cirurgias",
             "consulta",
             "consultas",
+            "csp",
             "episodios",
+            "faltas",
             "inscritos",
             "lic",
             "referenciados",
@@ -116,7 +124,7 @@ MEGA_THEMES = {
         ],
     },
     "Finanças & Compras": {
-        "description": "Despesa, dívida, pagamentos, contratos, medicamentos e agregados económico-financeiros.",
+        "description": "Despesa, dívida, pagamentos, compras, medicamentos e agregados económico-financeiros.",
         "terms": [
             "acordos",
             "agregados",
@@ -138,13 +146,25 @@ MEGA_THEMES = {
             "asma",
             "avc",
             "diabetes",
+            "diagnostico",
+            "diagnóstico",
             "dpoc",
             "fraturas",
+            "gra",
             "hipertensao",
+            "icpc",
+            "idra",
             "mortalidade",
             "morbilidade",
+            "multimorbilidade",
+            "polimedicacao",
+            "polimedicação",
+            "problema",
+            "problemas",
             "qualidade",
             "satisfacao",
+            "utente",
+            "utentes",
         ],
     },
     "Saúde Pública & Emergência": {
@@ -159,6 +179,8 @@ MEGA_THEMES = {
             "gripe",
             "legionella",
             "oncologicos",
+            "pic",
+            "plano individual",
             "rastreios",
             "sangue",
             "sns24",
@@ -168,6 +190,7 @@ MEGA_THEMES = {
         "description": "Entidades, regiões, localização, unidades funcionais, RNCCI e organização da rede.",
         "terms": [
             "ars",
+            "aces",
             "entidade",
             "geografica",
             "hospital",
@@ -177,14 +200,128 @@ MEGA_THEMES = {
             "rede",
             "regiao",
             "rncci",
+            "ucsp",
             "uls",
+            "unidade funcional",
             "unidades",
+            "usf",
         ],
     },
 }
 
 DEFAULT_THEME = "Outros"
 DATASET_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+
+
+class UpstreamAPIError(RuntimeError):
+    """External ODS API failed after retries or could not be reached."""
+
+    kind = "upstream_unavailable"
+
+    def __init__(self, message: str, *, status_code: int | None = None, path: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.path = path
+
+
+class UpstreamContractError(UpstreamAPIError):
+    """The request shape we sent to ODS was rejected; this is usually our contract bug."""
+
+    kind = "upstream_contract_error"
+
+FACET_DEFINITIONS = {
+    "uls": {
+        "label": "ULS",
+        "pattern": r"\b(uls|unidade local de saude|unidade local de saúde)\b",
+        "scope": "uls",
+        "institution": "uls",
+        "dimension": "territorial",
+    },
+    "regiao": {
+        "label": "Região/ARS",
+        "pattern": r"\b(regiao|região|ars|administracao regional|administração regional|norte|centro|lisboa|tejo|alentejo|algarve|acores|açores|madeira)\b",
+        "scope": "regiao",
+        "institution": "",
+        "dimension": "territorial",
+    },
+    "hospital": {
+        "label": "Hospital",
+        "pattern": r"\b(hospital|hospitais|centro hospitalar|chuc|chul|chusj|ipo)\b",
+        "scope": "hospital",
+        "institution": "hospital",
+        "dimension": "territorial",
+    },
+    "uf": {
+        "label": "UF/CSP",
+        "pattern": r"\b(uf|unidade funcional|unidades funcionais|usf|ucsp|aces|csp|cuidados de saude primarios|cuidados de saúde primários|centro de saude|centro de saúde)\b",
+        "scope": "uf",
+        "institution": "uf",
+        "dimension": "entidade",
+    },
+    "concelho": {
+        "label": "Concelho/Distrito",
+        "pattern": r"\b(concelho|distrito|municipio|município|freguesia|localizacao|localização|territorio|território|geograf)\b",
+        "scope": "concelho",
+        "institution": "",
+        "dimension": "territorial",
+    },
+    "instituicao": {
+        "label": "Instituição/Entidade",
+        "pattern": r"\b(instituicao|instituição|entidade|unidade|servico|serviço|rncci|fornecedor)\b",
+        "scope": "entidade",
+        "institution": "entidade",
+        "dimension": "entidade",
+    },
+    "temporal": {
+        "label": "Temporal",
+        "pattern": r"\b(tempo|periodo|período|data|ano|mes|mês|trimestre|semana|dia)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "temporal",
+    },
+    "medida": {
+        "label": "Medida",
+        "pattern": r"\b(valor|total|taxa|numero|número|n_|count|volume|quantidade|dias|percentagem|indicador)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "medida",
+    },
+    "financeiro": {
+        "label": "Financeiro",
+        "pattern": r"\b(despesa|divida|dívida|pagamento|custo|encargo|financeiro|receita|orcamento|orçamento|pvp|preco|preço)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "medida",
+    },
+    "producao": {
+        "label": "Produção",
+        "pattern": r"\b(producao|produção|consulta|consultas|urgencia|urgência|cirurgia|episodio|episódio|atividade|actividade)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "medida",
+    },
+    "saude_publica": {
+        "label": "Saúde Pública",
+        "pattern": r"\b(saude publica|saúde pública|mortalidade|morbilidade|rastreio|vigilancia|vigilância|epidem|vacina|gripe|covid|emergencia|emergência)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "",
+    },
+    "icpc": {
+        "label": "ICPC/Problemas",
+        "pattern": r"\b(icpc|problema|problemas|diagnostico|diagnóstico|diagnosticos|diagnósticos|episodio clinico|episódio clínico|utente|utentes)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "clinico",
+    },
+    "fragilidade": {
+        "label": "Fragilidade",
+        "pattern": r"\b(multimorbilidade|polimedicacao|polimedicação|fragilidade|idra|gra|risco clinico|risco clínico|plano individual de cuidados|pic)\b",
+        "scope": "",
+        "institution": "",
+        "dimension": "clinico",
+    },
+}
 ALLOWED_STATIC_PATHS = {
     "/",
     "/index.html",
@@ -195,8 +332,20 @@ ALLOWED_STATIC_PATHS = {
     "/analytics.html",
     "/analytics.js",
     "/metodologia.html",
+    "/research.html",
+    "/research.js",
+    "/visual_assets/analytics_hero.png",
+    "/visual_assets/empty_state.png",
+
     "/visual_assets/logo.jpg",
     "/visual_assets/background.jpg",
+}
+EXPENSIVE_API_PATHS = {
+    "/api/data-analytics",
+    "/api/finprod",
+    "/api/finprod/recommendations",
+    "/api/predictive/recommendations",
+    "/api/deep-research",
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -209,6 +358,9 @@ _fetch_locks_lock = threading.Lock()
 _analysis_lock = threading.Lock()
 _rate_limit_lock = threading.Lock()
 _rate_limit_hits: dict[str, list[float]] = {}
+_expensive_rate_limit_lock = threading.Lock()
+_expensive_rate_limit_hits: dict[str, list[float]] = {}
+_expensive_request_slots = threading.BoundedSemaphore(MAX_CONCURRENT_EXPENSIVE_REQUESTS)
 
 
 def _now() -> float:
@@ -338,6 +490,27 @@ def _rate_limit_retry_after(client_id: str) -> int | None:
         return None
 
 
+def _route_rate_limit_retry_after(client_id: str, route: str) -> int | None:
+    now = _now()
+    cutoff = now - EXPENSIVE_RATE_LIMIT_WINDOW_SECONDS
+    key = f"{client_id}:{route}"
+    with _expensive_rate_limit_lock:
+        hits = [timestamp for timestamp in _expensive_rate_limit_hits.get(key, []) if timestamp >= cutoff]
+        if len(hits) >= EXPENSIVE_RATE_LIMIT_MAX_REQUESTS:
+            _expensive_rate_limit_hits[key] = hits
+            return max(1, int(EXPENSIVE_RATE_LIMIT_WINDOW_SECONDS - (now - hits[0])))
+        hits.append(now)
+        _expensive_rate_limit_hits[key] = hits
+        if len(_expensive_rate_limit_hits) > 512:
+            for stale_key in list(_expensive_rate_limit_hits):
+                _expensive_rate_limit_hits[stale_key] = [
+                    timestamp for timestamp in _expensive_rate_limit_hits[stale_key] if timestamp >= cutoff
+                ]
+                if not _expensive_rate_limit_hits[stale_key]:
+                    del _expensive_rate_limit_hits[stale_key]
+        return None
+
+
 def _normalize_token(value: str) -> str:
     value = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode("ascii")
     value = re.sub(r"[^a-z0-9]+", " ", value.lower())
@@ -412,6 +585,161 @@ def _classify_dataset(dataset_id: str, title: str, fields: list[str]) -> str:
             best_score = score
             best_theme = theme
     return best_theme
+
+
+def _facet_tags_from_text(text: str) -> list[str]:
+    normalized = _normalize_token(text)
+    tags = [
+        key
+        for key, config in FACET_DEFINITIONS.items()
+        if re.search(config["pattern"], normalized, flags=re.IGNORECASE)
+    ]
+    return sorted(set(tags))
+
+
+def _classify_facets(dataset_id: str, title: str, fields: list[str]) -> dict:
+    """Classify catalogue metadata only; this deliberately avoids scanning records."""
+    field_facets = {}
+    tags = set(_facet_tags_from_text(" ".join([dataset_id, title])))
+    for field in fields:
+        field_tags = _facet_tags_from_text(field)
+        if field_tags:
+            field_facets[field] = field_tags
+            tags.update(field_tags)
+
+    local_scopes = sorted({FACET_DEFINITIONS[tag]["scope"] for tag in tags if FACET_DEFINITIONS[tag].get("scope")})
+    institution_types = sorted({FACET_DEFINITIONS[tag]["institution"] for tag in tags if FACET_DEFINITIONS[tag].get("institution")})
+    dimension_types = sorted({FACET_DEFINITIONS[tag]["dimension"] for tag in tags if FACET_DEFINITIONS[tag].get("dimension")})
+    quality_flags = []
+    if not ({"temporal"} & tags):
+        quality_flags.append("sem_dimensao_temporal_explicita")
+    if len(set(local_scopes) & {"uls", "uf", "regiao", "hospital", "concelho", "entidade"}) > 1:
+        quality_flags.append("mistura_granularidade_local")
+    if "medida" not in tags and "financeiro" not in tags and "producao" not in tags:
+        quality_flags.append("sem_medida_obvia")
+
+    return {
+        "tags": sorted(tags),
+        "labels": [FACET_DEFINITIONS[tag]["label"] for tag in sorted(tags)],
+        "local_scopes": local_scopes,
+        "institution_types": institution_types,
+        "dimension_types": dimension_types,
+        "field_facets": field_facets,
+        "inferred": True,
+        "quality_flags": quality_flags,
+    }
+
+
+def _readiness_band(score: int) -> str:
+    if score >= 75:
+        return "pronto"
+    if score >= 52:
+        return "rever"
+    return "fragil"
+
+
+def _catalog_readiness(facets: dict, field_count: int, metric_count: int, link_count: int = 0) -> dict:
+    flags = facets.get("quality_flags", []) or []
+    dimensions = set(facets.get("dimension_types", []) or [])
+    score = 32
+    if "temporal" in dimensions:
+        score += 16
+    if "medida" in dimensions or metric_count:
+        score += 18
+    if {"territorial", "entidade"} & dimensions:
+        score += 10
+    score += min(10, field_count)
+    score += min(8, metric_count * 2)
+    score += min(6, link_count)
+    score -= len(flags) * 9
+    score = max(0, min(100, round(score)))
+    gaps = []
+    if "sem_dimensao_temporal_explicita" in flags:
+        gaps.append("tempo")
+    if "sem_medida_obvia" in flags:
+        gaps.append("medida")
+    if "mistura_granularidade_local" in flags:
+        gaps.append("granularidade")
+    if not gaps:
+        gaps.append("validar fonte")
+    return {
+        "score": score,
+        "band": _readiness_band(score),
+        "label": {"pronto": "Pronto", "rever": "Rever", "fragil": "Frágil"}[_readiness_band(score)],
+        "gaps": gaps[:3],
+    }
+
+
+def _analysis_readiness(
+    *,
+    sample_size: int,
+    total_records: int,
+    temporal_field: str | None,
+    numeric_count: int,
+    categorical_count: int,
+    correlation_count: int,
+    trend_count: int,
+    warning_count: int,
+    max_missing_ratio: float = 0.0,
+) -> dict:
+    coverage_ratio = (sample_size / total_records) if total_records else None
+    score = 26
+    if sample_size >= 80:
+        score += 14
+    elif sample_size >= 40:
+        score += 9
+    elif sample_size >= 12:
+        score += 4
+    if coverage_ratio is not None:
+        if coverage_ratio >= 0.8:
+            score += 16
+        elif coverage_ratio >= 0.2:
+            score += 9
+        elif coverage_ratio >= 0.05:
+            score += 4
+    if temporal_field:
+        score += 12
+    score += min(12, numeric_count * 3)
+    score += min(8, categorical_count * 2)
+    score += min(10, correlation_count * 2)
+    score += min(8, trend_count * 4)
+    score -= warning_count * 8
+    if max_missing_ratio >= 0.5:
+        score -= 18
+    elif max_missing_ratio >= 0.25:
+        score -= 8
+    hard_cap = 100
+    if coverage_ratio is not None and coverage_ratio < 0.05:
+        hard_cap = min(hard_cap, 45)
+    elif coverage_ratio is not None and coverage_ratio < 0.2:
+        hard_cap = min(hard_cap, 64)
+    if not temporal_field:
+        hard_cap = min(hard_cap, 68)
+    if warning_count:
+        hard_cap = min(hard_cap, 72)
+    if max_missing_ratio >= 0.25:
+        hard_cap = min(hard_cap, 70)
+    score = min(score, hard_cap)
+    score = max(0, min(100, round(score)))
+    gaps = []
+    if coverage_ratio is not None and coverage_ratio < 0.2:
+        gaps.append("cobertura")
+    if not temporal_field:
+        gaps.append("tempo")
+    if numeric_count < 2:
+        gaps.append("medidas")
+    if warning_count:
+        gaps.append("avisos")
+    if max_missing_ratio >= 0.25:
+        gaps.append("missing")
+    if not gaps:
+        gaps.append("denominador")
+    return {
+        "score": score,
+        "band": _readiness_band(score),
+        "label": {"pronto": "Pronto", "rever": "Rever", "fragil": "Frágil"}[_readiness_band(score)],
+        "gaps": gaps[:3],
+    }
 
 
 def _extract_year(value) -> int | None:
@@ -501,9 +829,18 @@ def _pick_stable_order_field(fields: list[dict]) -> str | None:
     return names[0] if names else None
 
 
+def _field_search_text(field: dict) -> str:
+    parts = []
+    for key in ("name", "label", "description"):
+        value = field.get(key)
+        if value is not None:
+            parts.append(str(value))
+    return _normalize_token(" ".join(parts))
+
+
 def _canonical_field_type(field: dict) -> str:
     raw_type = _normalize_token(str(field.get("type") or field.get("annotations", {}).get("type") or ""))
-    name = _normalize_token(str(field.get("name") or field.get("label") or ""))
+    name = _field_search_text(field)
     if raw_type in {"date", "datetime"} or re.search(r"\b(data|date|tempo|periodo|ano|mes|trimestre)\b", name):
         return "date"
     if raw_type in {"int", "integer", "long"}:
@@ -518,7 +855,7 @@ def _canonical_field_type(field: dict) -> str:
 
 
 def _is_identifier_or_contact_field(field: dict) -> bool:
-    name = _normalize_token(str(field.get("name") or field.get("label") or ""))
+    name = _field_search_text(field)
     return bool(
         re.search(
             r"\b(telefone|telemovel|fax|email|mail|codigo|cod|postal|nif|nipc|niss|id|url|link|latitude|longitude)\b",
@@ -533,7 +870,13 @@ def _is_measure_candidate(field: dict) -> bool:
     canonical_type = _canonical_field_type(field)
     if canonical_type in {"date", "geo", "category"}:
         return False
-    return canonical_type in {"integer", "float"} or canonical_type == "text"
+    if canonical_type in {"integer", "float"}:
+        return True
+    text = _field_search_text(field)
+    return bool(
+        re.search(r"\b(valor|total|taxa|numero|n_|quantidade|dias|encargo|custo|pvp|percent|percentagem|media|ratio|racio|indice|score|utentes)\b", text)
+        and not re.search(r"\b(codigo|cod|id|grupo|tipo|categoria|sexo|idade|regiao|entidade|hospital|uls|concelho|distrito)\b", text)
+    )
 
 
 def _schema_quality(fields: list[dict], observed_columns: list[str] | None = None) -> dict:
@@ -658,10 +1001,13 @@ def _ods_fetch(path: str, params: dict[str, str] | None = None, *, cacheable: bo
             LOGGER.warning("ODS %s cache=stale_fallback error=%s", path, type(last_error).__name__ if last_error else "unknown")
             return stale_entry["payload"]
         if isinstance(last_error, HTTPError):
-            raise RuntimeError(f"ODS HTTP {last_error.code} on {path}") from last_error
+            message = f"ODS HTTP {last_error.code} on {path}"
+            if last_error.code in {400, 404, 422}:
+                raise UpstreamContractError(message, status_code=last_error.code, path=path) from last_error
+            raise UpstreamAPIError(message, status_code=last_error.code, path=path) from last_error
         if isinstance(last_error, URLError):
-            raise RuntimeError("Cannot reach ODS API") from last_error
-        raise RuntimeError("Cannot reach ODS API")
+            raise UpstreamAPIError("Cannot reach ODS API", path=path) from last_error
+        raise UpstreamAPIError("Cannot reach ODS API", path=path)
 
 
 def _get_datasets() -> dict:
@@ -676,7 +1022,6 @@ def _get_datasets() -> dict:
             {
                 "limit": str(limit),
                 "offset": str(offset),
-                "select": "dataset_id,fields,metas",
             },
         )
         results = page.get("results", []) or []
@@ -707,8 +1052,8 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
             continue
 
         metas = entry.get("metas", {}) or {}
-        title = _get_dataset_title(metas).strip() or dataset_id
-        records_count = ((metas.get("default") or {}).get("records_count") or 0)
+        title = (entry.get("title") or entry.get("title_pt") or _get_dataset_title(metas)).strip() or dataset_id
+        records_count = ((metas.get("default") or {}).get("records_count") or entry.get("records_count") or 0)
 
         field_names = []
         metric_candidate_count = 0
@@ -727,6 +1072,19 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
 
         dataset_id_to_fields[dataset_id] = sorted(canonical_keys)
         mega_theme = _classify_dataset(dataset_id, title, field_names)
+        facets = _classify_facets(dataset_id, title, field_names)
+        semantic_profile = _dataset_semantic_profile(
+            entry.get("fields", []) or [],
+            dataset_id=dataset_id,
+            dataset_title=title,
+            mega_theme=mega_theme,
+        )
+        semantic_metric_count = sum(
+            count
+            for role, count in (semantic_profile.get("role_counts") or {}).items()
+            if role not in {"desconhecido"}
+        )
+        metric_candidate_count = max(metric_candidate_count, semantic_metric_count)
         dataset_theme_by_id[dataset_id] = mega_theme
         items.append(
             {
@@ -737,6 +1095,10 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
                 "field_count": len(field_names),
                 "metric_candidate_count": metric_candidate_count,
                 "fields": sorted({str(f) for f in field_names}),
+                "facets": facets,
+                "semantic_profile": semantic_profile,
+                "finprod_role": semantic_profile["finprod_role"],
+                "quality_flags": facets["quality_flags"],
             }
         )
 
@@ -777,6 +1139,17 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
 
     links.sort(key=lambda item: (-item["score"], item["source"], item["target"]))
     links = links[:MAX_ANALYSIS_LINKS]
+    degree_by_id: dict[str, int] = {}
+    for link in links:
+        degree_by_id[link["source"]] = degree_by_id.get(link["source"], 0) + 1
+        degree_by_id[link["target"]] = degree_by_id.get(link["target"], 0) + 1
+    for item in items:
+        item["analysis_readiness"] = _catalog_readiness(
+            item.get("facets") or {},
+            item.get("field_count", 0),
+            item.get("metric_candidate_count", 0),
+            degree_by_id.get(item["dataset_id"], 0),
+        )
     theme_counts: dict[str, int] = {}
     theme_link_scores: dict[str, int] = {}
     for item in items:
@@ -800,13 +1173,74 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
         for theme, count in theme_counts.items()
     ]
     theme_rankings.sort(key=lambda item: (-item["dataset_count"], -item["link_score"], item["theme"]))
+    facet_counts: dict[str, int] = {}
+    local_scope_counts: dict[str, int] = {}
+    institution_counts: dict[str, int] = {}
+    dimension_counts: dict[str, int] = {}
+    quality_flag_counts: dict[str, int] = {}
+    for item in items:
+        facets = item.get("facets") or {}
+        for tag in facets.get("tags", []) or []:
+            facet_counts[tag] = facet_counts.get(tag, 0) + 1
+        for scope in facets.get("local_scopes", []) or []:
+            local_scope_counts[scope] = local_scope_counts.get(scope, 0) + 1
+        for institution in facets.get("institution_types", []) or []:
+            institution_counts[institution] = institution_counts.get(institution, 0) + 1
+        for dimension in facets.get("dimension_types", []) or []:
+            dimension_counts[dimension] = dimension_counts.get(dimension, 0) + 1
+        for flag in item.get("quality_flags", []) or []:
+            quality_flag_counts[flag] = quality_flag_counts.get(flag, 0) + 1
 
     return {
         "datasets": items,
         "links": links,
         "opportunities": opportunities[:150],
         "themes": theme_rankings,
+        "facet_counts": {
+            "tags": dict(sorted(facet_counts.items())),
+            "local_scopes": dict(sorted(local_scope_counts.items())),
+            "institution_types": dict(sorted(institution_counts.items())),
+            "dimension_types": dict(sorted(dimension_counts.items())),
+            "quality_flags": dict(sorted(quality_flag_counts.items())),
+        },
         "total": len(items),
+        "generated_at": int(_now()),
+    }
+
+
+def _fallback_analysis_catalog(min_score: int = DEFAULT_MIN_SCORE, error: Exception | None = None) -> dict:
+    if isinstance(error, UpstreamContractError):
+        warning = "API SNS rejeitou a configuração do pedido; rever parâmetros do proxy antes de analisar."
+    elif isinstance(error, UpstreamAPIError):
+        warning = "API SNS indisponível ou sem resposta; não foram carregados datasets."
+    else:
+        warning = "Falha ao construir catálogo; rever logs do servidor."
+    error_kind = getattr(error, "kind", type(error).__name__ if error else None)
+    upstream_status = getattr(error, "status_code", None)
+    upstream_path = getattr(error, "path", None)
+    return {
+        "datasets": [],
+        "links": [],
+        "opportunities": [],
+        "themes": [],
+        "facet_counts": {"tags": {}, "local_scopes": {}, "institution_types": {}, "dimension_types": {}, "quality_flags": {}},
+        "total": 0,
+        "link_count": 0,
+        "fallback": True,
+        "warning": warning,
+        "empty_reason": "api_unavailable",
+        "error_type": type(error).__name__ if error else None,
+        "error_kind": error_kind,
+        "upstream_status": upstream_status,
+        "upstream_path": upstream_path,
+        "methodology": {
+            "version": ANALYTICS_METHOD_VERSION,
+            "source": "empty_unavailable_fallback",
+            "fallback": True,
+            "error_kind": error_kind,
+            "upstream_status": upstream_status,
+            "note": "Sem dados ficticios; a UI deve mostrar estado indisponivel ate a API real responder.",
+        },
         "generated_at": int(_now()),
     }
 
@@ -828,9 +1262,11 @@ def _dimension_kind(field: str) -> str:
     normalized = _normalize_token(field)
     if re.search(r"\b(tempo|periodo|ano|data|trimestre|semana|mes|dia)\b", normalized):
         return "temporal"
-    if re.search(r"\b(regiao|ars|uls|localizacao|geografica|concelho|distrito|postal|hospital)\b", normalized):
+    if re.search(r"\b(icpc|problema|problemas|diagnostico|diagnósticos|diagnosticos|multimorbilidade|polimedicacao|fragilidade|idra|gra|pic)\b", normalized):
+        return "clinico"
+    if re.search(r"\b(regiao|ars|uls|localizacao|geografica|concelho|distrito|postal|hospital|freguesia)\b", normalized):
         return "territorial"
-    if re.search(r"\b(entidade|instituicao|unidade|servico|grupo|fornecedor|utente|doente)\b", normalized):
+    if re.search(r"\b(entidade|instituicao|unidade|servico|grupo|fornecedor|utente|doente|uf|usf|ucsp|aces|csp)\b", normalized):
         return "entidade"
     if re.search(r"\b(valor|total|taxa|numero|contagem|volume|quantidade|dias|encargos|custo|pvp)\b", normalized):
         return "medida"
@@ -842,6 +1278,7 @@ def _dimension_weight(kind: str) -> float:
         "temporal": 1.15,
         "territorial": 1.2,
         "entidade": 1.25,
+        "clinico": 1.3,
         "medida": 0.78,
         "generico": 0.62,
     }.get(kind, 0.7)
@@ -881,10 +1318,12 @@ def _matched_area_types(source: dict, target: dict, fields: list[str]) -> list[s
     patterns = [
         ("hospital", r"\b(hospital|hospitais|centro hospitalar|ch|epe)\b"),
         ("ULS", r"\b(uls|unidade local de saude)\b"),
-        ("ACES/Cuidados primarios", r"\b(aces|cuidados primarios|centro de saude|usf|ucsp)\b"),
+        ("UF/CSP", r"\b(uf|unidade funcional|aces|cuidados primarios|centro de saude|usf|ucsp|csp)\b"),
         ("ARS/Regiao", r"\b(ars|regiao|regional|norte|centro|lisboa|alentejo|algarve)\b"),
         ("Concelho/Distrito", r"\b(concelho|distrito|municipio|localizacao)\b"),
         ("Farmacia/Medicamento", r"\b(farmacia|medicamento|medicamentos|farmaceutic)\b"),
+        ("ICPC/Problemas", r"\b(icpc|problema|problemas|diagnostico|utente|utentes)\b"),
+        ("Fragilidade", r"\b(multimorbilidade|polimedicacao|fragilidade|idra|gra|pic)\b"),
         ("Nacional", r"\b(nacional|pais|sns)\b"),
     ]
     for label, pattern in patterns:
@@ -920,10 +1359,12 @@ def _public_health_impact(source: dict, target: dict, fields: list[str], kinds: 
     score = 1.0
     impact_patterns = [
         ("outcomes clinicos", r"\b(mortalidade|morbilidade|obito|doenca|diagnostico|infeccao|surto)\b", 2.2),
+        ("problemas e multimorbilidade", r"\b(icpc|problema|problemas|utente|utentes|multimorbilidade|polimedicacao|fragilidade|idra|gra|pic)\b", 2.0),
+        ("continuidade CSP", r"\b(uf|usf|ucsp|aces|csp|cuidados primarios|faltas|plano individual)\b", 1.6),
         ("acesso e tempos de resposta", r"\b(urgencia|espera|tempo|consulta|cirurgia|internamento|episodio)\b", 1.8),
         ("capacidade assistencial", r"\b(cama|lotacao|profissional|medico|enfermeiro|unidade|servico)\b", 1.4),
         ("medicamento e terapêutica", r"\b(medicamento|farmacia|stock|reserva|consumo|prescricao)\b", 1.3),
-        ("financeiro com impacto operacional", r"\b(custo|encargo|despesa|pagamento|contrato)\b", 0.8),
+        ("financeiro com impacto operacional", r"\b(custo|encargo|despesa|pagamento)\b", 0.8),
     ]
     for label, pattern, weight in impact_patterns:
         if re.search(pattern, text):
@@ -1031,6 +1472,9 @@ def _build_analytics(analysis: dict, min_score: int) -> dict:
                 "confidence": _confidence_label(semantic_score),
                 "shared_fields": fields,
                 "dimension_kinds": sorted(kinds),
+                "local_scopes": sorted(set((source.get("facets") or {}).get("local_scopes", [])) | set((target.get("facets") or {}).get("local_scopes", []))),
+                "institution_types": sorted(set((source.get("facets") or {}).get("institution_types", [])) | set((target.get("facets") or {}).get("institution_types", []))),
+                "facet_tags": sorted(set((source.get("facets") or {}).get("tags", [])) | set((target.get("facets") or {}).get("tags", []))),
                 "risk_flags": risk_flags,
                 "public_health_model": {
                     "likelihood": likelihood,
@@ -1150,10 +1594,28 @@ def _build_analytics(analysis: dict, min_score: int) -> dict:
                 "records_count": item["records_count"],
                 "field_count": item.get("field_count", 0),
                 "metric_candidate_count": item.get("metric_candidate_count", 0),
+                "facets": item.get("facets", {}),
+                "quality_flags": item.get("quality_flags", []),
+                "analysis_readiness": item.get("analysis_readiness", {}),
             }
             for item in datasets
         ],
+        "facet_counts": analysis.get("facet_counts", {}),
+        "quality_flags": analysis.get("facet_counts", {}).get("quality_flags", {}),
         "themes": analysis.get("themes", []),
+        "fallback": bool(analysis.get("fallback")),
+        "warning": analysis.get("warning"),
+        "empty_reason": analysis.get("empty_reason"),
+        "error_kind": analysis.get("error_kind"),
+        "upstream_status": analysis.get("upstream_status"),
+        "upstream_path": analysis.get("upstream_path"),
+        "methodology": {
+            "version": ANALYTICS_METHOD_VERSION,
+            "source": analysis.get("methodology", {}).get("source") or "catalog_link_semantics",
+            "fallback": bool(analysis.get("fallback")),
+            "error_kind": analysis.get("error_kind"),
+            "upstream_status": analysis.get("upstream_status"),
+        },
         "generated_at": analysis.get("generated_at"),
     }
     _cache_set(cache_key, result)
@@ -1249,8 +1711,54 @@ def _coerce_number(value) -> float | None:
     return number if number == number and abs(number) != float("inf") else None
 
 
+def _looks_like_numeric_distribution(
+    field: dict,
+    non_empty_values: list,
+    numeric_values: list[float],
+    numeric_ratio: float,
+) -> bool:
+    """Catch decimal/rate columns stored as text before they become nominal categories."""
+    if _is_identifier_or_contact_field(field):
+        return False
+    if len(numeric_values) < 5 or numeric_ratio < 0.8:
+        return False
+
+    text = _field_search_text(field)
+    if re.search(
+        r"\b(codigo|cod|id|postal|nif|nipc|niss|telefone|telemovel|email|url|link|latitude|longitude|"
+        r"grupo|tipo|categoria|sexo|regiao|entidade|hospital|uls|concelho|distrito|freguesia)\b",
+        text,
+    ):
+        return False
+
+    rounded_values = {round(value, 6) for value in numeric_values}
+    unique_ratio = len(rounded_values) / max(1, len(numeric_values))
+    has_fractional_values = any(abs(value - round(value)) > 1e-9 for value in numeric_values)
+    measure_hint = bool(
+        re.search(
+            r"\b(valor|total|taxa|numero|n_|quantidade|dias|encargo|custo|pvp|percent|percentagem|"
+            r"media|ratio|racio|indice|score|utentes|consulta|consultas)\b",
+            text,
+        )
+    )
+
+    if measure_hint:
+        return True
+    return bool(non_empty_values) and has_fractional_values and len(rounded_values) >= 8 and unique_ratio >= 0.35
+
+
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    center = len(ordered) // 2
+    if len(ordered) % 2 == 0:
+        return (ordered[center - 1] + ordered[center]) / 2.0
+    return ordered[center]
 
 
 def _stddev(values: list[float]) -> float:
@@ -1275,8 +1783,367 @@ def _pearson(pairs: list[tuple[float, float]]) -> float | None:
     return num / ((den_x * den_y) ** 0.5)
 
 
+def _association_strength(value: float | None) -> str:
+    if value is None:
+        return "insuficiente"
+    magnitude = abs(value)
+    if magnitude >= 0.7:
+        return "forte"
+    if magnitude >= 0.4:
+        return "moderada"
+    return "fraca"
+
+
+def _association_warnings(
+    pairs: list[tuple[float, float]],
+    pearson: float | None,
+    spearman: float | None = None,
+    *,
+    temporal_context: bool = False,
+) -> list[str]:
+    warnings = []
+    if len(pairs) < 12:
+        warnings.append("Amostra curta para associação estatística robusta.")
+    if temporal_context:
+        warnings.append("Associação calculada sobre amostra temporal; validar tendência comum e autocorrelação.")
+    if pearson is not None and spearman is not None and abs(pearson - spearman) >= 0.35:
+        warnings.append("Pearson e Spearman divergem; possível efeito de outliers ou relação não linear.")
+    return warnings
+
+
+_CORRELATION_GENERIC_TOKENS = {
+    "a",
+    "as",
+    "ao",
+    "aos",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "em",
+    "na",
+    "nas",
+    "no",
+    "nos",
+    "o",
+    "os",
+    "para",
+    "por",
+    "taxa",
+    "percent",
+    "percentagem",
+    "total",
+    "numero",
+    "n",
+    "qt",
+    "qtd",
+    "quantidade",
+    "valor",
+    "media",
+    "mediana",
+    "ano",
+    "anos",
+    "1",
+    "2",
+    "3",
+}
+
+_CORRELATION_DOMAIN_TOKENS = {
+    "atividade",
+    "consulta",
+    "consultas",
+    "csp",
+    "despesa",
+    "embalagem",
+    "embalagens",
+    "internamento",
+    "medicamento",
+    "medicamentos",
+    "mdf",
+    "receita",
+    "receitas",
+    "utente",
+    "utentes",
+    "urgencia",
+    "urgencias",
+}
+
+
+def _measure_text(field: dict) -> str:
+    return _normalize_token(f"{field.get('name') or ''} {field.get('label') or ''}")
+
+
+def _measure_tokens(field: dict, *, include_generic: bool = False) -> set[str]:
+    tokens = {token for token in _measure_text(field).split() if token and len(token) > 1}
+    if include_generic:
+        return tokens
+    return {token for token in tokens if token not in _CORRELATION_GENERIC_TOKENS}
+
+
+def _concept_overlap(left: dict, right: dict) -> float:
+    left_tokens = _measure_tokens(left)
+    right_tokens = _measure_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens))
+
+
+def _shared_measure_domain(left: dict, right: dict) -> bool:
+    left_domains = _measure_tokens(left, include_generic=True) & _CORRELATION_DOMAIN_TOKENS
+    right_domains = _measure_tokens(right, include_generic=True) & _CORRELATION_DOMAIN_TOKENS
+    return bool(left_domains & right_domains)
+
+
+def _field_matches(field: dict, pattern: str) -> bool:
+    return bool(re.search(pattern, _measure_text(field)))
+
+
+def _constant_sum_pair(pairs: list[tuple[float, float]]) -> bool:
+    if len(pairs) < 8:
+        return False
+    xs = [pair[0] for pair in pairs]
+    ys = [pair[1] for pair in pairs]
+    if _stddev(xs) <= 1e-9 or _stddev(ys) <= 1e-9:
+        return False
+    sums = [x + y for x, y in pairs]
+    scale = max(1.0, abs(_mean(sums)), max(abs(value) for value in sums))
+    return _stddev(sums) <= scale * 0.005
+
+
+def _correlation_exclusion_reason(left: dict, right: dict, pairs: list[tuple[float, float]]) -> str | None:
+    if len(pairs) < 8:
+        return None
+    left_role = _measure_role(left)
+    right_role = _measure_role(right)
+    left_text = _measure_text(left)
+    right_text = _measure_text(right)
+    overlap = _concept_overlap(left, right)
+
+    if _constant_sum_pair(pairs):
+        return "medidas complementares; a soma entre campos e praticamente constante"
+
+    if left_text == right_text or (overlap >= 0.9 and left_role == right_role):
+        return "medidas duplicadas ou variantes do mesmo indicador"
+
+    if {left_role, right_role} == {"taxa", "contagem"}:
+        if overlap >= 0.45 or _shared_measure_domain(left, right):
+            return "taxa e contagem do mesmo dominio; validar denominador antes de correlacionar"
+
+    if left_role == right_role == "taxa":
+        qualifier_pattern = r"\b(com|sem|todos|todas|opcao|atribuido|atribuida|atribuicao|inscritos)\b"
+        if (overlap >= 0.65 or _shared_measure_domain(left, right)) and (
+            re.search(qualifier_pattern, left_text) or re.search(qualifier_pattern, right_text)
+        ):
+            return "taxas do mesmo indicador com denominadores sobrepostos"
+
+    if left_role == right_role == "contagem" and _shared_measure_domain(left, right):
+        denominatorish = r"\b(total|inscritos|inscrito|populacao|utentes)\b"
+        subgroupish = r"\b(com|sem|atribuido|atribuida|atribuicao|subgrupo)\b"
+        if (
+            (_field_matches(left, denominatorish) or _field_matches(right, denominatorish))
+            and (_field_matches(left, subgroupish) or _field_matches(right, subgroupish))
+        ):
+            return "relacao parte-total; correlacao mecanica com denominador comum"
+
+    return None
+
+
+def _measure_context(
+    field: dict,
+    *,
+    dataset_id: str = "",
+    dataset_title: str = "",
+    mega_theme: str = "",
+) -> dict:
+    raw_field = f"{field.get('name') or ''} {field.get('label') or ''}"
+    field_text = _normalize_token(raw_field)
+    dataset_text = _normalize_token(f"{dataset_id} {dataset_title} {mega_theme}")
+    combined = f"{field_text} {dataset_text}".strip()
+    reasons: list[str] = []
+    role = "desconhecido"
+    confidence = 0.35
+    unit_family = "desconhecido"
+
+    dimension_pattern = r"\b(codigo|cod|id|grupo|tipo|categoria|sexo|idade|regiao|entidade|hospital|uls|concelho|distrito|localizacao)\b"
+    money_pattern = r"\b(custo|despesa|encargo|pagamento|preco|pvp|eur|euro|montante|orcamento|receita|faturacao|facturacao)\b"
+    value_pattern = r"\b(valor|total_valor)\b"
+    stock_pattern = r"\b(stock|saldo|lotacao|lotação|capacidade|reserva|existencia|existencias|inventario)\b"
+    count_pattern = (
+        r"\b(total|numero|n |n_|no_|num_|qtd|qt|quantidade|producao|produção|atividade|actividade|"
+        r"episodio|episodios|consulta|consultas|atendimento|atendimentos|internamento|internamentos|"
+        r"cirurgia|cirurgias|utentes|doentes|prescricao|prescricoes|receita|receitas|embalagem|embalagens|"
+        r"dose|doses|saida|saidas|entrada|entradas|dispensa|dispensas)\b"
+    )
+    rate_pattern = r"\b(taxa|percent|percentagem|proporcao|proporção|ratio|racio|indice|cobertura)\b"
+
+    if "%" in raw_field or re.search(rate_pattern, field_text):
+        role = "taxa"
+        confidence = 0.95
+        unit_family = "percentagem"
+        reasons.append("campo expresso como taxa/percentagem")
+    elif re.search(stock_pattern, field_text) and not re.search(money_pattern, field_text):
+        role = "stock"
+        confidence = 0.85
+        unit_family = "volume"
+        reasons.append("campo de stock/saldo/capacidade")
+    elif re.search(money_pattern, field_text):
+        role = "monetario"
+        confidence = 0.95
+        unit_family = "moeda"
+        reasons.append("termos monetários no campo")
+    elif re.search(value_pattern, field_text) and re.search(money_pattern, dataset_text):
+        role = "monetario"
+        confidence = 0.78
+        unit_family = "moeda"
+        reasons.append("campo genérico de valor em dataset financeiro")
+    elif re.search(value_pattern, field_text):
+        role = "monetario"
+        confidence = 0.68
+        unit_family = "moeda"
+        reasons.append("campo genérico de valor; validar unidade")
+    elif re.search(count_pattern, field_text):
+        role = "contagem"
+        confidence = 0.88
+        unit_family = "volume"
+        reasons.append("termos de volume/contagem no campo")
+    elif re.search(value_pattern, field_text) and re.search(stock_pattern, combined):
+        role = "stock"
+        confidence = 0.72
+        unit_family = "volume"
+        reasons.append("valor associado a stock/reserva")
+    elif _canonical_field_type(field) in {"integer", "float"} and not re.search(dimension_pattern, field_text):
+        role = "contagem"
+        confidence = 0.55
+        unit_family = "volume"
+        reasons.append("campo numérico sem unidade explícita")
+
+    if re.search(dimension_pattern, field_text) and role == "desconhecido":
+        reasons.append("parece dimensão/código, não medida")
+    if not reasons:
+        reasons.append("sem unidade inferível a partir dos metadados")
+
+    return {
+        "role": role,
+        "confidence": round(confidence, 2),
+        "unit_family": unit_family,
+        "reasons": reasons[:3],
+    }
+
+
+def _measure_role(field: dict, *, dataset_id: str = "", dataset_title: str = "", mega_theme: str = "") -> str:
+    return _measure_context(
+        field,
+        dataset_id=dataset_id,
+        dataset_title=dataset_title,
+        mega_theme=mega_theme,
+    )["role"]
+
+
+def _dataset_semantic_profile(
+    fields: list[dict],
+    *,
+    dataset_id: str = "",
+    dataset_title: str = "",
+    mega_theme: str = "",
+) -> dict:
+    counts: dict[str, int] = {}
+    confident_counts: dict[str, int] = {}
+    examples: dict[str, list[str]] = {}
+    for field in fields or []:
+        if not field.get("name"):
+            continue
+        if not _is_measure_candidate(field):
+            continue
+        context = _measure_context(
+            field,
+            dataset_id=dataset_id,
+            dataset_title=dataset_title,
+            mega_theme=mega_theme,
+        )
+        role = context["role"]
+        counts[role] = counts.get(role, 0) + 1
+        if context["confidence"] >= 0.7:
+            confident_counts[role] = confident_counts.get(role, 0) + 1
+        examples.setdefault(role, [])
+        if len(examples[role]) < 3:
+            examples[role].append(_safe_label(field) or field["name"])
+
+    if confident_counts.get("monetario"):
+        finprod_role = "monetario"
+    elif confident_counts.get("contagem") or counts.get("contagem") or confident_counts.get("stock") or counts.get("stock"):
+        finprod_role = "volume"
+    elif confident_counts.get("taxa") or counts.get("taxa"):
+        finprod_role = "taxa"
+    else:
+        finprod_role = "sem_medida"
+
+    return {
+        "role_counts": dict(sorted(counts.items())),
+        "confident_role_counts": dict(sorted(confident_counts.items())),
+        "examples": examples,
+        "finprod_role": finprod_role,
+    }
+
+
 def _safe_label(field: dict) -> str:
     return field.get("label") or field.get("name") or ""
+
+
+def _geo_point(value) -> tuple[float, float] | None:
+    """Return (lat, lon) for ODS geopoint-like values without treating them as categories."""
+    if isinstance(value, dict):
+        lat = value.get("lat", value.get("latitude"))
+        lon = value.get("lon", value.get("lng", value.get("longitude")))
+        lat_number = _coerce_number(lat)
+        lon_number = _coerce_number(lon)
+        if lat_number is not None and lon_number is not None:
+            return lat_number, lon_number
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        first = _coerce_number(value[0])
+        second = _coerce_number(value[1])
+        if first is None or second is None:
+            return None
+        if abs(first) <= 90 and abs(second) <= 180:
+            return first, second
+        if abs(second) <= 90 and abs(first) <= 180:
+            return second, first
+    return None
+
+
+def _geo_profile(column: str, field: dict, raw_values: list) -> dict | None:
+    points = [_geo_point(value) for value in raw_values if value not in (None, "")]
+    points = [point for point in points if point is not None]
+    if not points:
+        return None
+    lats = [point[0] for point in points]
+    lons = [point[1] for point in points]
+    unique_points = sorted({(round(lat, 5), round(lon, 5)) for lat, lon in points})
+    return {
+        "field": column,
+        "label": _safe_label(field),
+        "type": "geo",
+        "semantic_role": "geolocation",
+        "count": len(points),
+        "missing": len(raw_values) - len(points),
+        "unique": len(unique_points),
+        "bounds": {
+            "lat_min": round(min(lats), 6),
+            "lat_max": round(max(lats), 6),
+            "lon_min": round(min(lons), 6),
+            "lon_max": round(max(lons), 6),
+        },
+        "center": {
+            "lat": round(_mean(lats), 6),
+            "lon": round(_mean(lons), 6),
+        },
+        "sample_points": [
+            {"lat": lat, "lon": lon}
+            for lat, lon in unique_points[:5]
+        ],
+        "top_values": [],
+    }
 
 
 def _entropy_ratio(counts: dict[str, int]) -> float:
@@ -1317,11 +2184,17 @@ def _build_pca_summary(
 
     columns = []
     usable_fields = []
+    excluded_fields = []
+    missing_cells = 0
+    total_cells = 0
     for field in fields:
         values_by_idx = numeric_by_column.get(field, {})
         values = [values_by_idx.get(idx) for idx in range(sample_size)]
         non_null = [value for value in values if value is not None]
+        total_cells += len(values)
+        missing_cells += len(values) - len(non_null)
         if len(non_null) < 5:
+            excluded_fields.append({"field": field, "reason": "menos de 5 valores numericos"})
             continue
         avg = _mean(non_null)
         stddev = _stddev(non_null) or 1
@@ -1361,10 +2234,27 @@ def _build_pca_summary(
     loadings.sort(key=lambda item: (-item["magnitude"], item["field"]))
     return {
         "available": True,
+        "method": "PCA aproximada sobre medidas padronizadas; valores em falta imputados como média (0 após padronização).",
+        "sample_size": sample_size,
+        "included_fields": usable_fields,
+        "excluded_fields": excluded_fields,
+        "missingness": {
+            "cells": missing_cells,
+            "total_cells": total_cells,
+            "ratio": round(missing_cells / total_cells, 4) if total_cells else 0,
+        },
         "explained_variance": {
             "pc1": round(eigen1 / total_variance, 4),
             "pc2": round(eigen2 / total_variance, 4),
         },
+        "warnings": [
+            warning
+            for warning in [
+                "PCA sensivel a imputacao de valores em falta." if missing_cells else None,
+                "Interpretar apenas como triagem exploratoria, nao como modelo causal.",
+            ]
+            if warning
+        ],
         "loadings": loadings,
     }
 
@@ -1408,6 +2298,28 @@ def _build_feature_importance(
         )
 
     for profile in categorical_profiles:
+        if profile.get("semantic_role") == "geolocation":
+            completeness = profile["count"] / sample_size
+            bounds = profile.get("bounds") or {}
+            lat_span = abs((bounds.get("lat_max") or 0) - (bounds.get("lat_min") or 0))
+            lon_span = abs((bounds.get("lon_max") or 0) - (bounds.get("lon_min") or 0))
+            spatial_span = min(1, (lat_span + lon_span) / 3)
+            score = (completeness * 28) + (spatial_span * 18) + min(18, math.log(profile.get("unique", 1) + 1) * 4)
+            rows.append(
+                {
+                    "field": profile["field"],
+                    "label": profile["label"] or profile["field"],
+                    "kind": "geografia",
+                    "score": round(score, 2),
+                    "drivers": [
+                        f"coordenadas válidas {round(completeness * 100)}%",
+                        f"pontos únicos {profile.get('unique', 0)}",
+                        "usar para mapa, não como categoria nominal",
+                    ],
+                    "dominant_sample": None,
+                }
+            )
+            continue
         top_total = sum(value["count"] for value in profile.get("top_values", []))
         counts = {value["value"]: value["count"] for value in profile.get("top_values", [])}
         completeness = profile["count"] / sample_size
@@ -1439,7 +2351,90 @@ def _build_feature_importance(
     for row in rows:
         row["selection"] = "forte" if row["score"] >= max(42, shadow_baseline) else "exploratoria"
     rows.sort(key=lambda item: (-item["score"], item["kind"], item["field"]))
-    return rows[:14]
+    return rows[:18]
+
+
+def _deterministic_method_rng(dataset_id: str) -> random.Random:
+    seed_material = f"{dataset_id}|{ANALYTICS_METHOD_VERSION}|feature_screening".encode("utf-8")
+    seed = int(hashlib.sha256(seed_material).hexdigest()[:16], 16)
+    return random.Random(seed)
+
+
+def _build_boruta_selection(payload: dict) -> dict:
+    """Boruta-inspired deterministic screening against synthetic shadow noise."""
+    features = payload.get("feature_importance", [])
+    if not features:
+        return {
+            "method": "feature_screening_deterministic_shadow",
+            "confirmed": [],
+            "tentative": [],
+            "rejected": [],
+            "thresholds": {"max_shadow": 0, "median_shadow": 0},
+        }
+
+    rng = _deterministic_method_rng(str(payload.get("dataset_id") or "dataset"))
+    shadow_scores = []
+    for _ in range(50):
+        shadow_score = (rng.random() * 22) + (rng.random() * 22) + (rng.random() * 10)
+        shadow_scores.append(shadow_score)
+
+    max_shadow = max(shadow_scores)
+    median_shadow = _median(shadow_scores) or 0
+
+    confirmed = []
+    tentative = []
+    rejected = []
+
+    for feat in features:
+        row = dict(feat)
+        score = float(row.get("score") or 0)
+        if score > max_shadow:
+            row["selection"] = "confirmada"
+            confirmed.append(row)
+        elif score > median_shadow:
+            row["selection"] = "tentativa"
+            tentative.append(row)
+        else:
+            row["selection"] = "rejeitada"
+            rejected.append(row)
+
+    return {
+        "method": "feature_screening_deterministic_shadow",
+        "confirmed": confirmed,
+        "tentative": tentative,
+        "rejected": rejected,
+        "thresholds": {
+            "max_shadow": round(max_shadow, 2),
+            "median_shadow": round(median_shadow, 2),
+        },
+    }
+
+
+def _build_territorial_map(payload: dict) -> dict:
+    """Map signal intensity to SNS Regions and ULS based on categorical profiles."""
+    profiles = payload.get("categorical_profiles", [])
+    geo_data = {"regions": {}, "uls": {}, "entities": {}}
+
+    for profile in profiles:
+        field = _normalize_token(profile["field"])
+        is_region = "regiao" in field or "ars" in field
+        is_uls = "uls" in field
+        is_entity = "entidade" in field or "hospital" in field
+
+        if not (is_region or is_uls or is_entity):
+            continue
+
+        for val in profile.get("top_values", []):
+            name = str(val["value"])
+            count = val["count"]
+            if is_region:
+                geo_data["regions"][name] = geo_data["regions"].get(name, 0) + count
+            elif is_uls:
+                geo_data["uls"][name] = geo_data["uls"].get(name, 0) + count
+            else:
+                geo_data["entities"][name] = geo_data["entities"].get(name, 0) + count
+    return geo_data
+
 
 
 def _build_data_analytics(dataset_id: str, limit: int) -> dict:
@@ -1447,10 +2442,16 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
+    if dataset_id.startswith("demo-"):
+        raise ValueError("Dataset demonstrativo recusado: a aplicação só deve analisar datasets reais da API SNS.")
 
     dataset_path = f"/catalog/datasets/{quote(dataset_id)}"
     dataset = _ods_fetch(dataset_path)
     fields = dataset.get("fields", []) or []
+    metas = dataset.get("metas", {}) or {}
+    title = (dataset.get("title") or dataset.get("title_pt") or _get_dataset_title(metas)).strip() or dataset_id
+    mega_theme = _classify_dataset(dataset_id, title, [field.get("name") or "" for field in fields])
+    total_records = ((metas.get("default") or {}).get("records_count") or dataset.get("records_count") or 0)
     field_by_name = {field.get("name"): field for field in fields if field.get("name")}
     temporal_field = _pick_temporal_field(fields)
     safe_limit = min(max(limit, 1), MAX_DATA_ANALYTICS_LIMIT)
@@ -1490,13 +2491,30 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         canonical_type = _canonical_field_type(field)
         raw_values = [record.get(column) for record in records]
         non_empty = [value for value in raw_values if value not in (None, "")]
+
+        geo_profile = _geo_profile(column, field, raw_values)
+        if geo_profile and (canonical_type == "geo" or geo_profile["count"] / max(1, len(non_empty)) >= 0.65):
+            categorical_profiles.append(geo_profile)
+            continue
+
         numeric_pairs = [(idx, _coerce_number(value)) for idx, value in enumerate(raw_values)]
         numeric_values_by_idx = {idx: value for idx, value in numeric_pairs if value is not None}
         numeric_values = list(numeric_values_by_idx.values())
         numeric_ratio = len(numeric_values) / len(non_empty) if non_empty else 0
+        measure_candidate = _is_measure_candidate(field)
+        numeric_distribution = (
+            not measure_candidate
+            and _looks_like_numeric_distribution(field, non_empty, numeric_values, numeric_ratio)
+        )
 
-        if _is_measure_candidate(field) and len(numeric_values) >= 5 and numeric_ratio >= 0.65:
+        if (measure_candidate or numeric_distribution) and len(numeric_values) >= 5 and numeric_ratio >= 0.65:
             avg = _mean(numeric_values)
+            measure_context = _measure_context(
+                field,
+                dataset_id=dataset_id,
+                dataset_title=title,
+                mega_theme=mega_theme,
+            )
             numeric_by_column[column] = numeric_values_by_idx
             numeric_profiles.append(
                 {
@@ -1509,6 +2527,9 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
                     "max": round(max(numeric_values), 4),
                     "avg": round(avg, 4),
                     "stddev": round(_stddev(numeric_values), 4),
+                    "measure_role": measure_context["role"],
+                    "measure_context": measure_context,
+                    "semantic_role": "numeric_distribution" if numeric_distribution else "measure",
                 }
             )
             continue
@@ -1537,6 +2558,7 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
     categorical_profiles.sort(key=lambda item: (-item["count"], item["unique"], item["field"]))
 
     correlations = []
+    correlation_exclusions = []
     numeric_columns = [profile["field"] for profile in numeric_profiles[:12]]
     for idx, left in enumerate(numeric_columns):
         for right in numeric_columns[idx + 1 :]:
@@ -1544,18 +2566,38 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
             right_values = numeric_by_column.get(right, {})
             shared_indexes = sorted(set(left_values) & set(right_values))
             pairs = [(left_values[index], right_values[index]) for index in shared_indexes]
+            left_field = field_by_name.get(left, {"name": left})
+            right_field = field_by_name.get(right, {"name": right})
+            exclusion_reason = _correlation_exclusion_reason(left_field, right_field, pairs)
+            if exclusion_reason:
+                correlation_exclusions.append(
+                    {
+                        "field_a": left,
+                        "field_b": right,
+                        "label_a": _safe_label(left_field),
+                        "label_b": _safe_label(right_field),
+                        "reason": exclusion_reason,
+                        "samples": len(pairs),
+                    }
+                )
+                continue
             corr = _pearson(pairs)
             if corr is None or abs(corr) < 0.25:
                 continue
+            rank_corr = _spearman(pairs)
             correlations.append(
                 {
                     "field_a": left,
                     "field_b": right,
-                    "label_a": _safe_label(field_by_name.get(left, {"name": left})),
-                    "label_b": _safe_label(field_by_name.get(right, {"name": right})),
+                    "label_a": _safe_label(left_field),
+                    "label_b": _safe_label(right_field),
+                    "method": "pearson",
                     "correlation": round(corr, 4),
                     "abs_correlation": round(abs(corr), 4),
+                    "spearman": round(rank_corr, 4) if rank_corr is not None else None,
+                    "strength": _association_strength(corr),
                     "samples": len(pairs),
+                    "warnings": _association_warnings(pairs, corr, rank_corr, temporal_context=bool(temporal_field)),
                 }
             )
     correlations.sort(key=lambda item: (-item["abs_correlation"], -item["samples"], item["field_a"], item["field_b"]))
@@ -1565,6 +2607,8 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         for profile in numeric_profiles[:4]:
             buckets: dict[str, dict[str, object]] = {}
             values_by_idx = numeric_by_column.get(profile["field"], {})
+            role = profile.get("measure_role", "desconhecido")
+            aggregation = "soma" if role in {"monetario", "contagem"} else "media"
             for idx, record in enumerate(records):
                 value = values_by_idx.get(idx)
                 if value is None:
@@ -1576,12 +2620,41 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
                 bucket = buckets.setdefault(key, {"label": label, "values": []})
                 bucket["values"].append(value)
             points = [
-                {"period": bucket["label"], "avg": round(_mean(bucket["values"]), 4), "count": len(bucket["values"])}
+                {
+                    "period": bucket["label"],
+                    "avg": round(_mean(bucket["values"]), 4),
+                    "sum": round(sum(bucket["values"]), 4),
+                    "value": round(sum(bucket["values"]) if aggregation == "soma" else _mean(bucket["values"]), 4),
+                    "count": len(bucket["values"]),
+                }
                 for _, bucket in sorted(buckets.items())
                 if bucket["values"]
             ]
             if len(points) >= 2:
-                trends.append({"field": profile["field"], "label": profile["label"], "points": points[-24:]})
+                min_count = min(point["count"] for point in points)
+                trends.append(
+                    {
+                        "field": profile["field"],
+                        "label": profile["label"],
+                        "measure_role": role,
+                        "measure_context": profile.get("measure_context") or {"role": role, "confidence": 0.35, "unit_family": "desconhecido", "reasons": []},
+                        "aggregation": aggregation,
+                        "validation": {
+                            "periods": len(points),
+                            "min_records_per_period": min_count,
+                            "warnings": [
+                                warning
+                                for warning in [
+                                    "Poucos periodos para leitura temporal robusta." if len(points) < 6 else None,
+                                    "Periodos com menos de 3 registos." if min_count < 3 else None,
+                                    "Medida com papel semantico desconhecido; validar denominador e unidade." if profile.get("measure_role") == "desconhecido" else None,
+                                ]
+                                if warning
+                            ],
+                        },
+                        "points": points[-24:],
+                    }
+                )
 
     insights = []
     if correlations:
@@ -1597,9 +2670,14 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         widest = max(numeric_profiles, key=lambda item: item["stddev"])
         insights.append({"label": "Maior variação", "value": widest["label"], "detail": f"desvio {widest['stddev']}"})
     if categorical_profiles:
-        dominant = max(categorical_profiles, key=lambda item: item["top_values"][0]["count"] if item["top_values"] else 0)
-        top_value = dominant["top_values"][0] if dominant["top_values"] else {"value": "-", "count": 0}
-        insights.append({"label": "Categoria dominante", "value": dominant["label"], "detail": f"{top_value['value']} · {top_value['count']} registos"})
+        nominal_profiles = [profile for profile in categorical_profiles if profile.get("semantic_role") != "geolocation"]
+        if nominal_profiles:
+            dominant = max(nominal_profiles, key=lambda item: item["top_values"][0]["count"] if item["top_values"] else 0)
+            top_value = dominant["top_values"][0] if dominant["top_values"] else {"value": "-", "count": 0}
+            insights.append({"label": "Categoria dominante", "value": dominant["label"], "detail": f"{top_value['value']} · {top_value['count']} registos"})
+        else:
+            spatial = categorical_profiles[0]
+            insights.append({"label": "Dimensão espacial", "value": spatial["label"], "detail": f"{spatial.get('unique', 0)} pontos únicos"})
 
     feature_importance = _build_feature_importance(numeric_profiles, categorical_profiles, correlations, len(records), temporal_field)
     pca_summary = _build_pca_summary(numeric_profiles, numeric_by_column, len(records))
@@ -1614,18 +2692,74 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         )
 
     meta = _cache_meta_public(_cache_key(records_path, params))
+    sample_warnings = [
+        warning
+        for warning in [
+            "Amostra truncada pelo limite local; nao interpretar como estimativa completa do dataset."
+            if total_records and len(records) < total_records
+            else None,
+            "Amostra ordenada por periodo recente; pode enviesar correlacoes, PCA e tendencias."
+            if ordering == "temporal_desc"
+            else None,
+            "Sem eixo temporal detetado; tendencias e projecoes ficam limitadas."
+            if not temporal_field
+            else None,
+        ]
+        if warning
+    ]
+    profile_missing_ratios = []
+    for profile in [*numeric_profiles, *categorical_profiles]:
+        total_observed = (profile.get("count") or 0) + (profile.get("missing") or 0)
+        if total_observed:
+            profile_missing_ratios.append((profile.get("missing") or 0) / total_observed)
+    max_missing_ratio = max(profile_missing_ratios, default=0.0)
+    readiness = _analysis_readiness(
+        sample_size=len(records),
+        total_records=total_records,
+        temporal_field=temporal_field,
+        numeric_count=len(numeric_profiles),
+        categorical_count=len(categorical_profiles),
+        correlation_count=len(correlations),
+        trend_count=len(trends),
+        warning_count=len(sample_warnings),
+        max_missing_ratio=max_missing_ratio,
+    )
     result = {
         "dataset_id": dataset_id,
-        "title": _get_dataset_title(dataset.get("metas", {}) or {}) or dataset_id,
+        "title": title,
+        "mega_theme": mega_theme,
         "sample_size": len(records),
         "requested_limit": safe_limit,
+        "total_records": total_records,
         "temporal_field": temporal_field,
         "ordering": ordering,
+        "methodology": {
+            "version": ANALYTICS_METHOD_VERSION,
+            "scope": "triagem exploratoria sobre amostra leve",
+            "sample_design": "amostra de API local, nao aleatoria; validar antes de inferencia",
+        },
+        "sample": {
+            "sample_size": len(records),
+            "requested_limit": safe_limit,
+            "total_records": total_records,
+            "ordering": ordering,
+            "coverage_ratio": round(len(records) / total_records, 4) if total_records else None,
+            "max_missing_ratio": round(max_missing_ratio, 4),
+        },
+        "quality_warnings": sample_warnings,
+        "analysis_readiness": readiness,
         "schema_quality": _schema_quality(fields, observed_columns),
+        "semantic_profile": _dataset_semantic_profile(
+            fields,
+            dataset_id=dataset_id,
+            dataset_title=title,
+            mega_theme=mega_theme,
+        ),
         **meta,
         "numeric_profiles": numeric_profiles[:12],
         "categorical_profiles": categorical_profiles[:10],
         "correlations": correlations[:20],
+        "correlation_exclusions": correlation_exclusions[:20],
         "trends": trends[:4],
         "feature_importance": feature_importance,
         "pca_summary": pca_summary,
@@ -1639,15 +2773,115 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
 def _pick_finprod_trend(trends: list[dict], *, mode: str) -> dict | None:
     if not trends:
         return None
+    return sorted(
+        trends,
+        key=lambda trend: (
+            -_finprod_trend_role_score(trend, mode=mode),
+            -len(_finprod_trend_points(trend, mode=mode)),
+            str(trend.get("label") or trend.get("field") or ""),
+        ),
+    )[0]
+
+
+def _finprod_trend_points(trend: dict | None, *, mode: str | None = None) -> dict[str, float]:
+    points: dict[str, float] = {}
+    role = _normalize_token(str((trend or {}).get("measure_role") or ""))
+    prefer_sum = role in {"monetario", "contagem"} or mode in {"financial", "production"}
+    for point in (trend or {}).get("points", []):
+        period = _finprod_period_key(point.get("period"))
+        value_source = point.get("sum") if prefer_sum and point.get("sum") is not None else point.get("avg")
+        value = _coerce_number(value_source)
+        if period is None or value is None:
+            continue
+        points[period] = float(value)
+    return points
+
+
+def _finprod_trend_role_score(trend: dict | None, *, mode: str) -> int:
+    if not trend:
+        return 0
+    label = _normalize_token(str(trend.get("label") or trend.get("field") or ""))
+    role = _normalize_token(str(trend.get("measure_role") or ""))
     keywords = {
         "financial": r"\b(custo|despesa|encargo|pagamento|contrato|valor|orcamento|orçamento)\b",
-        "production": r"\b(producao|produção|consulta|urgencia|urgência|cirurgia|episodio|episódio|atendimento|atividade)\b",
+        "production": r"\b(producao|produção|consulta|urgencia|urgência|cirurgia|episodio|episódio|atendimento|atividade|volume|numero)\b",
     }.get(mode, r"$^")
-    for trend in trends:
-        label = _normalize_token(str(trend.get("label") or trend.get("field") or ""))
-        if re.search(keywords, label):
-            return trend
-    return trends[0]
+    score = 0
+    if re.search(keywords, label):
+        score += 4
+    if mode == "financial" and role in {"monetario", "stock"}:
+        score += 3
+    if mode == "financial" and role == "stock":
+        score -= 2
+    if mode == "production" and role == "contagem":
+        score += 3
+    if mode == "production" and role == "monetario":
+        score -= 2
+    if mode == "financial" and role == "contagem":
+        score -= 3
+    confidence = _coerce_number((trend.get("measure_context") or {}).get("confidence"))
+    if confidence is not None:
+        score += int(confidence * 2)
+    if role and role != "desconhecido":
+        score += 1
+    return score
+
+
+def _select_finprod_trend_pair(financial_trends: list[dict], production_trends: list[dict]) -> dict:
+    def period_range(points: dict[str, float]) -> dict[str, str | None]:
+        periods = sorted(points)
+        return {"start": periods[0], "end": periods[-1]} if periods else {"start": None, "end": None}
+
+    candidates = []
+    for financial_trend in financial_trends or []:
+        financial_points = _finprod_trend_points(financial_trend, mode="financial")
+        if not financial_points:
+            continue
+        for production_trend in production_trends or []:
+            production_points = _finprod_trend_points(production_trend, mode="production")
+            if not production_points:
+                continue
+            shared_periods = sorted(set(financial_points) & set(production_points))
+            candidates.append(
+                {
+                    "financial_trend": financial_trend,
+                    "production_trend": production_trend,
+                    "financial_points": financial_points,
+                    "production_points": production_points,
+                    "shared_periods": shared_periods,
+                    "score": (
+                        len(shared_periods) * 10
+                        + _finprod_trend_role_score(financial_trend, mode="financial")
+                        + _finprod_trend_role_score(production_trend, mode="production")
+                    ),
+                }
+            )
+    if not candidates:
+        return {
+            "financial_trend": _pick_finprod_trend(financial_trends, mode="financial"),
+            "production_trend": _pick_finprod_trend(production_trends, mode="production"),
+            "financial_points": _finprod_trend_points(_pick_finprod_trend(financial_trends, mode="financial"), mode="financial"),
+            "production_points": _finprod_trend_points(_pick_finprod_trend(production_trends, mode="production"), mode="production"),
+            "shared_periods": [],
+            "candidates": [],
+            "selection_reason": "sem_tendencias_temporais_validas",
+        }
+    candidates.sort(key=lambda item: (-len(item["shared_periods"]), -item["score"]))
+    selected = candidates[0]
+    selected["candidates"] = [
+        {
+            "financial_label": candidate["financial_trend"].get("label") or candidate["financial_trend"].get("field"),
+            "production_label": candidate["production_trend"].get("label") or candidate["production_trend"].get("field"),
+            "shared_periods": len(candidate["shared_periods"]),
+            "financial_periods": len(candidate["financial_points"]),
+            "production_periods": len(candidate["production_points"]),
+            "financial_range": period_range(candidate["financial_points"]),
+            "production_range": period_range(candidate["production_points"]),
+        }
+        for candidate in candidates[:8]
+    ]
+    selected["selection_reason"] = "melhor_sobreposicao_temporal"
+    return selected
 
 
 def _finprod_period_key(label: str) -> str | None:
@@ -1691,11 +2925,27 @@ def _normalize_measure_scale(values: list[float], *, mode: str) -> tuple[float, 
 def _spearman(pairs: list[tuple[float, float]]) -> float | None:
     if len(pairs) < 8:
         return None
-    xs = [pair[0] for pair in pairs]
-    ys = [pair[1] for pair in pairs]
-    rank_x = {value: index + 1 for index, value in enumerate(sorted(set(xs)))}
-    rank_y = {value: index + 1 for index, value in enumerate(sorted(set(ys)))}
-    ranked = [(rank_x[x], rank_y[y]) for x, y in pairs]
+    xs = [float(pair[0]) for pair in pairs]
+    ys = [float(pair[1]) for pair in pairs]
+
+    def _average_ranks(values: list[float]) -> list[float]:
+        ordered = sorted(enumerate(values), key=lambda item: item[1])
+        ranks = [0.0] * len(values)
+        idx = 0
+        while idx < len(ordered):
+            end = idx + 1
+            while end < len(ordered) and ordered[end][1] == ordered[idx][1]:
+                end += 1
+            average_rank = (idx + 1 + end) / 2.0
+            for pos in range(idx, end):
+                original_idx = ordered[pos][0]
+                ranks[original_idx] = average_rank
+            idx = end
+        return ranks
+
+    rank_x = _average_ranks(xs)
+    rank_y = _average_ranks(ys)
+    ranked = list(zip(rank_x, rank_y))
     return _pearson([(float(rx), float(ry)) for rx, ry in ranked])
 
 
@@ -1715,8 +2965,7 @@ def _detect_unit_cost_outliers(rows: list[dict]) -> list[dict]:
     values = [row["unit_cost"] for row in rows if isinstance(row.get("unit_cost"), (int, float))]
     if len(values) < 5:
         return []
-    sorted_values = sorted(values)
-    median = sorted_values[len(sorted_values) // 2]
+    median = _median(values) or 0
     deviations = [abs(value - median) for value in values]
     mad = sorted(deviations)[len(deviations) // 2] or 1e-9
     outliers = []
@@ -1747,14 +2996,33 @@ def _entity_benchmark(financial: dict, production: dict) -> list[dict]:
     prod_top = prod_fields[0]
     fin_count = max(fin_top.get("count", 1), 1)
     prod_count = max(prod_top.get("count", 1), 1)
-    fin_share = {str(item.get("value")): (item.get("count", 0) / fin_count) for item in fin_top.get("top_values", [])}
-    prod_share = {str(item.get("value")): (item.get("count", 0) / prod_count) for item in prod_top.get("top_values", [])}
+    fin_share = {}
+    fin_labels = {}
+    for item in fin_top.get("top_values", []):
+        raw = str(item.get("value") or "")
+        key = _normalize_token(raw)
+        if not key:
+            continue
+        fin_share[key] = fin_share.get(key, 0.0) + (item.get("count", 0) / fin_count)
+        fin_labels.setdefault(key, raw)
+
+    prod_share = {}
+    prod_labels = {}
+    for item in prod_top.get("top_values", []):
+        raw = str(item.get("value") or "")
+        key = _normalize_token(raw)
+        if not key:
+            continue
+        prod_share[key] = prod_share.get(key, 0.0) + (item.get("count", 0) / prod_count)
+        prod_labels.setdefault(key, raw)
+
     shared = sorted(set(fin_share) & set(prod_share))
     rows = []
     for key in shared:
+        display = fin_labels.get(key) or prod_labels.get(key) or key
         rows.append(
             {
-                "entity": key,
+                "entity": display,
                 "financial_share": round(fin_share[key], 4),
                 "production_share": round(prod_share[key], 4),
                 "balance_gap": round(fin_share[key] - prod_share[key], 4),
@@ -1772,26 +3040,21 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
 
     financial = _build_data_analytics(financial_dataset, limit)
     production = _build_data_analytics(production_dataset, limit)
-    financial_trend = _pick_finprod_trend(financial.get("trends", []), mode="financial")
-    production_trend = _pick_finprod_trend(production.get("trends", []), mode="production")
-
-    financial_points = {
-        _finprod_period_key(point.get("period")): float(point.get("avg"))
-        for point in (financial_trend or {}).get("points", [])
-        if _finprod_period_key(point.get("period")) is not None and _coerce_number(point.get("avg")) is not None
-    }
-    production_points = {
-        _finprod_period_key(point.get("period")): float(point.get("avg"))
-        for point in (production_trend or {}).get("points", [])
-        if _finprod_period_key(point.get("period")) is not None and _coerce_number(point.get("avg")) is not None
-    }
-    shared_periods = sorted(set(financial_points) & set(production_points))
+    trend_pair = _select_finprod_trend_pair(financial.get("trends", []), production.get("trends", []))
+    financial_trend = trend_pair.get("financial_trend")
+    production_trend = trend_pair.get("production_trend")
+    financial_points = trend_pair.get("financial_points", {})
+    production_points = trend_pair.get("production_points", {})
+    shared_periods = trend_pair.get("shared_periods", [])
+    financial_role = (financial_trend or {}).get("measure_role") or "desconhecido"
+    production_role = (production_trend or {}).get("measure_role") or "desconhecido"
+    ratio_valid = financial_role == "monetario" and production_role == "contagem"
     rows = []
     pairs = []
     for period in shared_periods:
         expense_value = financial_points[period]
         output_value = production_points[period]
-        unit_cost = expense_value / output_value if output_value > 0 else None
+        unit_cost = expense_value / output_value if ratio_valid and output_value > 0 else None
         rows.append(
             {
                 "period": period,
@@ -1800,10 +3063,13 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
                 "unit_cost": round(unit_cost, 4) if unit_cost is not None else None,
             }
         )
-        if output_value > 0:
+        if ratio_valid and output_value > 0:
             pairs.append((expense_value, output_value))
 
-    expense_scale, expense_unit = _normalize_measure_scale([row["financial_value"] for row in rows], mode="financial")
+    expense_scale, expense_unit = _normalize_measure_scale(
+        [row["financial_value"] for row in rows],
+        mode="financial" if financial_role == "monetario" else "production",
+    )
     production_scale, production_unit = _normalize_measure_scale([row["production_value"] for row in rows], mode="production")
     for row in rows:
         row["financial_normalized"] = round(row["financial_value"] / expense_scale, 4) if expense_scale else row["financial_value"]
@@ -1811,20 +3077,62 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
 
     unit_cost_values = [row["unit_cost"] for row in rows if isinstance(row.get("unit_cost"), (int, float))]
     unit_cost_avg = round(_mean(unit_cost_values), 4) if unit_cost_values else None
-    unit_cost_median = round(sorted(unit_cost_values)[len(unit_cost_values) // 2], 4) if unit_cost_values else None
+    median_value = _median(unit_cost_values)
+    unit_cost_median = round(median_value, 4) if median_value is not None else None
     correlation = _pearson(pairs)
     spearman = _spearman(pairs)
-    correlation_label = "insuficiente"
-    if correlation is not None:
-        if abs(correlation) >= 0.7:
-            correlation_label = "forte"
-        elif abs(correlation) >= 0.4:
-            correlation_label = "moderada"
-        else:
-            correlation_label = "fraca"
+    correlation_label = _association_strength(correlation)
     outliers = _detect_unit_cost_outliers(rows)
     benchmark_rows = _entity_benchmark(financial, production)
     robustness = _robustness_band(pairs, correlation, spearman)
+    shared_granularity = "desconhecida"
+    if shared_periods:
+        if all("-" in period for period in shared_periods):
+            shared_granularity = "mensal/trimestral"
+        elif all(re.fullmatch(r"\d{4}", period) for period in shared_periods):
+            shared_granularity = "anual"
+    numerator = {
+        "dataset_id": financial.get("dataset_id"),
+        "field": (financial_trend or {}).get("field"),
+        "label": (financial_trend or {}).get("label"),
+        "role": financial_role,
+        "context": (financial_trend or {}).get("measure_context") or {},
+        "aggregation": "soma",
+    }
+    denominator = {
+        "dataset_id": production.get("dataset_id"),
+        "field": (production_trend or {}).get("field"),
+        "label": (production_trend or {}).get("label"),
+        "role": production_role,
+        "context": (production_trend or {}).get("measure_context") or {},
+        "aggregation": "soma",
+    }
+    numerator_valid = financial_role == "monetario"
+    denominator_valid = production_role == "contagem"
+    hard_blocked = not numerator_valid or not denominator_valid or not shared_periods
+    numerator_label = "soma monetária por período comum" if numerator_valid else "soma de volume/quantidade por período comum"
+    denominator_label = "soma de produção/atividade por período comum" if denominator_valid else "medida não confirmada como contagem"
+    unit_warnings = [
+        warning
+        for warning in [
+            "Numerador é volume/quantidade, não valor monetário; não interpretar como custo unitário."
+            if numerator["role"] != "monetario"
+            else None,
+            "Denominador de produção sem papel de contagem confiável."
+            if denominator["role"] != "contagem"
+            else None,
+            "Sem períodos comuns para estimar custo unitário."
+            if not shared_periods
+            else None,
+            "Produção nula ou negativa em alguns períodos; esses pontos não entram na associação."
+            if any((row.get("production_value") or 0) <= 0 for row in rows)
+            else None,
+            "Sem interseção territorial/entidade nas top categorias; validar âmbito antes de comparar."
+            if not benchmark_rows
+            else None,
+        ]
+        if warning
+    ]
     comparability_checks = [
         {
             "label": "Eixo temporal nos dois datasets",
@@ -1834,7 +3142,7 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
         {
             "label": "Períodos em comum",
             "status": "ok" if len(rows) >= 6 else ("warning" if len(rows) >= 3 else "error"),
-            "detail": f"{len(rows)} períodos",
+            "detail": f"{len(rows)} períodos · granularidade {shared_granularity}",
         },
         {
             "label": "Produção com valores válidos",
@@ -1845,6 +3153,11 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "label": "Benchmark territorial/entidade",
             "status": "ok" if benchmark_rows else "warning",
             "detail": "Disponível" if benchmark_rows else "Sem interseção de entidades nas top categorias",
+        },
+        {
+            "label": "Compatibilidade metodológica",
+            "status": "warning" if unit_warnings else "ok",
+            "detail": "Validar unidade, âmbito geográfico, base contabilística e população antes de interpretar custo unitário.",
         },
     ]
 
@@ -1863,6 +3176,8 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
         },
         "summary": {
             "matched_periods": len(rows),
+            "blocked": hard_blocked,
+            "blocked_reason": "validar numerador monetário, denominador de produção e períodos comuns" if hard_blocked else None,
             "avg_unit_cost": unit_cost_avg,
             "median_unit_cost": unit_cost_median,
             "expense_output_correlation": round(correlation, 4) if correlation is not None else None,
@@ -1872,6 +3187,29 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "sample_pairs": len(pairs),
         },
         "comparability": {"checks": comparability_checks},
+        "aggregation": {
+            "period": shared_granularity,
+            "numerator": numerator_label,
+            "denominator": denominator_label,
+        },
+        "numerator": numerator,
+        "denominator": denominator,
+        "grouping": {
+            "period_key": "periodo normalizado",
+            "matched_periods": len(shared_periods),
+            "entity_benchmark_available": bool(benchmark_rows),
+        },
+        "unit_warnings": unit_warnings,
+        "methodology": {
+            "version": ANALYTICS_METHOD_VERSION,
+            "scope": "custo unitario exploratorio por periodo comum",
+            "required_validation": [
+                "mesma granularidade temporal",
+                "mesmo ambito territorial/entidade",
+                "unidades financeiras e produtivas conhecidas",
+                "denominador de producao compatível com o numerador financeiro",
+            ],
+        },
         "normalization": {
             "financial": {"scale": expense_scale, "unit_label": expense_unit},
             "production": {"scale": production_scale, "unit_label": production_unit},
@@ -1884,15 +3222,329 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "production_trends": len(production.get("trends", [])),
             "financial_samples": financial.get("sample_size", 0),
             "production_samples": production.get("sample_size", 0),
+            "trend_selection": trend_pair.get("selection_reason"),
+            "trend_candidates": trend_pair.get("candidates", []),
             "warnings": [
                 warning
                 for warning in [
-                    "Sem períodos em comum entre tendências selecionadas." if not rows else None,
+                    "Sem períodos comuns suficientes nas tendências disponíveis." if len(rows) < 2 else None,
+                    "Poucos períodos comuns; usar apenas como triagem temporal." if 2 <= len(rows) < 6 else None,
                     "Correlação com baixa robustez estatística." if robustness in {"baixa", "insuficiente"} else None,
                     "Outliers detetados no custo unitário." if outliers else None,
+                    "Outliers instáveis com menos de 10 períodos." if outliers and len(rows) < 10 else None,
+                    "Custo unitário depende de validação de unidade, geografia e base contabilística.",
+                    *unit_warnings,
                 ]
                 if warning
             ],
+        },
+        "generated_at": int(_now()),
+    }
+    _cache_set(cache_key, result)
+    return result
+
+
+def _build_finprod_recommendations(financial_dataset: str, production_dataset: str | None, limit: int, candidate_limit: int) -> dict:
+    cache_key = f"finprod:recommendations:{financial_dataset}:{production_dataset or '-'}:{limit}:{candidate_limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    catalog = _get_analysis_catalog()
+    datasets = catalog.get("datasets", []) or []
+    title_by_id = {dataset.get("dataset_id"): dataset.get("title") for dataset in datasets}
+    production_candidates = [
+        dataset
+        for dataset in datasets
+        if dataset.get("dataset_id") != financial_dataset and dataset.get("mega_theme") == "Acesso & Produção"
+    ]
+    production_candidates.sort(
+        key=lambda dataset: (
+            dataset.get("dataset_id") != production_dataset,
+            -int(dataset.get("metric_candidate_count") or 0),
+            -int(dataset.get("records_count") or 0),
+            dataset.get("title") or dataset.get("dataset_id") or "",
+        )
+    )
+
+    recommendations = []
+    errors = []
+    for candidate in production_candidates[:candidate_limit]:
+        candidate_id = candidate.get("dataset_id")
+        if not candidate_id:
+            continue
+        try:
+            payload = _build_finance_production(financial_dataset, candidate_id, limit)
+        except Exception as exc:
+            errors.append({"dataset_id": candidate_id, "error": type(exc).__name__})
+            continue
+        best = (payload.get("diagnostics", {}).get("trend_candidates") or [{}])[0]
+        summary = payload.get("summary") or {}
+        numerator = payload.get("numerator") or {}
+        denominator = payload.get("denominator") or {}
+        recommendations.append(
+            {
+                "financial_dataset_id": financial_dataset,
+                "financial_title": title_by_id.get(financial_dataset) or financial_dataset,
+                "production_dataset_id": candidate_id,
+                "production_title": title_by_id.get(candidate_id) or candidate.get("title") or candidate_id,
+                "matched_periods": summary.get("matched_periods") or 0,
+                "sample_pairs": summary.get("sample_pairs") or 0,
+                "robustness": summary.get("robustness") or "insuficiente",
+                "correlation_strength": summary.get("correlation_strength") or "insuficiente",
+                "blocked": bool(summary.get("blocked")),
+                "numerator_role": numerator.get("role") or "desconhecido",
+                "denominator_role": denominator.get("role") or "desconhecido",
+                "financial_range": best.get("financial_range") or {},
+                "production_range": best.get("production_range") or {},
+                "trend_label_financial": (payload.get("financial_dataset") or {}).get("trend_label"),
+                "trend_label_production": (payload.get("production_dataset") or {}).get("trend_label"),
+                "is_current": candidate_id == production_dataset,
+            }
+        )
+
+    recommendations.sort(
+        key=lambda row: (
+            -int(row.get("matched_periods") or 0),
+            -int(row.get("sample_pairs") or 0),
+            0 if row.get("robustness") == "alta" else 1 if row.get("robustness") == "moderada" else 2,
+            0 if row.get("is_current") else 1,
+            row.get("production_title") or "",
+        )
+    )
+    useful_recommendations = [
+        row
+        for row in recommendations
+        if int(row.get("matched_periods") or 0) > 0 and not row.get("blocked")
+    ]
+    result = {
+        "financial_dataset_id": financial_dataset,
+        "financial_title": title_by_id.get(financial_dataset) or financial_dataset,
+        "active_production_dataset_id": production_dataset,
+        "recommendations": useful_recommendations[:6],
+        "candidates": recommendations[:candidate_limit],
+        "useful_count": len(useful_recommendations),
+        "candidate_count": len(production_candidates[:candidate_limit]),
+        "errors": errors[:5],
+        "warning": "Sem alternativas temporais com períodos comuns nos candidatos testados." if not useful_recommendations else None,
+        "generated_at": int(_now()),
+    }
+    _cache_set(cache_key, result)
+    return result
+
+
+def _predictive_catalog_score(dataset: dict) -> tuple[int, list[str]]:
+    text = _normalize_token(f"{dataset.get('dataset_id') or ''} {dataset.get('title') or ''}")
+    score = 0
+    reasons: list[str] = []
+    if re.search(r"\b(mensal|mes|mês)\b", text):
+        score += 45
+        reasons.append("mensal")
+    if re.search(r"\b(trimestr|quarter)\b", text):
+        score += 36
+        reasons.append("trimestral")
+    if re.search(r"\b(diari|dia|tempo real)\b", text):
+        score += 30
+        reasons.append("diário")
+    if re.search(r"\b(evolucao|evolução|historico|histórico|sazonal|serie|série)\b", text):
+        score += 26
+        reasons.append("evolução")
+    metric_count = int(dataset.get("metric_candidate_count") or 0)
+    if metric_count > 0:
+        score += min(20, metric_count * 4)
+        reasons.append(f"{metric_count} medida(s) provável(eis)")
+    if int(dataset.get("field_count") or 0) >= 6:
+        score += 8
+        reasons.append("schema rico")
+    return score, reasons
+
+
+def _predictive_trend_points(trend: dict) -> list[dict]:
+    points = []
+    for index, point in enumerate(trend.get("points") or []):
+        value = _coerce_number(point.get("value", point.get("avg")))
+        if value is None:
+            continue
+        points.append({"x": index, "period": point.get("period"), "value": value})
+    return points
+
+
+def _predictive_trend_diagnostic(trend: dict, payload: dict) -> dict:
+    points = _predictive_trend_points(trend)
+    sample_size = int(payload.get("sample_size") or 0)
+    records_per_period = sample_size / len(points) if points else 0
+    values = [point["value"] for point in points]
+    unique_values = len({round(value, 6) for value in values})
+    min_value = min(values) if values else 0
+    max_value = max(values) if values else 0
+    mean_value = _mean(values) if values else 0
+    relative_span = abs((max_value - min_value) / (abs(mean_value) or 1)) if values else 0
+    gaps = []
+    if len(points) < 2:
+        gaps.append("sem pontos temporais comparáveis")
+    if 2 <= len(points) < 4:
+        gaps.append(f"faltam {4 - len(points)} período(s)")
+    if len(points) > 50:
+        gaps.append("série longa exige agregação/sazonalidade")
+    if sample_size and records_per_period < 8:
+        gaps.append("baixo volume médio por período")
+    if values and unique_values < 3:
+        gaps.append("valores quase constantes")
+    if values and relative_span < 0.015:
+        gaps.append("variação relativa baixa")
+
+    ok = bool(points) and len(points) >= 4 and len(points) <= 50 and not (
+        (sample_size and records_per_period < 8)
+        or (values and unique_values < 3)
+        or (values and relative_span < 0.015)
+    )
+    score = max(
+        0,
+        min(
+            100,
+            round(
+                min(34, len(points) * 8)
+                + min(22, records_per_period or sample_size / 6)
+                + min(22, relative_span * 180)
+                + min(12, unique_values * 3)
+                + (10 if ok else 0)
+                - (16 if len(points) > 50 else 0)
+            ),
+        ),
+    )
+    if ok and not gaps:
+        gaps.append("apta para projeção exploratória curta")
+    return {
+        "label": trend.get("label") or trend.get("field") or "Série temporal",
+        "field": trend.get("field"),
+        "ok": ok,
+        "score": score,
+        "points": len(points),
+        "records_per_period": round(records_per_period, 2) if records_per_period else 0,
+        "relative_span": round(relative_span, 4),
+        "reason": "" if ok else (gaps[0] if gaps else "sem sinal preditivo suficiente"),
+        "gaps": gaps,
+    }
+
+
+def _predictive_payload_fit(payload: dict, catalog_score: int = 0, catalog_reasons: list[str] | None = None) -> dict:
+    diagnostics = [
+        _predictive_trend_diagnostic(trend, payload)
+        for trend in payload.get("trends", []) or []
+        if trend.get("points")
+    ]
+    diagnostics.sort(key=lambda row: (not row["ok"], -row["score"], -row["points"], row["label"]))
+    eligible = [row for row in diagnostics if row["ok"]]
+    near = [row for row in diagnostics if not row["ok"] and row["points"] >= 2]
+    best = eligible[0] if eligible else (near[0] if near else (diagnostics[0] if diagnostics else None))
+    if eligible:
+        band = "ready" if eligible[0]["score"] >= 65 else "usable"
+    elif near:
+        band = "near"
+    else:
+        band = "blocked"
+    if not payload.get("temporal_field"):
+        reason = "sem eixo temporal detetado"
+    elif not diagnostics:
+        reason = "sem séries numéricas temporais"
+    else:
+        reason = best.get("reason") or "apta para projeção exploratória curta"
+    return {
+        "dataset_id": payload.get("dataset_id"),
+        "title": payload.get("title") or payload.get("dataset_id"),
+        "temporal_field": payload.get("temporal_field"),
+        "sample_size": payload.get("sample_size", 0),
+        "total_records": payload.get("total_records", 0),
+        "catalog_score": catalog_score,
+        "catalog_reasons": catalog_reasons or [],
+        "band": band,
+        "eligible_count": len(eligible),
+        "near_miss_count": len(near),
+        "trend_count": len(diagnostics),
+        "best_indicator": best.get("label") if best else None,
+        "best_score": best.get("score") if best else 0,
+        "best_points": best.get("points") if best else 0,
+        "reason": reason,
+        "gaps": (best.get("gaps") if best else [reason])[:3],
+        "indicators": diagnostics[:4],
+    }
+
+
+def _build_predictive_recommendations(dataset_id: str | None, limit: int, candidate_limit: int) -> dict:
+    cache_key = f"predictive:recommendations:{dataset_id or '-'}:{limit}:{candidate_limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    catalog = _get_analysis_catalog()
+    datasets = catalog.get("datasets", []) or []
+    scored = []
+    for dataset in datasets:
+        item_id = dataset.get("dataset_id")
+        if not item_id:
+            continue
+        score, reasons = _predictive_catalog_score(dataset)
+        if item_id == dataset_id or score >= 30:
+            scored.append((dataset, score, reasons))
+    scored.sort(
+        key=lambda item: (
+            item[0].get("dataset_id") != dataset_id,
+            -item[1],
+            -int(item[0].get("metric_candidate_count") or 0),
+            -int(item[0].get("records_count") or 0),
+            item[0].get("title") or item[0].get("dataset_id") or "",
+        )
+    )
+
+    selected = scored[:candidate_limit]
+    if dataset_id and not any(item[0].get("dataset_id") == dataset_id for item in selected):
+        active = next((item for item in scored if item[0].get("dataset_id") == dataset_id), None)
+        if active:
+            selected = [active, *selected[: max(0, candidate_limit - 1)]]
+
+    rows = []
+    errors = []
+    for dataset, catalog_score, reasons in selected:
+        candidate_id = dataset.get("dataset_id")
+        try:
+            payload = _build_data_analytics(candidate_id, limit)
+            fit = _predictive_payload_fit(payload, catalog_score, reasons)
+        except Exception as exc:
+            errors.append({"dataset_id": candidate_id, "error": type(exc).__name__})
+            continue
+        fit.update(
+            {
+                "dataset_id": candidate_id,
+                "title": fit.get("title") or dataset.get("title") or candidate_id,
+                "mega_theme": dataset.get("mega_theme"),
+                "is_current": candidate_id == dataset_id,
+            }
+        )
+        rows.append(fit)
+
+    band_rank = {"ready": 0, "usable": 1, "near": 2, "blocked": 3}
+    rows.sort(
+        key=lambda row: (
+            band_rank.get(row.get("band"), 9),
+            -int(row.get("eligible_count") or 0),
+            -int(row.get("best_score") or 0),
+            0 if row.get("is_current") else 1,
+            row.get("title") or "",
+        )
+    )
+    active = next((row for row in rows if row.get("is_current")), None)
+    result = {
+        "active_dataset_id": dataset_id,
+        "active": active,
+        "recommendations": rows,
+        "ready_count": sum(1 for row in rows if row.get("band") in {"ready", "usable"}),
+        "near_count": sum(1 for row in rows if row.get("band") == "near"),
+        "blocked_count": sum(1 for row in rows if row.get("band") == "blocked"),
+        "candidate_count": len(selected),
+        "errors": errors[:5],
+        "methodology": {
+            "version": ANALYTICS_METHOD_VERSION,
+            "scope": "triagem de viabilidade preditiva por séries temporais da amostra",
         },
         "generated_at": int(_now()),
     }
@@ -1973,6 +3625,33 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
         self.wfile.write(b'{"error":"Too many requests"}')
         return True
 
+    def _expensive_rate_limited(self, path: str) -> bool:
+        if path not in EXPENSIVE_API_PATHS:
+            return False
+        retry_after = _route_rate_limit_retry_after(self.client_address[0], path)
+        if retry_after is None:
+            return False
+        self.send_response(429)
+        self.send_header("Retry-After", str(retry_after))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b'{"error":"Too many expensive analysis requests"}')
+        return True
+
+    def _acquire_expensive_slot(self, path: str) -> bool:
+        if path not in EXPENSIVE_API_PATHS:
+            return False
+        if _expensive_request_slots.acquire(blocking=False):
+            return True
+        self.send_response(503)
+        self.send_header("Retry-After", "2")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b'{"error":"Analysis queue is busy"}')
+        return False
+
     def do_GET(self):
         if self._rate_limited():
             return
@@ -1980,10 +3659,58 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+        expensive_slot_acquired = False
 
-        if path.startswith("/api/"):
-            if path == "/api/health":
-                self._json(200, {"status": "ok"}, cache_control="no-store")
+        try:
+            if path.startswith("/api/"):
+                if self._expensive_rate_limited(path):
+                    return
+                if path in EXPENSIVE_API_PATHS:
+                    expensive_slot_acquired = self._acquire_expensive_slot(path)
+                    if not expensive_slot_acquired:
+                        return
+                if path == "/api/health":
+                    self._json(200, {"status": "ok"}, cache_control="no-store")
+                    return
+
+            if path == "/api/status":
+                try:
+                    catalog = _get_analysis_catalog()
+                    payload = {
+                        "status": "ok" if not catalog.get("fallback") else "degraded",
+                        "catalog": {
+                            "fallback": bool(catalog.get("fallback")),
+                            "dataset_count": len(catalog.get("datasets", []) or []),
+                            "link_count": len(catalog.get("links", []) or []),
+                            "warning": catalog.get("warning"),
+                            "error_kind": catalog.get("error_kind"),
+                            "upstream_status": catalog.get("upstream_status"),
+                            "upstream_path": catalog.get("upstream_path"),
+                        },
+                        "methodology": {
+                            "version": ANALYTICS_METHOD_VERSION,
+                            "source": catalog.get("methodology", {}).get("source") or "catalog_link_semantics",
+                        },
+                    }
+                except Exception as exc:
+                    fallback = _fallback_analysis_catalog(DEFAULT_MIN_SCORE, exc)
+                    payload = {
+                        "status": "degraded",
+                        "catalog": {
+                            "fallback": True,
+                            "dataset_count": len(fallback.get("datasets", []) or []),
+                            "link_count": len(fallback.get("links", []) or []),
+                            "warning": fallback.get("warning"),
+                            "error_kind": fallback.get("error_kind"),
+                            "upstream_status": fallback.get("upstream_status"),
+                            "upstream_path": fallback.get("upstream_path"),
+                        },
+                        "methodology": {
+                            "version": ANALYTICS_METHOD_VERSION,
+                            "source": "status_probe",
+                        },
+                    }
+                self._json(200, payload, cache_control="no-store")
                 return
 
             if path == "/api/analytics":
@@ -1992,7 +3719,18 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                     payload = _build_analytics(_get_analysis_catalog(), min_score)
                     self._json(200, payload, cache_control="public, max-age=45")
                 except Exception as exc:
-                    self._send_exception_json(exc)
+                    if isinstance(exc, ValueError):
+                        self._send_exception_json(exc)
+                    else:
+                        fallback_min_score = _parse_int_param(
+                            (query.get("min_score") or [None])[0],
+                            4,
+                            DEFAULT_MIN_SCORE,
+                            MAX_MIN_SCORE,
+                            "min_score",
+                        )
+                        payload = _build_analytics(_fallback_analysis_catalog(fallback_min_score, exc), fallback_min_score)
+                        self._json(200, payload, cache_control="no-store")
                 return
 
             if path == "/api/data-analytics":
@@ -2006,6 +3744,43 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                         "limit",
                     )
                     self._json(200, _build_data_analytics(dataset_id, limit), cache_control="no-store")
+                except Exception as exc:
+                    self._send_exception_json(exc)
+                return
+
+            if path == "/api/finprod/recommendations":
+                try:
+                    financial_dataset = _parse_dataset_id((query.get("financial_dataset") or [None])[0])
+                    production_raw = (query.get("production_dataset") or [None])[0]
+                    production_dataset = _parse_dataset_id(production_raw) if production_raw else None
+                    limit = _parse_int_param(
+                        (query.get("limit") or [None])[0],
+                        DEFAULT_DATA_ANALYTICS_LIMIT,
+                        20,
+                        MAX_DATA_ANALYTICS_LIMIT,
+                        "limit",
+                    )
+                    candidate_limit = _parse_int_param((query.get("candidate_limit") or [None])[0], 8, 2, 12, "candidate_limit")
+                    payload = _build_finprod_recommendations(financial_dataset, production_dataset, limit, candidate_limit)
+                    self._json(200, payload, cache_control="no-store")
+                except Exception as exc:
+                    self._send_exception_json(exc)
+                return
+
+            if path == "/api/predictive/recommendations":
+                try:
+                    dataset_raw = (query.get("dataset_id") or [None])[0]
+                    dataset_id = _parse_dataset_id(dataset_raw) if dataset_raw else None
+                    limit = _parse_int_param(
+                        (query.get("limit") or [None])[0],
+                        DEFAULT_DATA_ANALYTICS_LIMIT,
+                        20,
+                        MAX_DATA_ANALYTICS_LIMIT,
+                        "limit",
+                    )
+                    candidate_limit = _parse_int_param((query.get("candidate_limit") or [None])[0], 8, 2, 12, "candidate_limit")
+                    payload = _build_predictive_recommendations(dataset_id, limit, candidate_limit)
+                    self._json(200, payload, cache_control="no-store")
                 except Exception as exc:
                     self._send_exception_json(exc)
                 return
@@ -2038,7 +3813,36 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                     self._send_exception_json(exc)
                 return
 
+            if path == "/api/deep-research":
+                try:
+                    dataset_id = _parse_dataset_id((query.get("dataset_id") or [None])[0])
+                    limit = _parse_int_param((query.get("limit") or [None])[0], 100, 20, 200, "limit")
+                    analysis_payload = copy.deepcopy(_build_data_analytics(dataset_id, limit))
+                    feature_screening = _build_boruta_selection(analysis_payload)
+                    territorial_map = _build_territorial_map(analysis_payload)
+                    payload = {
+                        "dataset_id": analysis_payload.get("dataset_id"),
+                        "title": analysis_payload.get("title"),
+                        "analysis": analysis_payload,
+                        "feature_screening": feature_screening,
+                        "boruta": feature_screening,
+                        "territorial_map": territorial_map,
+                        "methodology": {
+                            "version": ANALYTICS_METHOD_VERSION,
+                            "source": "deep_research_sample",
+                            "feature_screening": feature_screening.get("method"),
+                            "copy_safe": True,
+                        },
+                        "quality_warnings": analysis_payload.get("quality_warnings", []),
+                        "generated_at": int(_now()),
+                    }
+                    self._json(200, payload, cache_control="no-store")
+                except Exception as exc:
+                    self._send_exception_json(exc)
+                return
+
             if path == "/api/analysis":
+
                 try:
                     min_score = _parse_int_param((query.get("min_score") or [None])[0], DEFAULT_MIN_SCORE, DEFAULT_MIN_SCORE, MAX_MIN_SCORE, "min_score")
                     cached = _get_analysis_catalog()
@@ -2046,6 +3850,20 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                         "datasets": cached["datasets"],
                         "opportunities": cached["opportunities"],
                         "themes": cached.get("themes", []),
+                        "facet_counts": cached.get("facet_counts", {}),
+                        "fallback": bool(cached.get("fallback")),
+                        "warning": cached.get("warning"),
+                        "empty_reason": cached.get("empty_reason"),
+                        "error_kind": cached.get("error_kind"),
+                        "upstream_status": cached.get("upstream_status"),
+                        "upstream_path": cached.get("upstream_path"),
+                        "methodology": {
+                            "version": ANALYTICS_METHOD_VERSION,
+                            "source": "catalog_link_semantics",
+                            "fallback": bool(cached.get("fallback")),
+                            "error_kind": cached.get("error_kind"),
+                            "upstream_status": cached.get("upstream_status"),
+                        },
                         "generated_at": cached["generated_at"],
                     }
                     if min_score > DEFAULT_MIN_SCORE:
@@ -2056,7 +3874,17 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                     filtered["link_count"] = len(filtered["links"])
                     self._json(200, filtered, cache_control="public, max-age=45")
                 except Exception as exc:
-                    self._send_exception_json(exc)
+                    if isinstance(exc, ValueError):
+                        self._send_exception_json(exc)
+                    else:
+                        fallback_min_score = _parse_int_param(
+                            (query.get("min_score") or [None])[0],
+                            DEFAULT_MIN_SCORE,
+                            DEFAULT_MIN_SCORE,
+                            MAX_MIN_SCORE,
+                            "min_score",
+                        )
+                        self._json(200, _fallback_analysis_catalog(fallback_min_score, exc), cache_control="no-store")
                 return
 
             if path.startswith("/api/dataset/"):
@@ -2098,21 +3926,25 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                     self._send_exception_json(exc)
                 return
 
-            self._send_error_json(404, f"Unknown API route: {path}")
+            if path.startswith("/api/"):
+                self._send_error_json(404, f"Unknown API route: {path}")
+                return
+
+            if path == "/":
+                path = "/index.html"
+
+            clean_path = "/" + path.lstrip("/")
+            if clean_path in ALLOWED_STATIC_PATHS:
+                self.path = clean_path.lstrip("/")
+                LOGGER.info("Serving static: %s -> %s", clean_path, self.path)
+                return super().do_GET()
+
+            LOGGER.warning("404 Static not found: %s", path)
+            self._send_error_json(404, f"Static asset not found: {path}")
             return
-
-        if path == "/":
-            path = "/index.html"
-
-        clean_path = "/" + path.lstrip("/")
-        if clean_path in ALLOWED_STATIC_PATHS:
-            self.path = clean_path.lstrip("/")
-            LOGGER.info("Serving static: %s -> %s", clean_path, self.path)
-            return super().do_GET()
-
-        LOGGER.warning("404 Static not found: %s", path)
-        self._send_error_json(404, f"Static asset not found: {path}")
-        return
+        finally:
+            if expensive_slot_acquired:
+                _expensive_request_slots.release()
 
     def list_directory(self, path):
         self.send_error(404, "Directory listing disabled")

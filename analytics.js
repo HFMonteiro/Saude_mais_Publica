@@ -4,6 +4,7 @@ const state = {
   minScore: 4,
   search: "",
   kind: "",
+  localScope: "",
   confidence: "",
   lowRiskOnly: false,
   selectedCorrelationKey: "",
@@ -12,6 +13,7 @@ const state = {
   selectedPublicHealthKey: "",
   selectedPublicHealthMatrixCell: "",
   selectedLocalPriorityCell: "",
+  selectedCareOpsKey: "",
   selectedPredictiveIndicator: "",
   activePublicHealthLayer: "impact",
   publicHealthRenderLimit: 40,
@@ -23,6 +25,9 @@ const state = {
   selectedFinancialDataset: "",
   selectedProductionDataset: "",
   finProdPayload: null,
+  finProdRecommendationPayload: null,
+  predictiveRecommendationPayload: null,
+  _predictiveRecommendationKey: "",
   _predictiveLoadDataset: "",
   _filterCache: {
     key: "",
@@ -35,6 +40,7 @@ const state = {
 
 const analyticsSearch = document.getElementById("analyticsSearch");
 const analyticsKind = document.getElementById("analyticsKind");
+const analyticsLocalScope = document.getElementById("analyticsLocalScope");
 const analyticsConfidence = document.getElementById("analyticsConfidence");
 const analyticsMinScore = document.getElementById("analyticsMinScore");
 const analyticsMinScoreValue = document.getElementById("analyticsMinScoreValue");
@@ -49,10 +55,12 @@ const dataRichMode = document.getElementById("dataRichMode");
 const dataManualMode = document.getElementById("dataManualMode");
 const dataAnalyticsStatus = document.getElementById("dataAnalyticsStatus");
 const dataAnalyticsMeta = document.getElementById("dataAnalyticsMeta");
+const dataStoryStrip = document.getElementById("dataStoryStrip");
 const dataStatRows = document.getElementById("dataStatRows");
-const dataStatNumeric = document.getElementById("dataStatNumeric");
-const dataStatCategorical = document.getElementById("dataStatCategorical");
-const dataStatCorrelation = document.getElementById("dataStatCorrelation");
+const dataStatCompletenessValue = document.getElementById("dataStatCompletenessValue");
+const dataStatCompletenessBar = document.getElementById("dataStatCompletenessBar");
+const dataStatCounts = document.getElementById("dataStatCounts");
+const dataStatSuitability = document.getElementById("dataStatSuitability");
 const dataInsightCards = document.getElementById("dataInsightCards");
 const dataCorrelationList = document.getElementById("dataCorrelationList");
 const dataTrendChart = document.getElementById("dataTrendChart");
@@ -64,9 +72,11 @@ const dataPcaMeta = document.getElementById("dataPcaMeta");
 const dataPcaChart = document.getElementById("dataPcaChart");
 const finProdMeta = document.getElementById("finProdMeta");
 const finProdStatus = document.getElementById("finProdStatus");
+const finProdStoryStrip = document.getElementById("finProdStoryStrip");
 const finProdFinancialDataset = document.getElementById("finProdFinancialDataset");
 const finProdProductionDataset = document.getElementById("finProdProductionDataset");
 const finProdRefreshButton = document.getElementById("finProdRefreshButton");
+const finProdRecommendations = document.getElementById("finProdRecommendations");
 const finProdKpis = document.getElementById("finProdKpis");
 const finProdTable = document.getElementById("finProdTable");
 const finProdChecks = document.getElementById("finProdChecks");
@@ -75,10 +85,13 @@ const finProdOutliers = document.getElementById("finProdOutliers");
 const finProdBenchmark = document.getElementById("finProdBenchmark");
 const finProdDiagnostics = document.getElementById("finProdDiagnostics");
 const predictiveMeta = document.getElementById("predictiveMeta");
+const predictiveStoryStrip = document.getElementById("predictiveStoryStrip");
 const predictiveDataButton = document.getElementById("predictiveDataButton");
 const predictiveKpis = document.getElementById("predictiveKpis");
 const predictiveIndicatorFilter = document.getElementById("predictiveIndicatorFilter");
 const predictiveForecastChart = document.getElementById("predictiveForecastChart");
+const predictiveFitGuide = document.getElementById("predictiveFitGuide");
+const predictiveClosestOpportunities = document.getElementById("predictiveClosestOpportunities");
 const predictiveDrivers = document.getElementById("predictiveDrivers");
 const predictiveScenarios = document.getElementById("predictiveScenarios");
 const predictiveRisk = document.getElementById("predictiveRisk");
@@ -97,6 +110,7 @@ const distribution = document.getElementById("analyticsDistribution");
 const modelMeta = document.getElementById("analyticsModelMeta");
 const semanticModel = document.getElementById("analyticsSemanticModel");
 const publicHealthMeta = document.getElementById("publicHealthMeta");
+const publicHealthStoryStrip = document.getElementById("publicHealthStoryStrip");
 const publicHealthKpis = document.getElementById("publicHealthKpis");
 const publicHealthPriorityList = document.getElementById("publicHealthPriorityList");
 const publicHealthLayerControls = document.getElementById("publicHealthLayerControls");
@@ -110,6 +124,7 @@ const publicHealthHypothesisDetail = document.getElementById("publicHealthHypoth
 const publicHealthMatrix = document.getElementById("publicHealthMatrix");
 const publicHealthStrata = document.getElementById("publicHealthStrata");
 const localPlanMeta = document.getElementById("localPlanMeta");
+const localPlanStoryStrip = document.getElementById("localPlanStoryStrip");
 const localPlanKpis = document.getElementById("localPlanKpis");
 const localDiagnosis = document.getElementById("localDiagnosis");
 const localPriorityMatrix = document.getElementById("localPriorityMatrix");
@@ -117,6 +132,13 @@ const localPriorityDetail = document.getElementById("localPriorityDetail");
 const localSurveillance = document.getElementById("localSurveillance");
 const localRiskMatrix = document.getElementById("localRiskMatrix");
 const localActionPlan = document.getElementById("localActionPlan");
+const careOpsMeta = document.getElementById("careOpsMeta");
+const careOpsStoryStrip = document.getElementById("careOpsStoryStrip");
+const careOpsKpis = document.getElementById("careOpsKpis");
+const careOpsMatrix = document.getElementById("careOpsMatrix");
+const careOpsTable = document.getElementById("careOpsTable");
+const careOpsWorkflow = document.getElementById("careOpsWorkflow");
+const careOpsGuardrails = document.getElementById("careOpsGuardrails");
 const bubbleChart = document.getElementById("analyticsBubbleChart");
 const dimensionList = document.getElementById("analyticsDimensionList");
 const themeMatrix = document.getElementById("analyticsThemeMatrix");
@@ -126,7 +148,7 @@ const correlationTable = document.getElementById("analyticsCorrelationTable");
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PUBLIC_HEALTH_LAYERS = [
   ["impact", "Impacto"],
-  ["likelihood", "Likelihood"],
+  ["likelihood", "Viabilidade"],
   ["risk", "Risco"],
   ["entities", "Entidades"],
   ["opportunities", "Oportunidades"],
@@ -152,7 +174,7 @@ const PUBLIC_HEALTH_GEO = [
     h: 82,
     labelX: 284,
     labelY: 200,
-    match: /(centro|coimbra|leiria|viseu|guarda|castelo branco|aveiro|cova da beira|baixo mondego|dao lafoes|dão lafões|beira interior|baixo vouga)/,
+    match: /(regiao centro|região centro|ars centro|coimbra|leiria|viseu|guarda|castelo branco|aveiro|cova da beira|baixo mondego|dao lafoes|dão lafões|beira interior|baixo vouga)/,
   },
   {
     id: "lisboa",
@@ -223,7 +245,7 @@ const PUBLIC_HEALTH_NATIONAL_GEO = {
 };
 const PUBLIC_HEALTH_AGGREGATION_GEO = {
   id: "agregar",
-  label: "Entidade por validar",
+  label: "Território por resolver",
   x: 346,
   y: 174,
   w: 132,
@@ -300,26 +322,126 @@ let loadTimer = null;
 let dataLoadTimer = null;
 let activeRequest = 0;
 let activeDataRequest = 0;
+let activeFinProdRequest = 0;
+let activeFinProdRecommendationRequest = 0;
+let activePredictiveRecommendationRequest = 0;
+
+function primaryPanelForTab(tab) {
+  return analyticsPanels.find((panel) => (panel.dataset.tabPanel || "").split(/\s+/).includes(tab)) || null;
+}
+
+function setupTabAccessibility() {
+  const tabByName = new Map();
+  analyticsTabs.forEach((button) => {
+    const tab = button.dataset.analyticsTab;
+    if (!tab) return;
+    tabByName.set(tab, button);
+    button.id = button.id || `analytics-tab-${tab}`;
+    button.setAttribute("role", "tab");
+    const primaryPanel = primaryPanelForTab(tab);
+    if (primaryPanel) {
+      primaryPanel.id = primaryPanel.id || `analytics-panel-${tab}`;
+      button.setAttribute("aria-controls", primaryPanel.id);
+    }
+  });
+  analyticsPanels.forEach((panel, index) => {
+    const tabs = (panel.dataset.tabPanel || "").split(/\s+/).filter(Boolean);
+    panel.id = panel.id || `analytics-panel-${tabs[0] || index}`;
+    panel.setAttribute("role", "tabpanel");
+    if (tabs.length === 1 && tabByName.has(tabs[0])) {
+      panel.setAttribute("aria-labelledby", tabByName.get(tabs[0]).id);
+    }
+  });
+}
 
 function clearElement(element) {
   element.replaceChildren();
+}
+
+function renderAnalyticsStory(container, items = []) {
+  if (!container) return;
+  clearElement(container);
+  items.forEach((item) => {
+    const card = document.createElement("article");
+    card.className = `analytics-story-card ${item.tone ? `is-${item.tone}` : ""}`.trim();
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const value = document.createElement("strong");
+    value.textContent = item.value;
+    value.title = item.value;
+    const detail = document.createElement("small");
+    detail.textContent = item.detail;
+    card.append(label, value, detail);
+    container.appendChild(card);
+  });
+}
+
+function firstWarning(warnings = [], fallback = "Validar fonte, denominador, unidade e período antes de concluir.") {
+  return warnings.length ? shortSentence(String(warnings[0]).replace(/[.。]+$/g, ""), 96) : fallback;
+}
+
+function renderEmptyPanel(container, message) {
+  clearElement(container);
+  const wrap = document.createElement("div");
+  wrap.className = "empty-panel-state";
+  const img = document.createElement("img");
+  img.src = "visual_assets/empty_state.png";
+  img.className = "empty-panel-img";
+  img.alt = "Vazio";
+  const text = document.createElement("span");
+  text.className = "meta";
+  text.textContent = message;
+  wrap.append(img, text);
+  container.appendChild(wrap);
 }
 
 function repairEncoding(value) {
   return String(value)
     .replace(/Ã¡/g, "á").replace(/Ã /g, "à").replace(/Ã¢/g, "â").replace(/Ã£/g, "ã")
     .replace(/Ã©/g, "é").replace(/Ãª/g, "ê").replace(/Ã­/g, "í")
-    .replace(/Ã³/g, "ó").replace(/Ã´/g, "ô").replace(/Ãµ/g, "õ")
+    .replace(/Ã³/g, "ó").replace(/Ã´/g, "ô").replace(/Ãõ/g, "õ")
     .replace(/Ãº/g, "ú").replace(/Ã§/g, "ç")
-    .replace(/Ã/g, "Á").replace(/Ã‰/g, "É").replace(/Ã/g, "Í")
+    .replace(/Ã /g, "Á").replace(/Ã‰/g, "É").replace(/Ã /g, "Í")
     .replace(/Ã“/g, "Ó").replace(/Ãš/g, "Ú").replace(/Ã‡/g, "Ç")
     .replace(/Ã—/g, "×").replace(/Â·/g, "·").replace(/Â /g, " ")
     .replace(/â€¦/g, "...").replace(/â€”/g, "-").replace(/â€“/g, "-")
-    .replace(/â†’/g, "→").replace(/â†/g, "←");
+    .replace(/â†’/g, "→").replace(/â† /g, "←");
 }
 
 function safeText(value) {
   return value == null ? "" : repairEncoding(value);
+}
+
+function normalizeSearch(value) {
+  return safeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+const SEARCH_SYNONYM_GROUPS = [
+  ["icpc", "problema", "problemas", "diagnostico", "diagnosticos", "morbilidade"],
+  ["utente", "utentes", "inscrito", "inscritos", "populacao", "populacao inscrita"],
+  ["uf", "unidade funcional", "usf", "ucsp", "aces", "csp", "cuidados primarios"],
+  ["uls", "unidade local de saude"],
+  ["regiao", "ars", "norte", "centro", "lisboa", "alentejo", "algarve"],
+  ["hospital", "hospitais", "centro hospitalar", "internamento", "urgencia"],
+  ["fragilidade", "multimorbilidade", "polimedicacao", "idra", "gra", "pic", "plano individual"],
+  ["rastreio", "rastreios", "vacina", "vacinacao", "prevencao"],
+];
+
+function searchAlternatives(token) {
+  const normalized = normalizeSearch(token).trim();
+  if (!normalized) return [];
+  const group = SEARCH_SYNONYM_GROUPS.find((items) => items.some((item) => normalizeSearch(item) === normalized));
+  return group ? group.map(normalizeSearch) : [normalized];
+}
+
+function matchesExpandedSearch(text, rawSearch) {
+  const tokens = normalizeSearch(rawSearch).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const normalizedText = normalizeSearch(text);
+  return tokens.every((token) => searchAlternatives(token).some((candidate) => normalizedText.includes(candidate)));
 }
 
 async function fetchJson(url, {timeoutMs = 22000} = {}) {
@@ -366,12 +488,29 @@ function compactTitle(value, max = 58) {
   return text.length > max ? `${text.slice(0, max - 1)}...` : text;
 }
 
+function shortSentence(value, max = 92) {
+  const text = safeText(value).replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1).replace(/\s+\S*$/, "");
+  return `${cut}...`;
+}
+
+function readinessInfo(payload) {
+  return payload?.analysis_readiness || {score: 0, band: "fragil", label: "Frágil", gaps: ["validar fonte"]};
+}
+
+function readinessDetail(info) {
+  const gaps = (info.gaps || ["validar fonte"]).slice(0, 3).join(", ");
+  return `Validar: ${gaps}`;
+}
+
 function kindLabel(kind) {
   return {
     temporal: "Temporal",
     territorial: "Território",
     entidade: "Entidade",
     medida: "Medida",
+    clinico: "Clínico",
     generico: "Genérico",
   }[kind] || "Genérico";
 }
@@ -392,6 +531,10 @@ function likelihoodLabel(value) {
   }[value] || value;
 }
 
+function viabilityLabel(value) {
+  return `${likelihoodLabel(value)} viabilidade`;
+}
+
 function impactLabel(value) {
   return {
     alto: "Alto",
@@ -400,9 +543,143 @@ function impactLabel(value) {
   }[value] || value;
 }
 
+function measureRoleLabel(value) {
+  return {
+    taxa: "taxa",
+    monetario: "valor monetário",
+    contagem: "contagem",
+    stock: "stock",
+  }[value] || "medida";
+}
+
 function formatDecimal(value, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
   return new Intl.NumberFormat("pt-PT", {maximumFractionDigits: digits}).format(Number(value));
+}
+
+function formatSmartNumber(value, options = {}) {
+  const number = Number(value);
+  if (value === null || value === undefined || Number.isNaN(number)) return "-";
+  const abs = Math.abs(number);
+  const digits = options.digits ?? (abs > 0 && abs < 0.01 ? 5 : abs < 1 ? 3 : abs < 100 ? 2 : 1);
+  return new Intl.NumberFormat("pt-PT", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: options.minDigits ?? 0,
+  }).format(number);
+}
+
+function finProdViability(summary = {}, payload = null) {
+  if (summary.blocked) {
+    const reason = summary.blocked_reason || (payload?.unit_warnings || [])[0] || "sem validação mínima";
+    return {label: "Bloqueado", detail: reason, band: "none"};
+  }
+  const matched = Number(summary.matched_periods || 0);
+  const pairs = Number(summary.sample_pairs || 0);
+  if (matched >= 6 && pairs >= 6) return {label: "Usável", detail: "base temporal mínima para triagem", band: "good"};
+  if (matched >= 3) return {label: "Frágil", detail: "usar só como sinal exploratório", band: "partial"};
+  if (matched > 0) return {label: "Insuficiente", detail: "poucos períodos comuns", band: "weak"};
+  return {label: "Bloqueado", detail: "sem base temporal comum", band: "none"};
+}
+
+function datasetFinProdRole(dataset = {}) {
+  return dataset.finprod_role || dataset.semantic_profile?.finprod_role || "sem_medida";
+}
+
+function datasetFinProdBadge(dataset = {}) {
+  return {
+    monetario: "€",
+    volume: "vol.",
+    taxa: "%",
+    sem_medida: "sem medida",
+  }[datasetFinProdRole(dataset)] || "sem medida";
+}
+
+function finProdRoleRank(dataset = {}, mode = "financial") {
+  const role = datasetFinProdRole(dataset);
+  const ranks = mode === "financial"
+    ? {monetario: 0, volume: 1, taxa: 2, sem_medida: 3}
+    : {volume: 0, taxa: 1, monetario: 2, sem_medida: 3};
+  return ranks[role] ?? 4;
+}
+
+function finProdMatchBand(row = {}) {
+  const matched = Number(row.matched_periods ?? row.summary?.matched_periods ?? 0);
+  const samplePairs = Number(row.sample_pairs ?? row.summary?.sample_pairs ?? matched);
+  if (matched >= 6 && samplePairs >= 6) return "good";
+  if (matched >= 3) return "partial";
+  if (matched > 0) return "weak";
+  return "none";
+}
+
+function finProdMatchLabel(row = {}) {
+  const matched = Number(row.matched_periods ?? row.summary?.matched_periods ?? 0);
+  const labels = {
+    good: `${formatNumber(matched)}p bom`,
+    partial: `${formatNumber(matched)}p parcial`,
+    weak: `${formatNumber(matched)}p fraco`,
+    none: "0p sem match",
+  };
+  return labels[finProdMatchBand(row)];
+}
+
+function finProdMatchTitle(band) {
+  return {
+    good: "Bom match temporal",
+    partial: "Match parcial",
+    weak: "Match fraco",
+    none: "Sem períodos comuns",
+  }[band] || "Por avaliar";
+}
+
+function finProdCandidateRows() {
+  const payload = state.finProdRecommendationPayload || {};
+  const rows = payload.candidates || payload.recommendations || [];
+  const byId = new Map();
+  rows.forEach((row) => {
+    if (row.production_dataset_id) byId.set(row.production_dataset_id, row);
+  });
+  if (state.finProdPayload?.production_dataset?.dataset_id) {
+    byId.set(state.finProdPayload.production_dataset.dataset_id, {
+      ...(byId.get(state.finProdPayload.production_dataset.dataset_id) || {}),
+      production_dataset_id: state.finProdPayload.production_dataset.dataset_id,
+      production_title: state.finProdPayload.production_dataset.title,
+      matched_periods: state.finProdPayload.summary?.matched_periods || 0,
+      sample_pairs: state.finProdPayload.summary?.sample_pairs || 0,
+      robustness: state.finProdPayload.summary?.robustness || "insuficiente",
+      is_current: true,
+    });
+  }
+  return byId;
+}
+
+function finProdOptionPalette(band) {
+  return {
+    good: {bg: "#edf7f3", color: "#075f4f"},
+    partial: {bg: "#fff7e8", color: "#875214"},
+    weak: {bg: "#fff2ea", color: "#9b3b24"},
+    none: {bg: "#fff1f1", color: "#9b2424"},
+  }[band] || {bg: "", color: ""};
+}
+
+function updateFinProdMatchDecorations() {
+  if (!finProdProductionDataset) return;
+  const candidates = finProdCandidateRows();
+  const datasets = state.payload?.datasets || [];
+  const titleById = new Map(datasets.map((dataset) => [dataset.dataset_id, dataset.title || dataset.dataset_id]));
+  finProdProductionDataset.classList.remove("match-good", "match-partial", "match-weak", "match-none", "match-unknown");
+  let selectedBand = "unknown";
+  Array.from(finProdProductionDataset.options || []).forEach((option) => {
+    const row = candidates.get(option.value);
+    const title = titleById.get(option.value) || option.textContent.replace(/^\[[^\]]+\]\s*/, "");
+    const band = row ? finProdMatchBand(row) : "unknown";
+    if (option.value === state.selectedProductionDataset) selectedBand = band;
+    option.textContent = row ? `[${finProdMatchLabel(row)}] ${compactTitle(title, 70)}` : `[por avaliar] ${compactTitle(title, 70)}`;
+    option.title = title;
+    const palette = finProdOptionPalette(band);
+    option.style.backgroundColor = palette.bg;
+    option.style.color = palette.color;
+  });
+  finProdProductionDataset.classList.add(`match-${selectedBand}`);
 }
 
 function relationKey(item) {
@@ -418,6 +695,7 @@ function activeFilterKey() {
     state.payload?.generated_at || "",
     state.search.trim().toLowerCase(),
     state.kind,
+    state.localScope,
     state.confidence,
     state.lowRiskOnly ? "low" : "all",
   ].join("|");
@@ -532,22 +810,28 @@ function populateFinProdOptions() {
   const datasets = state.payload?.datasets || [];
   const financial = datasets
     .filter((dataset) => dataset.mega_theme === "Finanças & Compras")
-    .sort((a, b) => (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0));
+    .sort((a, b) => finProdRoleRank(a, "financial") - finProdRoleRank(b, "financial")
+      || (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0)
+      || safeText(a.title).localeCompare(safeText(b.title)));
   const production = datasets
     .filter((dataset) => dataset.mega_theme === "Acesso & Produção")
-    .sort((a, b) => (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0));
+    .sort((a, b) => finProdRoleRank(a, "production") - finProdRoleRank(b, "production")
+      || (b.metric_candidate_count || 0) - (a.metric_candidate_count || 0)
+      || safeText(a.title).localeCompare(safeText(b.title)));
   clearElement(finProdFinancialDataset);
   clearElement(finProdProductionDataset);
   financial.forEach((dataset) => {
     const option = document.createElement("option");
     option.value = dataset.dataset_id;
-    option.textContent = compactTitle(dataset.title || dataset.dataset_id, 72);
+    option.textContent = `[${datasetFinProdBadge(dataset)}] ${compactTitle(dataset.title || dataset.dataset_id, 68)}`;
+    option.title = `${dataset.title || dataset.dataset_id} · ${datasetFinProdBadge(dataset)}`;
     finProdFinancialDataset.appendChild(option);
   });
   production.forEach((dataset) => {
     const option = document.createElement("option");
     option.value = dataset.dataset_id;
-    option.textContent = compactTitle(dataset.title || dataset.dataset_id, 72);
+    option.textContent = `[${datasetFinProdBadge(dataset)}] ${compactTitle(dataset.title || dataset.dataset_id, 68)}`;
+    option.title = `${dataset.title || dataset.dataset_id} · ${datasetFinProdBadge(dataset)}`;
     finProdProductionDataset.appendChild(option);
   });
   if (!financial.some((dataset) => dataset.dataset_id === state.selectedFinancialDataset)) {
@@ -558,6 +842,7 @@ function populateFinProdOptions() {
   }
   finProdFinancialDataset.value = state.selectedFinancialDataset;
   finProdProductionDataset.value = state.selectedProductionDataset;
+  updateFinProdMatchDecorations();
 }
 
 async function loadDataAnalytics() {
@@ -588,14 +873,31 @@ async function loadFinProdAnalytics() {
   if (!state.selectedFinancialDataset || !state.selectedProductionDataset) {
     throw new Error("Seleciona dataset financeiro e de produção.");
   }
+  const requestId = ++activeFinProdRequest;
   finProdStatus.textContent = "A cruzar datasets...";
   const payload = await fetchJson(
     `/api/finprod?financial_dataset=${encodeURIComponent(state.selectedFinancialDataset)}&production_dataset=${encodeURIComponent(state.selectedProductionDataset)}&limit=${state.dataLimit}`,
     {timeoutMs: 32000},
   );
+  if (requestId !== activeFinProdRequest) return;
   state.finProdPayload = payload;
   finProdStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   renderFinProdAnalytics();
+  loadFinProdRecommendations(payload).catch(() => {
+    renderFinProdRecommendations({recommendations: [], warning: "Não foi possível calcular alternativas agora."});
+  });
+}
+
+async function loadFinProdRecommendations(payload = null) {
+  if (!finProdRecommendations || !state.selectedFinancialDataset) return;
+  const requestId = ++activeFinProdRecommendationRequest;
+  renderFinProdRecommendations({loading: true});
+  const activeProduction = state.selectedProductionDataset || "";
+  const url = `/api/finprod/recommendations?financial_dataset=${encodeURIComponent(state.selectedFinancialDataset)}&production_dataset=${encodeURIComponent(activeProduction)}&limit=${state.dataLimit}&candidate_limit=12`;
+  const recommendations = await fetchJson(url, {timeoutMs: 45000});
+  if (requestId !== activeFinProdRecommendationRequest) return;
+  state.finProdRecommendationPayload = recommendations;
+  renderFinProdRecommendations(recommendations, payload);
 }
 
 function addFinProdKpi(label, value, detail) {
@@ -608,6 +910,23 @@ function addFinProdKpi(label, value, detail) {
   small.textContent = detail;
   card.append(span, strong, small);
   finProdKpis.appendChild(card);
+}
+
+function renderFinProdInterpretation(payload) {
+  if (!finProdChecks) return;
+  const summary = payload.summary || {};
+  const viability = finProdViability(summary, payload);
+  const warnings = [...(payload.unit_warnings || []), ...(payload.diagnostics?.warnings || [])];
+  const note = document.createElement("div");
+  note.className = `finprod-interpretation is-${viability.band}`;
+  const title = document.createElement("strong");
+  title.textContent = `Leitura: ${viability.label}`;
+  const detail = document.createElement("small");
+  detail.textContent = warnings.length
+    ? shortSentence(String(warnings[0]).replace(/[.。]+$/g, ""), 92)
+    : "Confirmar unidade, âmbito e denominador.";
+  note.append(title, detail);
+  finProdChecks.prepend(note);
 }
 
 function renderFinProdAnalytics() {
@@ -623,16 +942,66 @@ function renderFinProdAnalytics() {
 
   const payload = state.finProdPayload;
   if (!payload) {
+    renderAnalyticsStory(finProdStoryStrip, [
+      {
+        label: "Pergunta ativa",
+        value: "Despesa acompanha produção?",
+        detail: "Seleciona um numerador financeiro e um denominador de produção para testar períodos comuns.",
+      },
+      {
+        label: "Leitura recomendada",
+        value: "Comparar só com unidade validada",
+        detail: "Custo unitário só é útil se houver numerador monetário, produção válida e períodos comuns.",
+        tone: "warning",
+      },
+      {
+        label: "Próxima ação",
+        value: "Cruzar datasets",
+        detail: "Depois lê tendência, outliers e benchmark territorial/entidade.",
+      },
+    ]);
     finProdMeta.textContent = "Seleciona os dois datasets e clica em Cruzar datasets.";
     finProdDiagnostics.textContent = "Sem cruzamento ativo.";
+    renderFinProdRecommendations(state.finProdRecommendationPayload || {recommendations: []});
     return;
   }
   renderFinProdChecks(payload.comparability?.checks || []);
-  finProdMeta.textContent = `${payload.financial_dataset?.title || payload.financial_dataset?.dataset_id} × ${payload.production_dataset?.title || payload.production_dataset?.dataset_id}`;
+  renderFinProdInterpretation(payload);
+  const aggregation = payload.aggregation || {};
+  const numerator = payload.numerator || {};
+  const denominator = payload.denominator || {};
+  finProdMeta.textContent = `${compactTitle(payload.financial_dataset?.title || payload.financial_dataset?.dataset_id, 44)} × ${compactTitle(payload.production_dataset?.title || payload.production_dataset?.dataset_id, 44)} · ${aggregation.period || "período"}`;
   const summary = payload.summary || {};
+  const viability = finProdViability(summary, payload);
+  const warningsForStory = [...(payload.unit_warnings || []), ...(payload.diagnostics?.warnings || [])];
+  renderAnalyticsStory(finProdStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "Qual é o custo por unidade produzida?",
+      detail: `${formatNumber(summary.matched_periods || 0)} períodos comuns; numerador ${numerator.role || "desconhecido"} e denominador ${denominator.role || "desconhecido"}.`,
+    },
+    {
+      label: "Leitura recomendada",
+      value: summary.avg_unit_cost == null ? "Sem custo validável" : formatSmartNumber(summary.avg_unit_cost),
+      detail: summary.avg_unit_cost == null ? "Não calcular rácio sem denominador e unidade validados." : `Média exploratória; mediana ${formatSmartNumber(summary.median_unit_cost)}.`,
+      tone: viability.band === "good" ? "ok" : "warning",
+    },
+    {
+      label: "Travão",
+      value: viability.label,
+      detail: firstWarning(warningsForStory, viability.detail),
+      tone: summary.blocked ? "danger" : (warningsForStory.length ? "warning" : "ok"),
+    },
+    {
+      label: "Próxima ação",
+      value: "Ver outliers",
+      detail: "Confirmar períodos anómalos e benchmark antes de usar em decisão.",
+    },
+  ]);
   addFinProdKpi("Períodos em comum", formatNumber(summary.matched_periods || 0), "base temporal comparável");
-  addFinProdKpi("Custo unitário médio", formatDecimal(summary.avg_unit_cost, 2), "despesa / produção");
-  addFinProdKpi("Mediana custo unitário", formatDecimal(summary.median_unit_cost, 2), "robusto a outliers");
+  addFinProdKpi("Viabilidade", viability.label, viability.detail);
+  addFinProdKpi("Custo unitário médio", formatSmartNumber(summary.avg_unit_cost), payload.aggregation?.numerator || "soma financeira / soma produção");
+  addFinProdKpi("Mediana custo unitário", formatSmartNumber(summary.median_unit_cost), "só com numerador monetário validado");
   addFinProdKpi(
     "Correlação despesa-produção",
     summary.expense_output_correlation == null ? "-" : formatDecimal(summary.expense_output_correlation, 2),
@@ -641,7 +1010,9 @@ function renderFinProdAnalytics() {
   addFinProdKpi("Spearman", summary.spearman_correlation == null ? "-" : formatDecimal(summary.spearman_correlation, 2), `robustez ${summary.robustness || "insuficiente"}`);
 
   const header = document.createElement("tr");
-  ["Período", "Financeiro (norm.)", "Produção (norm.)", "Custo unitário"].forEach((label) => {
+  const financialUnit = payload.normalization?.financial?.unit_label || "valor";
+  const productionUnit = payload.normalization?.production?.unit_label || "valor";
+  ["Período", `Financeiro (${financialUnit})`, `Produção (${productionUnit})`, "Custo unitário", "Leitura"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     header.appendChild(th);
@@ -649,8 +1020,16 @@ function renderFinProdAnalytics() {
   thead?.appendChild(header);
   (payload.rows || []).forEach((row) => {
     const tr = document.createElement("tr");
-    [row.period, formatDecimal(row.financial_normalized, 2), formatDecimal(row.production_normalized, 2), formatDecimal(row.unit_cost, 2)].forEach((value) => {
+    const values = [
+      row.period,
+      `${formatSmartNumber(row.financial_normalized)} norm. · ${formatSmartNumber(row.financial_value)} real`,
+      `${formatSmartNumber(row.production_normalized)} norm. · ${formatSmartNumber(row.production_value)} real`,
+      formatSmartNumber(row.unit_cost),
+      Number(row.production_value || 0) > 0 ? "produção válida" : "sem denominador válido",
+    ];
+    values.forEach((value, index) => {
       const td = document.createElement("td");
+      if (index > 0 && index < 4) td.className = "numeric-cell";
       td.textContent = value;
       tr.appendChild(td);
     });
@@ -660,8 +1039,124 @@ function renderFinProdAnalytics() {
   renderFinProdOutliers(payload.outliers || []);
   renderFinProdBenchmark(payload.entity_benchmark || []);
   const norm = payload.normalization || {};
-  const warnings = payload.diagnostics?.warnings || [];
-  finProdDiagnostics.textContent = `Escalas: financeiro em ${norm.financial?.unit_label || "-"} · produção em ${norm.production?.unit_label || "-"}. ${warnings.length ? `Avisos: ${warnings.join(" · ")}` : "Sem avisos críticos."}`;
+  const warnings = [...(payload.unit_warnings || []), ...(payload.diagnostics?.warnings || [])];
+  const warningText = warnings.length ? ` · Validar: ${shortSentence(String(warnings[0]).replace(/[.。]+$/g, ""), 70)}` : " · sem avisos críticos";
+  finProdDiagnostics.textContent = `Numerador: ${compactTitle(numerator.label || numerator.field || "-", 36)} · Denominador: ${compactTitle(denominator.label || denominator.field || "-", 36)} · Escalas ${norm.financial?.unit_label || "-"} / ${norm.production?.unit_label || "-"}${warningText}.`;
+}
+
+function renderFinProdRecommendations(payload = {}, currentPayload = null) {
+  if (!finProdRecommendations) return;
+  clearElement(finProdRecommendations);
+  if (payload.loading) {
+    const note = document.createElement("div");
+    note.className = "finprod-recommendation-note";
+    note.textContent = "A procurar alternativas...";
+    finProdRecommendations.appendChild(note);
+    return;
+  }
+  if (payload && !payload.loading) {
+    state.finProdRecommendationPayload = payload;
+  }
+  updateFinProdMatchDecorations();
+  const candidateRows = payload.candidates || payload.recommendations || [];
+  const candidateById = new Map(candidateRows.map((row) => [row.production_dataset_id, row]));
+  const activeRow = currentPayload?.summary
+    ? {
+        production_dataset_id: state.selectedProductionDataset,
+        production_title: currentPayload.production_dataset?.title,
+        matched_periods: currentPayload.summary?.matched_periods || 0,
+        sample_pairs: currentPayload.summary?.sample_pairs || 0,
+        robustness: currentPayload.summary?.robustness || "insuficiente",
+      }
+    : candidateById.get(state.selectedProductionDataset);
+  if (activeRow) {
+    const band = finProdMatchBand(activeRow);
+    const status = document.createElement("div");
+    status.className = `finprod-match-status is-${band}`;
+    const strong = document.createElement("strong");
+    strong.textContent = `${finProdMatchTitle(band)} · ${finProdMatchLabel(activeRow)}`;
+    const small = document.createElement("small");
+    small.textContent = band === "none"
+      ? "Sem períodos comuns. Escolhe verde/âmbar."
+      : `${formatNumber(activeRow.sample_pairs || activeRow.matched_periods || 0)} pares válidos · robustez ${activeRow.robustness || "insuficiente"}.`;
+    status.append(strong, small);
+    finProdRecommendations.appendChild(status);
+  }
+
+  const legend = document.createElement("div");
+  legend.className = "finprod-match-legend";
+  [
+    ["good", "verde >=6 períodos"],
+    ["partial", "âmbar 3-5"],
+    ["weak", "laranja 1-2"],
+    ["none", "vermelho 0"],
+  ].forEach(([band, label]) => {
+    const item = document.createElement("span");
+    item.className = `is-${band}`;
+    item.textContent = label;
+    legend.appendChild(item);
+  });
+  finProdRecommendations.appendChild(legend);
+
+  const rows = payload.recommendations || candidateRows.filter((row) => Number(row.matched_periods || 0) > 0);
+  const currentMatched = currentPayload?.summary?.matched_periods ?? state.finProdPayload?.summary?.matched_periods ?? null;
+  const usefulRows = rows.filter((row) => {
+    const matched = Number(row.matched_periods || 0);
+    if (matched <= 0) return false;
+    if (currentMatched == null) return true;
+    return matched >= currentMatched || row.production_dataset_id === state.selectedProductionDataset;
+  });
+  if (!rows.length || !usefulRows.length) {
+    const note = document.createElement("div");
+    note.className = "finprod-recommendation-note is-warning";
+    note.textContent = payload.warning
+      || (rows.length ? "Não foram encontradas alternativas com períodos comuns nos candidatos testados." : "Sem alternativas temporais avaliáveis.");
+    finProdRecommendations.appendChild(note);
+    if (payload.warning) {
+      return;
+    }
+    return;
+  }
+  const title = document.createElement("div");
+  title.className = "finprod-recommendation-title";
+  const strong = document.createElement("strong");
+  strong.textContent = currentMatched != null && currentMatched < 6
+    ? "Alternativas temporais melhores"
+    : "Pares temporais candidatos";
+  const small = document.createElement("small");
+  small.textContent = "Ordenadas por períodos comuns.";
+  title.append(strong, small);
+  finProdRecommendations.appendChild(title);
+
+  const list = document.createElement("div");
+  list.className = "finprod-recommendation-list";
+  usefulRows.slice(0, 4).forEach((row) => {
+    const band = finProdMatchBand(row);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `finprod-recommendation-card is-${band} ${row.production_dataset_id === state.selectedProductionDataset ? "is-current" : ""}`;
+    const name = document.createElement("strong");
+    name.textContent = compactTitle(row.production_title || row.production_dataset_id, 68);
+    name.title = row.production_title || row.production_dataset_id;
+    const meta = document.createElement("small");
+    const range = row.financial_range?.start && row.production_range?.start
+      ? `fin. ${row.financial_range.start}-${row.financial_range.end}; prod. ${row.production_range.start}-${row.production_range.end}`
+      : "";
+    meta.textContent = `${formatNumber(row.matched_periods || 0)} períodos · ${formatNumber(row.sample_pairs || 0)} pares · ${row.robustness || "insuficiente"}`;
+    meta.title = range;
+    const badge = document.createElement("span");
+    badge.textContent = row.production_dataset_id === state.selectedProductionDataset ? "Atual" : finProdMatchLabel(row);
+    button.append(name, meta, badge);
+    button.addEventListener("click", () => {
+      if (row.production_dataset_id === state.selectedProductionDataset) return;
+      state.selectedProductionDataset = row.production_dataset_id;
+      finProdProductionDataset.value = row.production_dataset_id;
+      state.finProdPayload = null;
+      loadFinProdAnalytics().catch(showError);
+    });
+    list.appendChild(button);
+  });
+  finProdRecommendations.appendChild(list);
 }
 
 function renderFinProdChecks(checks) {
@@ -687,44 +1182,146 @@ function renderFinProdChecks(checks) {
 function renderFinProdTrend(payload) {
   const rows = payload.rows || [];
   const width = Math.max(560, finProdTrendChart.closest(".data-trend-wrap")?.clientWidth || 560);
-  const height = 250;
+  const height = 286;
   finProdTrendChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  finProdTrendChart.setAttribute("aria-label", "Tendência do custo unitário com escala, períodos e valores");
   if (rows.length < 2) {
-    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
-    empty.textContent = "Sem períodos suficientes para tendência.";
+    if (rows.length === 1 && Number.isFinite(Number(rows[0].unit_cost))) {
+      const x = width / 2;
+      const y = height / 2 - 12;
+      const axis = svgNode("g", {class: "finprod-chart-axis"});
+      axis.appendChild(svgNode("line", {x1: 74, y1: y + 58, x2: width - 34, y2: y + 58, class: "finprod-axis-line"}));
+      const title = svgNode("text", {x: 74, y: 24, class: "finprod-axis-title"});
+      title.textContent = "1 período comum · não há tendência";
+      axis.appendChild(title);
+      finProdTrendChart.appendChild(axis);
+      const group = svgNode("g", {class: "data-trend-point single-point", transform: `translate(${x}, ${y})`});
+      group.appendChild(svgNode("circle", {r: 5.5}));
+      const tooltip = svgNode("title");
+      tooltip.textContent = `${rows[0].period}: custo ${formatSmartNumber(rows[0].unit_cost)} · fin. ${formatSmartNumber(rows[0].financial_value)} · prod. ${formatSmartNumber(rows[0].production_value)}`;
+      group.appendChild(tooltip);
+      finProdTrendChart.appendChild(group);
+      const value = svgNode("text", {x, y: y - 16, "text-anchor": "middle", class: "finprod-point-label"});
+      value.textContent = formatSmartNumber(rows[0].unit_cost);
+      finProdTrendChart.appendChild(value);
+      const period = svgNode("text", {x, y: y + 78, "text-anchor": "middle", class: "finprod-period-label"});
+      period.textContent = rows[0].period;
+      finProdTrendChart.appendChild(period);
+      const note = svgNode("text", {x: 74, y: height - 18, class: "finprod-chart-note"});
+      note.textContent = "É um ponto observado, não uma linha de evolução.";
+      finProdTrendChart.appendChild(note);
+      return;
+    }
+    const diagnostics = payload.diagnostics || {};
+    const bestCandidate = (diagnostics.trend_candidates || [])[0];
+    const rangeText = bestCandidate?.financial_range?.start && bestCandidate?.production_range?.start
+      ? `Fin. ${bestCandidate.financial_range.start}–${bestCandidate.financial_range.end}; prod. ${bestCandidate.production_range.start}–${bestCandidate.production_range.end}.`
+      : "";
+    const lines = [
+      rows.length ? "Só existe 1 período comum." : "Sem períodos comuns suficientes.",
+      bestCandidate
+        ? `Melhor par: ${bestCandidate.shared_periods} período(s) comum(ns).`
+        : `Tendências detetadas: financeiro ${diagnostics.financial_trends || 0}, produção ${diagnostics.production_trends || 0}.`,
+      rangeText || "Escolhe datasets com eixo temporal compatível para desenhar tendência.",
+    ].filter(Boolean);
+    lines.forEach((line, index) => {
+      const empty = svgNode("text", {
+        x: width / 2,
+        y: (height / 2) - 18 + (index * 18),
+        "text-anchor": "middle",
+        fill: index === 0 ? "#102033" : "#657489",
+      });
+      empty.textContent = line;
+      finProdTrendChart.appendChild(empty);
+    });
+    return;
+  }
+  const validRows = rows
+    .map((row) => ({...row, unitCostNumber: Number(row.unit_cost)}))
+    .filter((row) => Number.isFinite(row.unitCostNumber));
+  const values = validRows.map((row) => row.unitCostNumber);
+  if (values.length < 2) {
+    const empty = svgNode("text", {
+      x: width / 2,
+      y: height / 2,
+      "text-anchor": "middle",
+      fill: "#657489",
+    });
+    empty.textContent = "Sem valores de custo unitário válidos para desenhar tendência.";
     finProdTrendChart.appendChild(empty);
     return;
   }
-  const values = rows.map((row) => Number(row.unit_cost)).filter((value) => Number.isFinite(value));
-  if (values.length < 2) return;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const left = 42;
-  const right = width - 22;
-  const top = 20;
-  const bottom = height - 34;
-  const step = (right - left) / Math.max(rows.length - 1, 1);
-  const coords = rows.map((row, idx) => ({
+  const left = 74;
+  const right = width - 34;
+  const top = 34;
+  const bottom = height - 58;
+  const step = (right - left) / Math.max(validRows.length - 1, 1);
+  const coords = validRows.map((row, idx) => ({
     x: left + (idx * step),
-    y: bottom - (((Number(row.unit_cost) - min) / span) * (bottom - top)),
+    y: bottom - (((row.unitCostNumber - min) / span) * (bottom - top)),
     period: row.period,
-    unitCost: row.unit_cost,
+    unitCost: row.unitCostNumber,
+    financial: row.financial_value,
+    production: row.production_value,
   }));
-  finProdTrendChart.appendChild(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom, class: "data-trend-axis"}));
-  finProdTrendChart.appendChild(svgNode("line", {x1: left, y1: top, x2: left, y2: bottom, class: "data-trend-axis"}));
+  const axis = svgNode("g", {class: "finprod-chart-axis"});
+  const ticks = [max, min + span / 2, min];
+  ticks.forEach((tick) => {
+    const y = bottom - (((tick - min) / span) * (bottom - top));
+    axis.appendChild(svgNode("line", {x1: left, y1: y, x2: right, y2: y, class: "finprod-grid-line"}));
+    const label = svgNode("text", {x: left - 10, y: y + 4, "text-anchor": "end"});
+    label.textContent = formatSmartNumber(tick);
+    axis.appendChild(label);
+  });
+  axis.appendChild(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom, class: "finprod-axis-line"}));
+  axis.appendChild(svgNode("line", {x1: left, y1: top, x2: left, y2: bottom, class: "finprod-axis-line"}));
+  const yTitle = svgNode("text", {x: left, y: 17, class: "finprod-axis-title"});
+  yTitle.textContent = "custo unitário";
+  axis.appendChild(yTitle);
+  const xTitle = svgNode("text", {x: right, y: height - 14, "text-anchor": "end", class: "finprod-axis-title"});
+  xTitle.textContent = "período";
+  axis.appendChild(xTitle);
+  finProdTrendChart.appendChild(axis);
   finProdTrendChart.appendChild(svgNode("path", {
     class: "data-trend-line",
     d: coords.map((coord, idx) => `${idx ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
   }));
-  coords.forEach((coord) => {
+  coords.forEach((coord, index) => {
     const group = svgNode("g", {class: "data-trend-point", transform: `translate(${coord.x}, ${coord.y})`});
     group.appendChild(svgNode("circle", {r: 3.8}));
     const title = svgNode("title");
-    title.textContent = `${coord.period}: ${formatDecimal(coord.unitCost, 2)}`;
+    title.textContent = `${coord.period}: custo ${formatSmartNumber(coord.unitCost)} · fin. ${formatSmartNumber(coord.financial)} · prod. ${formatSmartNumber(coord.production)}`;
     group.appendChild(title);
     finProdTrendChart.appendChild(group);
+    const shouldLabelPoint = coords.length <= 8 || index === 0 || index === coords.length - 1;
+    if (shouldLabelPoint) {
+      const valueLabel = svgNode("text", {
+        x: coord.x,
+        y: Math.max(14, coord.y - 10),
+        "text-anchor": "middle",
+        class: "finprod-point-label",
+      });
+      valueLabel.textContent = formatSmartNumber(coord.unitCost);
+      finProdTrendChart.appendChild(valueLabel);
+    }
+    const shouldLabelPeriod = coords.length <= 6 || index === 0 || index === coords.length - 1;
+    if (shouldLabelPeriod) {
+      const periodLabel = svgNode("text", {
+        x: coord.x,
+        y: bottom + 20,
+        "text-anchor": index === 0 ? "start" : index === coords.length - 1 ? "end" : "middle",
+        class: "finprod-period-label",
+      });
+      periodLabel.textContent = compactTitle(coord.period, 11);
+      finProdTrendChart.appendChild(periodLabel);
+    }
   });
+  const note = svgNode("text", {x: left, y: height - 14, class: "finprod-chart-note"});
+  note.textContent = `${formatNumber(values.length)} ponto(s) válidos · escala real do custo unitário`;
+  finProdTrendChart.appendChild(note);
 }
 
 function renderFinProdOutliers(rows) {
@@ -774,10 +1371,18 @@ function filteredCorrelations() {
   if (state._filterCache.key === key && state._filterCache.correlations) {
     return state._filterCache.correlations;
   }
-  const search = state.search.trim().toLowerCase();
+  const search = normalizeSearch(state.search).trim();
   const correlations = (payload.correlations || []).filter((item) => {
     if (state.confidence && item.confidence !== state.confidence) return false;
     if (state.kind && !(item.dimension_kinds || []).includes(state.kind)) return false;
+    if (state.localScope) {
+      const scopes = item.local_scopes || [];
+      if (state.localScope === "none") {
+        if (scopes.length) return false;
+      } else if (!scopes.includes(state.localScope)) {
+        return false;
+      }
+    }
     if (state.lowRiskOnly && (item.risk_flags || []).length) return false;
     if (!search) return true;
     const text = [
@@ -787,8 +1392,11 @@ function filteredCorrelations() {
       item.target_theme,
       ...(item.shared_fields || []),
       ...(item.dimension_kinds || []),
-    ].join(" ").toLowerCase();
-    return text.includes(search);
+      ...(item.local_scopes || []),
+      ...(item.institution_types || []),
+      ...(item.facet_tags || []),
+    ].join(" ");
+    return matchesExpandedSearch(text, search);
   });
   state._filterCache.key = key;
   state._filterCache.correlations = correlations;
@@ -803,11 +1411,11 @@ function filteredDimensions() {
   if (state._filterCache.key === key && state._filterCache.dimensions) {
     return state._filterCache.dimensions;
   }
-  const search = state.search.trim().toLowerCase();
+  const search = normalizeSearch(state.search).trim();
   const dimensions = (payload.dimensions || []).filter((item) => {
     if (state.kind && item.kind !== state.kind) return false;
     if (!search) return true;
-    return `${item.field} ${item.kind}`.toLowerCase().includes(search);
+    return matchesExpandedSearch(`${item.field} ${item.kind}`, search);
   });
   if (state._filterCache.key !== key) {
     state._filterCache.key = key;
@@ -815,6 +1423,20 @@ function filteredDimensions() {
   }
   state._filterCache.dimensions = dimensions;
   return dimensions;
+}
+
+function clearSemanticFilters() {
+  state.search = "";
+  state.kind = "";
+  state.localScope = "";
+  state.confidence = "";
+  state.lowRiskOnly = false;
+  analyticsSearch.value = "";
+  analyticsKind.value = "";
+  if (analyticsLocalScope) analyticsLocalScope.value = "";
+  analyticsConfidence.value = "";
+  invalidateFilterCache();
+  renderAll();
 }
 
 function renderSummary() {
@@ -863,6 +1485,47 @@ function resolveUlsRegion(text) {
   return null;
 }
 
+function healthGeoText(item) {
+  return normalizeSearchText([
+    item.source_title,
+    item.target_title,
+    item.source_theme,
+    item.target_theme,
+    ...(item.shared_fields || []),
+  ].join(" "));
+}
+
+function hasTerritorialFieldSignal(item, text = healthGeoText(item)) {
+  const kinds = item.dimension_kinds || [];
+  const scopes = item.local_scopes || [];
+  return kinds.includes("territorial")
+    || scopes.some((scope) => ["regiao", "uls", "hospital", "concelho", "entidade", "uf"].includes(scope))
+    || /\b(regiao|ars|geografica|geografico|localizacao|concelho|distrito|freguesia|municipio|territorio|uls|hospital|instituicao|entidade|aces|usf|ucsp|unidade funcional)\b/.test(text);
+}
+
+function hasRegionalFieldSignal(item, text = healthGeoText(item)) {
+  const scopes = item.local_scopes || [];
+  return scopes.includes("regiao") || /\b(regiao|ars|area dos csp|ars uls)\b/.test(text);
+}
+
+function hasLocalEntitySignal(item, text = healthGeoText(item)) {
+  const scopes = item.local_scopes || [];
+  return scopes.some((scope) => ["uls", "hospital", "uf", "entidade"].includes(scope))
+    || /\b(uls|unidade local de saude|hospital|centro hospitalar|aces|usf|ucsp|unidade funcional|instituicao|entidade)\b/.test(text);
+}
+
+function publicHealthScopeLabel(row) {
+  if (!row) return "Âmbito por validar";
+  if (row.geo.id === "nacional") return "Nacional · sem campo regional";
+  if (row.geo.id === "agregar") {
+    if (row.geo.resolution === "regional-field") return "Campo regional · valores por resolver";
+    if (row.geo.resolution === "territorial-field") return "Campo territorial · valores por resolver";
+    return "Entidade local · por corresponder";
+  }
+  if (row.geo.resolution === "mapped") return `${row.geo.label} · ${row.geo.matchedEntity}`;
+  return `${row.geo.label} · região inferida`;
+}
+
 function priorityDecision(score, row) {
   if ((row.risk || 0) >= 7 || row.viability < 4) return "Validar antes";
   if (score >= 72) return "Priorizar";
@@ -880,20 +1543,19 @@ function decisionTone(decision) {
 }
 
 function matchedGeo(item) {
-  const text = normalizeSearchText([
-    item.source_title,
-    item.target_title,
-    item.source_theme,
-    item.target_theme,
-    ...(item.shared_fields || []),
-    ...((item.public_health_model || {}).matched_areas || []),
-  ].join(" "));
+  const text = healthGeoText(item);
   const mapped = resolveUlsRegion(text);
   if (mapped) return mapped;
   const regional = PUBLIC_HEALTH_GEO.find((geo) => geo.match.test(text));
   if (regional) return {...regional, resolution: "direct", mappingConfidence: "media"};
-  if (/\b(uls|unidade local de saude|hospital|centro hospitalar|ch |epe|aces|usf|ucsp)\b/.test(text)) {
+  if (hasRegionalFieldSignal(item, text)) {
+    return {...PUBLIC_HEALTH_AGGREGATION_GEO, resolution: "regional-field", mappingConfidence: "media"};
+  }
+  if (hasLocalEntitySignal(item, text)) {
     return {...PUBLIC_HEALTH_AGGREGATION_GEO, resolution: "pending", mappingConfidence: "baixa"};
+  }
+  if (hasTerritorialFieldSignal(item, text)) {
+    return {...PUBLIC_HEALTH_AGGREGATION_GEO, resolution: "territorial-field", mappingConfidence: "baixa"};
   }
   return {...PUBLIC_HEALTH_NATIONAL_GEO, resolution: "national"};
 }
@@ -911,7 +1573,7 @@ function pnsAlignment(item) {
 }
 
 function publicHealthPriorityRows() {
-  const key = activeFilterKey() + "|" + state.publicHealthSort + "|" + (state.dataPayload?.generated_at || "");
+  const key = activeFilterKey() + "|" + state.publicHealthSort;
   if (state._filterCache.publicHealthKey === key && state._filterCache.publicHealthRows) {
     return state._filterCache.publicHealthRows;
   }
@@ -925,7 +1587,7 @@ function publicHealthPriorityRows() {
     const risk = Math.min(10, (item.risk_flags || []).length * 3 + (dimensionKinds.includes("medida") ? 2 : 0));
     const magnitude = Math.min(20, Number(item.semantic_score || 0) * 1.4 + Math.min(6, keyCount));
     const severity = Math.min(20, impactRank * 6 + pnsAlignment(item));
-    const trend = state.dataPayload?.trends?.length ? 8 : 4;
+    const trend = dimensionKinds.includes("temporal") ? 8 : 4;
     const inequity = Math.min(16, (dimensionKinds.includes("territorial") ? 6 : 0) + (dimensionKinds.includes("entidade") ? 4 : 0) + ((model.matched_areas || []).length * 2));
     const viability = Math.max(0, Math.min(18, likelihoodRank * 5 + (item.confidence === "alta" ? 3 : item.confidence === "media" ? 1 : 0) - risk));
     const alignment = Math.min(12, pnsAlignment(item) * 2);
@@ -973,7 +1635,8 @@ function publicHealthReason(row) {
   if (row.decision === "Validar antes") parts.push("validar risco, granularidade ou viabilidade");
   if (drivers.length) parts.push(`drivers: ${drivers.slice(0, 2).join(", ")}`);
   if (row.geo.resolution === "mapped") parts.push(`entidade reconhecida: ${row.geo.matchedEntity}`);
-  if (row.geo.id !== "nacional") parts.push(`área: ${row.geo.label}`);
+  if (row.geo.id === "agregar") parts.push(publicHealthScopeLabel(row).toLowerCase());
+  if (row.geo.id !== "nacional" && row.geo.id !== "agregar") parts.push(`área: ${row.geo.label}`);
   return parts.join(" · ");
 }
 
@@ -1027,7 +1690,14 @@ function renderTopOpportunities() {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem oportunidades para os filtros atuais.";
+    const message = document.createElement("span");
+    message.textContent = "Sem oportunidades para os filtros atuais.";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "ghost-button";
+    clear.textContent = "Limpar filtros";
+    clear.addEventListener("click", clearSemanticFilters);
+    empty.append(message, clear);
     topOpportunities.appendChild(empty);
     return;
   }
@@ -1043,7 +1713,7 @@ function renderTopOpportunities() {
     const title = document.createElement("strong");
     title.textContent = `${compactTitle(item.source_title, 34)} / ${compactTitle(item.target_title, 34)}`;
     const meta = document.createElement("small");
-    meta.textContent = `${likelihoodLabel(model.likelihood?.level || "baixa")} viabilidade · ${impactLabel(model.impact?.level || "baixo")} impacto · ${(item.risk_flags || []).length ? "validar risco" : "baixo risco"}`;
+    meta.textContent = `${viabilityLabel(model.likelihood?.level || "baixa")} · ${impactLabel(model.impact?.level || "baixo")} impacto · ${(item.risk_flags || []).length ? "validar risco" : "baixo risco"}`;
     const keys = document.createElement("em");
     keys.textContent = (item.join_recipe?.suggested_keys || item.shared_fields || []).slice(0, 3).join(", ") || "chave a validar";
     card.append(rank, title, meta, keys);
@@ -1060,11 +1730,29 @@ function renderTopOpportunities() {
 function renderDataAnalytics() {
   const payload = state.dataPayload;
   if (!payload) {
+    renderAnalyticsStory(dataStoryStrip, [
+      {
+        label: "Pergunta ativa",
+        value: "Que resultados existem no dataset?",
+        detail: "Escolhe um dataset e corre a análise para ver medidas, tendência e distribuição.",
+      },
+      {
+        label: "Leitura recomendada",
+        value: "Sem amostra ativa",
+        detail: "A página só deve interpretar dados reais carregados da API.",
+        tone: "warning",
+      },
+      {
+        label: "Próxima ação",
+        value: "Analisar dados",
+        detail: "Começa por dataset rico; usa dataset atual só quando queres auditar um caso específico.",
+      },
+    ]);
     dataAnalyticsMeta.textContent = "Escolhe um dataset para medir sinais reais.";
     dataStatRows.textContent = "-";
-    dataStatNumeric.textContent = "-";
-    dataStatCategorical.textContent = "-";
-    dataStatCorrelation.textContent = "-";
+    dataStatCompletenessValue.textContent = "-";
+    dataStatCounts.textContent = "-";
+    clearElement(dataStatSuitability);
     clearElement(dataInsightCards);
     clearElement(dataCorrelationList);
     clearElement(dataNumericProfiles);
@@ -1076,11 +1764,61 @@ function renderDataAnalytics() {
     return;
   }
 
-  dataAnalyticsMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos amostrados${payload.temporal_field ? ` · eixo temporal: ${payload.temporal_field}` : ""}.`;
+  const coverage = payload.sample?.coverage_ratio == null ? "" : ` · cobertura ${formatDecimal(payload.sample.coverage_ratio * 100, 1)}%`;
+  const warningCount = (payload.quality_warnings || []).length;
+  const fit = readinessInfo(payload);
+  const leadInsight = (payload.insights || [])[0];
+  const leadMetric = (payload.numeric_profiles || [])[0];
+  const leadTrend = (payload.trends || [])[0];
+  renderAnalyticsStory(dataStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "O que a amostra mostra?",
+      detail: `${formatNumber(payload.sample_size)} registos lidos${coverage}; ${leadMetric ? `indicador líder: ${compactTitle(leadMetric.label || leadMetric.field, 62)}` : "sem medida numérica dominante"}.`,
+    },
+    {
+      label: "Leitura recomendada",
+      value: leadInsight ? compactTitle(leadInsight.value, 46) : (leadMetric ? compactTitle(leadMetric.label || leadMetric.field, 46) : "Sem achado forte"),
+      detail: leadInsight?.detail || (leadTrend ? `Ler tendência de ${compactTitle(leadTrend.label || leadTrend.field, 58)}.` : "Usar dimensões/categorias; sem tendência temporal robusta."),
+      tone: fit.band || "rever",
+    },
+    {
+      label: "Travão",
+      value: fit.label || "Rever",
+      detail: firstWarning(payload.quality_warnings || [], readinessDetail(fit)),
+      tone: warningCount ? "warning" : "ok",
+    },
+    {
+      label: "Próxima ação",
+      value: leadTrend ? "Explorar tendência" : "Abrir dados-chave",
+      detail: leadTrend ? "Comparar períodos e confirmar se a amostra não está truncada." : "Ver medidas e dimensões com maior completude antes de cruzar.",
+    },
+  ]);
+  dataAnalyticsMeta.textContent = `${payload.title} · n=${formatNumber(payload.sample_size)}${coverage} · fit ${fit.label || "Rever"}${payload.temporal_field ? ` · tempo: ${payload.temporal_field}` : ""}${warningCount ? ` · ${warningCount} aviso(s)` : ""}.`;
+
   dataStatRows.textContent = formatNumber(payload.sample_size);
-  dataStatNumeric.textContent = formatNumber((payload.numeric_profiles || []).length);
-  dataStatCategorical.textContent = formatNumber((payload.categorical_profiles || []).length);
-  dataStatCorrelation.textContent = payload.correlations?.[0] ? formatDecimal(payload.correlations[0].correlation, 2) : "-";
+
+  const numericProfiles = payload.numeric_profiles || [];
+  const categoricalProfiles = payload.categorical_profiles || [];
+  const allProfiles = [...numericProfiles, ...categoricalProfiles];
+  const totalRecords = payload.sample_size || 1;
+  const avgCompleteness = allProfiles.length > 0
+    ? (allProfiles.reduce((acc, p) => acc + (1 - (p.missing || 0) / totalRecords), 0) / allProfiles.length)
+    : 0;
+
+  dataStatCompletenessValue.textContent = `${formatDecimal(avgCompleteness * 100, 1)}%`;
+  if (dataStatCompletenessBar) {
+    dataStatCompletenessBar.style.width = `${avgCompleteness * 100}%`;
+  }
+
+  dataStatCounts.textContent = `${numericProfiles.length} med. / ${categoricalProfiles.length} dim.`;
+
+  clearElement(dataStatSuitability);
+  const suitabilityBadge = document.createElement("div");
+  suitabilityBadge.className = `suitability-badge is-${fit.band || "fragil"}`;
+  suitabilityBadge.textContent = fit.label || "Frágil";
+  dataStatSuitability.appendChild(suitabilityBadge);
+
   renderDataInsights(payload);
   renderDataCorrelations(payload);
   renderDataTrend(payload);
@@ -1093,50 +1831,166 @@ function renderDataAnalytics() {
 function renderDataInsights(payload) {
   clearElement(dataInsightCards);
   const insights = payload.insights || [];
-  if (!insights.length) {
+  const warnings = payload.quality_warnings || [];
+
+  function addCard({label, value, detail, tone = ""}) {
+    const card = document.createElement("div");
+    card.className = `data-insight-card ${tone}`.trim();
+    const labelEl = document.createElement("span");
+    labelEl.textContent = label;
+    const valueEl = document.createElement("strong");
+    valueEl.textContent = value;
+    valueEl.title = value;
+    const detailEl = document.createElement("small");
+    detailEl.textContent = detail;
+    card.append(labelEl, valueEl, detailEl);
+    dataInsightCards.appendChild(card);
+  }
+
+  const fit = readinessInfo(payload);
+  addCard({
+    label: "Fit da amostra",
+    value: `${fit.label || "Rever"} ${fit.score ?? 0}`,
+    detail: readinessDetail(fit),
+    tone: `quality-${fit.band || "fragil"}`,
+  });
+
+  if (!insights.length && !warnings.length) {
     const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "A amostra ainda não tem sinais estatísticos fortes.";
+    empty.className = "data-insight-card";
+    const label = document.createElement("span");
+    label.textContent = "Sinais";
+    const value = document.createElement("strong");
+    value.textContent = "baixo sinal";
+    const detail = document.createElement("small");
+    detail.textContent = "A amostra ainda não mostra associações fortes. Validar denominadores antes de concluir.";
+    empty.append(label, value, detail);
     dataInsightCards.appendChild(empty);
     return;
   }
-  insights.forEach((insight) => {
-    const card = document.createElement("div");
-    card.className = "data-insight-card";
-    const label = document.createElement("span");
-    label.textContent = insight.label;
-    const value = document.createElement("strong");
-    value.textContent = insight.value;
-    const detail = document.createElement("small");
-    detail.textContent = insight.detail;
-    card.append(label, value, detail);
-    dataInsightCards.appendChild(card);
+
+  if (warnings.length) {
+    addCard({
+      label: "Atenção",
+      value: `${warnings.length} aviso(s)`,
+      detail: warnings.slice(0, 2).join(" · "),
+      tone: "quality-rever",
+    });
+  }
+
+  const remainingSlots = Math.max(1, 4 - dataInsightCards.children.length);
+  insights.slice(0, remainingSlots).forEach((insight) => {
+    addCard({
+      label: insight.label,
+      value: insight.value,
+      detail: insight.detail,
+    });
   });
+}
+
+function correlationDirectionLabel(value) {
+  const magnitude = Math.abs(Number(value || 0));
+  const direction = Number(value || 0) >= 0 ? "positiva" : "negativa";
+  if (magnitude >= 0.9) return `${direction} muito forte`;
+  if (magnitude >= 0.7) return `${direction} forte`;
+  if (magnitude >= 0.5) return `${direction} moderada`;
+  return `${direction} fraca`;
+}
+
+function createCorrelationMetric(label, value) {
+  const metric = document.createElement("span");
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const small = document.createElement("small");
+  small.textContent = label;
+  metric.append(strong, small);
+  return metric;
 }
 
 function renderDataCorrelations(payload) {
   clearElement(dataCorrelationList);
   const rows = payload.correlations || [];
+  const exclusions = payload.correlation_exclusions || [];
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem correlações fortes nesta amostra.";
+    const title = document.createElement("strong");
+    title.textContent = "Sem associações independentes fortes.";
+    const detail = document.createElement("small");
+    detail.textContent = exclusions.length
+      ? `${formatNumber(exclusions.length)} par(es) derivado(s) foram ocultados: percentagens complementares, taxa vs total ou parte-total.`
+      : "A amostra não tem pares numéricos suficientemente robustos depois das validações.";
+    empty.append(title, detail);
     dataCorrelationList.appendChild(empty);
     return;
   }
   rows.slice(0, 10).forEach((row) => {
-    const item = document.createElement("div");
-    item.className = row.correlation >= 0 ? "data-correlation-row is-positive" : "data-correlation-row is-negative";
-    const label = document.createElement("span");
-    label.textContent = `${compactTitle(row.label_a, 28)} / ${compactTitle(row.label_b, 28)}`;
-    label.title = `${safeText(row.label_a)} / ${safeText(row.label_b)}`;
-    const bar = document.createElement("i");
-    bar.style.width = `${Math.max(4, row.abs_correlation * 100)}%`;
-    const value = document.createElement("strong");
-    value.textContent = `${formatDecimal(row.correlation, 2)} · ${formatNumber(row.samples)}`;
-    item.append(label, bar, value);
+    const positive = Number(row.correlation || 0) >= 0;
+    const item = document.createElement("article");
+    item.className = positive ? "data-correlation-card is-positive" : "data-correlation-card is-negative";
+
+    const head = document.createElement("div");
+    head.className = "data-correlation-head";
+    const direction = document.createElement("strong");
+    direction.textContent = correlationDirectionLabel(row.correlation);
+    const sample = document.createElement("span");
+    sample.textContent = `${formatNumber(row.samples)} pares`;
+    head.append(direction, sample);
+
+    const pair = document.createElement("div");
+    pair.className = "data-correlation-pair";
+    [
+      ["Medida A", row.label_a],
+      ["Medida B", row.label_b],
+    ].forEach(([labelText, valueText]) => {
+      const block = document.createElement("div");
+      const label = document.createElement("span");
+      label.textContent = labelText;
+      const value = document.createElement("strong");
+      value.textContent = safeText(valueText);
+      value.title = safeText(valueText);
+      block.append(label, value);
+      pair.appendChild(block);
+    });
+
+    const meter = document.createElement("div");
+    meter.className = "data-correlation-meter";
+    const center = document.createElement("i");
+    center.className = "data-correlation-zero";
+    const fill = document.createElement("b");
+    fill.style.width = `${Math.max(3, Math.min(50, Math.abs(Number(row.correlation || 0)) * 50))}%`;
+    if (positive) {
+      fill.style.left = "50%";
+    } else {
+      fill.style.right = "50%";
+    }
+    meter.append(fill, center);
+
+    const metrics = document.createElement("div");
+    metrics.className = "data-correlation-metrics";
+    metrics.append(
+      createCorrelationMetric("Pearson", formatDecimal(row.correlation, 2)),
+      createCorrelationMetric("Spearman", row.spearman == null ? "-" : formatDecimal(row.spearman, 2)),
+      createCorrelationMetric("Amostra", formatNumber(row.samples)),
+    );
+
+    const note = document.createElement("small");
+    note.className = "data-correlation-note";
+    const warnings = row.warnings || [];
+    note.textContent = warnings.length
+      ? `Validar: ${warnings.slice(0, 2).join(" · ")}`
+      : "Associação estatística; não implica causalidade.";
+
+    item.append(head, pair, meter, metrics, note);
     dataCorrelationList.appendChild(item);
   });
+  if (exclusions.length) {
+    const note = document.createElement("div");
+    note.className = "data-correlation-filter-note";
+    const firstReason = safeText(exclusions[0].reason || "pares derivados");
+    note.textContent = `${formatNumber(exclusions.length)} par(es) derivado(s) ocultado(s). Principal motivo: ${firstReason}.`;
+    dataCorrelationList.appendChild(note);
+  }
 }
 
 function renderFeatureImportance(payload) {
@@ -1228,7 +2082,8 @@ function renderPcaChart(payload) {
   }
   const pc1 = Math.round((pca.explained_variance?.pc1 || 0) * 100);
   const pc2 = Math.round((pca.explained_variance?.pc2 || 0) * 100);
-  dataPcaMeta.textContent = `PC1 explica ${pc1}% · PC2 explica ${pc2}% da variação padronizada.`;
+  const pcaWarnings = (pca.warnings || []).length ? ` · avisos: ${(pca.warnings || []).slice(0, 2).join(" · ")}` : "";
+  dataPcaMeta.textContent = `PC1 explica ${pc1}% · PC2 explica ${pc2}% da variação padronizada${pcaWarnings}.`;
 
   const left = 46;
   const right = width - 28;
@@ -1281,11 +2136,12 @@ function renderNumericProfiles(payload) {
   }
   rows.forEach((row) => {
     const item = document.createElement("div");
-    item.className = "data-profile-row";
+    item.className = row.semantic_role === "numeric_distribution" ? "data-profile-row data-profile-numeric" : "data-profile-row";
     const title = document.createElement("strong");
     title.textContent = row.label || row.field;
     const meta = document.createElement("small");
-    meta.textContent = `${formatNumber(row.count)} valores · ${formatNumber(row.missing)} em falta`;
+    const role = measureRoleLabel(row.measure_role);
+    meta.textContent = `${formatNumber(row.count)} valores · ${formatNumber(row.missing)} em falta · ${role}`;
     const stats = document.createElement("div");
     stats.className = "data-profile-stats";
     [
@@ -1293,6 +2149,7 @@ function renderNumericProfiles(payload) {
       ["min", formatDecimal(row.min, 2)],
       ["max", formatDecimal(row.max, 2)],
       ["desvio", formatDecimal(row.stddev, 2)],
+      ["CV", row.avg ? formatDecimal((row.stddev / row.avg) * 100, 1) + "%" : "-"],
     ].forEach(([label, value]) => {
       const chip = document.createElement("span");
       chip.textContent = `${label}: ${formatDisplayValue(value)}`;
@@ -1301,6 +2158,111 @@ function renderNumericProfiles(payload) {
     item.append(title, meta, stats);
     dataNumericProfiles.appendChild(item);
   });
+}
+
+
+function dimensionContext(row, payload) {
+  const sampleSize = payload.sample_size || row.count || 0;
+  const total = Math.max(1, (row.count || 0) + (row.missing || 0), sampleSize || 1);
+  const coverage = Math.max(0, Math.min(1, (row.count || 0) / total));
+  const uniqueRatio = (row.unique || 0) / Math.max(1, row.count || sampleSize || 1);
+  const text = normalizeSearchText([row.field, row.label, row.semantic_role].filter(Boolean).join(" "));
+  const baseWarning = coverage < 0.85
+    ? `Cobertura ${formatDecimal(coverage * 100, 1)}%; validar nulos antes de segmentar.`
+    : `Cobertura ${formatDecimal(coverage * 100, 1)}%; validar fonte e granularidade.`;
+
+  if (row.semantic_role === "geolocation" || /geo|localizacao|localização|latitude|longitude|coordenad/.test(text)) {
+    return {
+      label: "Território",
+      value: "Usar para mapa, não para ranking nominal",
+      detail: "Converter coordenadas para região, ULS, concelho ou ponto validado antes de comparar resultados.",
+      warning: baseWarning,
+      tone: "warning",
+    };
+  }
+  if (row.semantic_role === "numeric_distribution") {
+    return {
+      label: "Medida contínua",
+      value: "Não tratar como categoria",
+      detail: "Ler distribuição, outliers e tendência; não comparar valores únicos como grupos.",
+      warning: baseWarning,
+      tone: "warning",
+    };
+  }
+  if (/periodo|período|ano|mes|mês|data|trimestre|semana|dia/.test(text)) {
+    return {
+      label: "Tempo",
+      value: "Serve para tendência e sazonalidade",
+      detail: "Comparar períodos equivalentes e confirmar se há meses/anos em falta antes de concluir evolução.",
+      warning: baseWarning,
+      tone: coverage >= 0.9 ? "ok" : "warning",
+    };
+  }
+  if (/uls|hospital|instituicao|instituição|entidade|ars|aces|usf|ucsp|unidade/.test(text)) {
+    return {
+      label: "Entidade",
+      value: "Serve para benchmarking cauteloso",
+      detail: "Comparar apenas entidades com a mesma função, período e denominador operacional.",
+      warning: baseWarning,
+      tone: coverage >= 0.9 ? "ok" : "warning",
+    };
+  }
+  if (/sexo|genero|género|idade|grupo etario|grupo etário|populacao|população|utente|inscrito/.test(text)) {
+    return {
+      label: "População",
+      value: "Serve para estratificar resultados",
+      detail: "Usar com denominador explícito e evitar conclusões sobre grupos pequenos ou incompletos.",
+      warning: baseWarning,
+      tone: coverage >= 0.9 ? "ok" : "warning",
+    };
+  }
+  if ((row.unique || 0) <= 1) {
+    return {
+      label: "Sem variação",
+      value: "Pouco útil para segmentar",
+      detail: "A dimensão não separa grupos nesta amostra; usar só como metadado de contexto.",
+      warning: baseWarning,
+      tone: "danger",
+    };
+  }
+  if (uniqueRatio > 0.85 && (row.unique || 0) > 20) {
+    return {
+      label: "Identificador provável",
+      value: "Não usar como categoria analítica",
+      detail: "Muitos valores únicos sugerem identificador, descrição livre ou granularidade demasiado fina.",
+      warning: baseWarning,
+      tone: "danger",
+    };
+  }
+  return {
+    label: "Categoria operacional",
+    value: "Serve para comparar grupos",
+    detail: "Ler a distribuição como segmentação do dataset, não como resultado por si só.",
+    warning: baseWarning,
+    tone: coverage >= 0.9 ? "ok" : "warning",
+  };
+}
+
+function appendDimensionContext(container, context) {
+  const panel = document.createElement("div");
+  panel.className = `data-dimension-context is-${context.tone}`;
+  [
+    ["Papel", context.label],
+    ["Uso", context.value],
+    ["Validação", context.warning],
+  ].forEach(([labelText, valueText]) => {
+    const block = document.createElement("span");
+    const label = document.createElement("b");
+    label.textContent = labelText;
+    const value = document.createElement("small");
+    value.textContent = valueText;
+    block.append(label, value);
+    panel.appendChild(block);
+  });
+  const detail = document.createElement("p");
+  detail.textContent = context.detail;
+  panel.appendChild(detail);
+  container.appendChild(panel);
 }
 
 function renderCategoricalProfiles(payload) {
@@ -1315,27 +2277,70 @@ function renderCategoricalProfiles(payload) {
   }
   rows.forEach((row) => {
     const item = document.createElement("div");
-    item.className = "data-profile-row";
+    item.className = row.semantic_role === "geolocation" ? "data-profile-row data-profile-geo" : "data-profile-row";
     const title = document.createElement("strong");
     title.textContent = row.label || row.field;
     const meta = document.createElement("small");
-    meta.textContent = `${formatNumber(row.unique)} categorias · ${formatNumber(row.missing)} em falta`;
+    meta.textContent = row.semantic_role === "geolocation"
+      ? `${formatNumber(row.unique)} ponto(s) · ${formatNumber(row.missing)} em falta`
+      : `${formatNumber(row.unique)} categorias · ${formatNumber(row.missing)} em falta`;
+    const context = dimensionContext(row, payload);
     const values = document.createElement("div");
-    values.className = "data-category-values";
-    const max = Math.max(...(row.top_values || []).map((value) => value.count), 1);
-    (row.top_values || []).slice(0, 5).forEach((value) => {
-      const valueRow = document.createElement("span");
-      const name = document.createElement("b");
-      name.textContent = compactTitle(formatDisplayValue(value.value), 36);
-      name.title = formatDisplayValue(value.value);
-      const bar = document.createElement("i");
-      bar.style.width = `${Math.max(4, (value.count / max) * 100)}%`;
-      const count = document.createElement("em");
-      count.textContent = formatNumber(value.count);
-      valueRow.append(name, bar, count);
-      values.appendChild(valueRow);
-    });
-    item.append(title, meta, values);
+    if (row.semantic_role === "geolocation") {
+      values.className = "data-geo-summary";
+      const bounds = row.bounds || {};
+      const center = row.center || {};
+      [
+        ["Centro", `${formatDecimal(center.lat, 4)}, ${formatDecimal(center.lon, 4)}`],
+        ["Latitude", `${formatDecimal(bounds.lat_min, 4)} a ${formatDecimal(bounds.lat_max, 4)}`],
+        ["Longitude", `${formatDecimal(bounds.lon_min, 4)} a ${formatDecimal(bounds.lon_max, 4)}`],
+      ].forEach(([label, value]) => {
+        const chip = document.createElement("span");
+        const strong = document.createElement("strong");
+        strong.textContent = label;
+        const small = document.createElement("small");
+        small.textContent = value;
+        chip.append(strong, small);
+        values.appendChild(chip);
+      });
+      const note = document.createElement("p");
+      note.textContent = "Coordenadas tratadas como dimensão espacial; não são categorias para ranking.";
+      values.appendChild(note);
+    } else if (row.semantic_role === "numeric_distribution") {
+      values.className = "data-numeric-summary";
+      const summary = row.numeric_summary || row;
+      [
+        ["min", formatDecimal(summary.min, 2)],
+        ["mediana", formatDecimal(summary.median, 2)],
+        ["max", formatDecimal(summary.max, 2)],
+        ["média", formatDecimal(summary.avg, 2)],
+      ].forEach(([label, value]) => {
+        const chip = document.createElement("span");
+        chip.textContent = `${label}: ${value}`;
+        values.appendChild(chip);
+      });
+      const note = document.createElement("p");
+      note.textContent = "Campo decimal mostrado como distribuição; não é uma categoria nominal.";
+      values.appendChild(note);
+    } else {
+      values.className = "data-category-values";
+      const max = Math.max(...(row.top_values || []).map((value) => value.count), 1);
+      (row.top_values || []).slice(0, 5).forEach((value) => {
+        const valueRow = document.createElement("span");
+        const name = document.createElement("b");
+        name.textContent = compactTitle(formatDisplayValue(value.value), 36);
+        name.title = formatDisplayValue(value.value);
+        const bar = document.createElement("i");
+        bar.style.width = `${Math.max(4, (value.count / max) * 100)}%`;
+        const count = document.createElement("em");
+        count.textContent = formatNumber(value.count);
+        valueRow.append(name, bar, count);
+        values.appendChild(valueRow);
+      });
+    }
+    item.append(title, meta);
+    appendDimensionContext(item, context);
+    item.appendChild(values);
     dataCategoricalProfiles.appendChild(item);
   });
 }
@@ -1472,6 +2477,60 @@ function predictiveIndicatorCandidates(payload) {
     .sort((a, b) => (b.eligibility.score - a.eligibility.score) || (b.points - a.points));
 }
 
+function predictiveOpportunityDiagnostics(trend, payload = null) {
+  const points = trendPoints(trend);
+  const eligibility = predictiveEligibility(trend, payload);
+  const sampleSize = payload?.sample_size || 0;
+  const recordsPerPeriod = points.length ? sampleSize / points.length : 0;
+  const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
+  const uniqueValues = new Set(values.map((value) => formatDecimal(value, 6))).size;
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const mean = values.length ? values.reduce((acc, value) => acc + value, 0) / values.length : 0;
+  const relativeSpan = values.length ? Math.abs((max - min) / (Math.abs(mean) || 1)) : 0;
+  const gaps = [];
+  if (points.length < 2) gaps.push("sem pontos temporais comparáveis");
+  if (points.length >= 2 && points.length < 4) gaps.push(`faltam ${4 - points.length} período(s) para projeção curta`);
+  if (points.length > 50) gaps.push("série longa exige agregação ou sazonalidade");
+  if (sampleSize && recordsPerPeriod < 8) gaps.push("baixo volume médio por período");
+  if (values.length && uniqueValues < 3) gaps.push("valores quase constantes");
+  if (values.length && relativeSpan < 0.015) gaps.push("variação relativa baixa");
+  if (!gaps.length && eligibility.ok) gaps.push("apta para projeção exploratória curta");
+  const score = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        Math.min(34, points.length * 8)
+        + Math.min(22, recordsPerPeriod || sampleSize / 6)
+        + Math.min(22, relativeSpan * 180)
+        + Math.min(12, uniqueValues * 3)
+        + (eligibility.ok ? 10 : 0)
+        - (points.length > 50 ? 16 : 0)
+      )
+    )
+  );
+  return {
+    trend,
+    eligibility,
+    label: trend?.label || "Série temporal",
+    points: points.length,
+    score,
+    recordsPerPeriod,
+    relativeSpan,
+    gaps,
+    mode: eligibility.ok ? "projetar" : points.length >= 2 ? "rever tendência descritiva" : "enriquecer dados temporais",
+  };
+}
+
+function predictiveNearMissCandidates(payload, limit = 5) {
+  return (payload?.trends || [])
+    .filter((trend) => (trend.points || []).length)
+    .map((trend) => predictiveOpportunityDiagnostics(trend, payload))
+    .sort((a, b) => (b.score - a.score) || (b.points - a.points))
+    .slice(0, limit);
+}
+
 function predictiveDatasetCandidatesFromCatalog() {
   const datasets = state.payload?.datasets || [];
   return datasets
@@ -1510,9 +2569,74 @@ function predictiveDatasetCandidatesFromCatalog() {
     .slice(0, 10);
 }
 
+function predictiveFitBandLabel(band) {
+  return {
+    ready: "apta",
+    usable: "usável",
+    near: "quase",
+    blocked: "sem base",
+  }[band] || "por avaliar";
+}
+
+function predictiveFitBandTitle(row = {}) {
+  const band = row.band || "unknown";
+  const eligible = Number(row.eligible_count || 0);
+  const near = Number(row.near_miss_count || 0);
+  if (band === "ready") return `${formatNumber(eligible)} série(s) apta(s)`;
+  if (band === "usable") return `${formatNumber(eligible)} série(s) usável(eis)`;
+  if (band === "near") return `${formatNumber(near)} quase apta(s)`;
+  if (band === "blocked") return "sem análise preditiva";
+  return "por avaliar";
+}
+
+function predictiveFitDetail(row = {}) {
+  const parts = [];
+  if (row.best_indicator) parts.push(compactTitle(row.best_indicator, 70));
+  if (row.best_points) parts.push(`${formatNumber(row.best_points)} períodos`);
+  if (row.best_score) parts.push(`score ${formatDecimal(row.best_score, 0)}`);
+  if (!parts.length && row.reason) parts.push(row.reason);
+  const gaps = (row.gaps || []).filter(Boolean).slice(0, 2).join(" · ");
+  return `${parts.join(" · ") || "sem série temporal avaliada"}${gaps ? ` · ${gaps}` : ""}`;
+}
+
+function predictiveFitRows() {
+  return state.predictiveRecommendationPayload?.recommendations || [];
+}
+
+function activatePredictiveDataset(datasetId) {
+  if (!datasetId || datasetId === state.selectedDataDataset) return;
+  activePredictiveRecommendationRequest += 1;
+  state.selectedDataDataset = datasetId;
+  state.predictiveRecommendationPayload = null;
+  state._predictiveRecommendationKey = "";
+  if (dataDatasetSelect) dataDatasetSelect.value = datasetId;
+  state.datasetMode = "manual";
+  renderDatasetMode();
+  loadDataAnalytics().then(() => setActiveTab("predictive")).catch(showDataError);
+}
+
 function renderPredictiveDatasetCandidates() {
   if (!predictiveDatasetCandidates) return;
   clearElement(predictiveDatasetCandidates);
+  const evaluatedRows = predictiveFitRows();
+  if (evaluatedRows.length) {
+    evaluatedRows.slice(0, 10).forEach((row) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `predictive-dataset-card is-${row.band || "unknown"} ${row.dataset_id === state.selectedDataDataset ? "is-active" : ""}`.trim();
+      const title = document.createElement("strong");
+      title.textContent = compactTitle(row.title || row.dataset_id, 70);
+      title.title = row.title || row.dataset_id;
+      const meta = document.createElement("small");
+      meta.textContent = `${row.mega_theme || "Catálogo"} · ${predictiveFitBandTitle(row)} · ${predictiveFitDetail(row)}`;
+      const action = document.createElement("span");
+      action.textContent = row.dataset_id === state.selectedDataDataset ? "em análise" : predictiveFitBandLabel(row.band);
+      button.append(title, meta, action);
+      button.addEventListener("click", () => activatePredictiveDataset(row.dataset_id));
+      predictiveDatasetCandidates.appendChild(button);
+    });
+    return;
+  }
   const rows = predictiveDatasetCandidatesFromCatalog();
   if (!rows.length) {
     const empty = document.createElement("div");
@@ -1533,13 +2657,7 @@ function renderPredictiveDatasetCandidates() {
     const action = document.createElement("span");
     action.textContent = dataset.dataset_id === state.selectedDataDataset ? "em análise" : "analisar";
     button.append(title, meta, action);
-    button.addEventListener("click", () => {
-      state.selectedDataDataset = dataset.dataset_id;
-      if (dataDatasetSelect) dataDatasetSelect.value = dataset.dataset_id;
-      state.datasetMode = "manual";
-      renderDatasetMode();
-      loadDataAnalytics().then(() => setActiveTab("predictive")).catch(showDataError);
-    });
+    button.addEventListener("click", () => activatePredictiveDataset(dataset.dataset_id));
     predictiveDatasetCandidates.appendChild(button);
   });
 }
@@ -1611,6 +2729,164 @@ function renderPredictiveIndicatorFilter(candidates) {
   predictiveIndicatorFilter.value = state.selectedPredictiveIndicator;
 }
 
+async function loadPredictiveRecommendations() {
+  if (!state.selectedDataDataset || !predictiveFitGuide) return;
+  const key = `${state.selectedDataDataset}|${state.dataLimit}`;
+  const requestId = ++activePredictiveRecommendationRequest;
+  state._predictiveRecommendationKey = key;
+  renderPredictiveFitGuide({loading: true});
+  const payload = await fetchJson(
+    `/api/predictive/recommendations?dataset_id=${encodeURIComponent(state.selectedDataDataset)}&limit=${state.dataLimit}&candidate_limit=8`,
+    {timeoutMs: 52000},
+  );
+  if (requestId !== activePredictiveRecommendationRequest || state._predictiveRecommendationKey !== key) return;
+  state.predictiveRecommendationPayload = payload;
+  renderPredictiveFitGuide(payload);
+  renderPredictiveDatasetCandidates();
+}
+
+function renderPredictiveFitGuide(payload = state.predictiveRecommendationPayload) {
+  if (!predictiveFitGuide) return;
+  clearElement(predictiveFitGuide);
+  if (payload?.loading) {
+    const note = document.createElement("div");
+    note.className = "predictive-fit-note";
+    note.textContent = "A avaliar datasets com séries temporais realmente utilizáveis...";
+    predictiveFitGuide.appendChild(note);
+    return;
+  }
+  const rows = payload?.recommendations || [];
+  if (!rows.length) {
+    const note = document.createElement("div");
+    note.className = "predictive-fit-note is-muted";
+    note.textContent = "Sem matriz de viabilidade carregada. A página avalia primeiro o dataset ativo e depois sugere alternativas temporais.";
+    predictiveFitGuide.appendChild(note);
+    return;
+  }
+  const active = payload.active || rows.find((row) => row.dataset_id === state.selectedDataDataset);
+  const summary = document.createElement("div");
+  summary.className = `predictive-fit-summary is-${active?.band || "unknown"}`;
+  const strong = document.createElement("strong");
+  strong.textContent = active
+    ? `Dataset atual: ${predictiveFitBandTitle(active)}`
+    : "Dataset atual ainda não avaliado";
+  const small = document.createElement("small");
+  small.textContent = active
+    ? predictiveFitDetail(active)
+    : "Escolhe um dataset ou usa uma alternativa apta abaixo.";
+  summary.append(strong, small);
+
+  const legend = document.createElement("div");
+  legend.className = "predictive-fit-legend";
+  [
+    ["ready", "apta"],
+    ["usable", "usável"],
+    ["near", "quase"],
+    ["blocked", "sem base"],
+  ].forEach(([band, label]) => {
+    const item = document.createElement("span");
+    item.className = `is-${band}`;
+    item.textContent = label;
+    legend.appendChild(item);
+  });
+
+  const list = document.createElement("div");
+  list.className = "predictive-fit-list";
+  rows.slice(0, 6).forEach((row) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `predictive-fit-card is-${row.band || "unknown"} ${row.dataset_id === state.selectedDataDataset ? "is-active" : ""}`.trim();
+    const title = document.createElement("strong");
+    title.textContent = compactTitle(row.title || row.dataset_id, 74);
+    title.title = row.title || row.dataset_id;
+    const meta = document.createElement("small");
+    meta.textContent = `${predictiveFitBandTitle(row)} · ${predictiveFitDetail(row)}`;
+    const action = document.createElement("span");
+    action.textContent = row.dataset_id === state.selectedDataDataset ? "atual" : predictiveFitBandLabel(row.band);
+    button.append(title, meta, action);
+    button.addEventListener("click", () => activatePredictiveDataset(row.dataset_id));
+    list.appendChild(button);
+  });
+
+  predictiveFitGuide.append(summary, legend, list);
+}
+
+function renderPredictiveClosestOpportunities(payload, forecast, eligibleCandidates) {
+  if (!predictiveClosestOpportunities) return;
+  clearElement(predictiveClosestOpportunities);
+  if (!payload) return;
+  const nearMisses = predictiveNearMissCandidates(payload).filter((row) => !row.eligibility.ok);
+  const shouldShowFallback = !forecast?.available || !eligibleCandidates.length;
+  if (!shouldShowFallback && !nearMisses.length) return;
+
+  const summary = document.createElement("div");
+  summary.className = `predictive-opportunity-summary ${forecast?.available ? "is-secondary" : "is-warning"}`;
+  const title = document.createElement("strong");
+  title.textContent = forecast?.available ? "Oportunidades de robustez" : "Sem dataset fit: usar melhor oportunidade próxima";
+  const detail = document.createElement("span");
+  detail.textContent = forecast?.available
+    ? "Mesmo com projeção ativa, valide denominadores, cobertura temporal e valores em falta antes de decidir."
+    : "A página não força uma previsão. Mostra séries quase aptas ou alternativas do catálogo para orientar a próxima análise.";
+  summary.append(title, detail);
+  predictiveClosestOpportunities.appendChild(summary);
+
+  const rows = nearMisses.slice(0, 3);
+  if (!rows.length) {
+    const catalogRows = predictiveDatasetCandidatesFromCatalog().slice(0, 3);
+    if (!catalogRows.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state compact";
+      empty.textContent = "Sem séries temporais nem alternativas fortes no catálogo atual. Recolhe mais períodos ou escolhe outro âmbito.";
+      predictiveClosestOpportunities.appendChild(empty);
+      return;
+    }
+    const list = document.createElement("div");
+    list.className = "predictive-opportunity-list";
+    catalogRows.forEach(({dataset, score, reasons}) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "predictive-opportunity-card";
+      const strong = document.createElement("strong");
+      strong.textContent = compactTitle(dataset.title || dataset.dataset_id, 76);
+      strong.title = dataset.title || dataset.dataset_id;
+      const small = document.createElement("small");
+      small.textContent = `Dataset alternativo · ${reasons.slice(0, 3).join(" · ")} · score ${formatDecimal(score, 0)}`;
+      const action = document.createElement("span");
+      action.textContent = "analisar dataset";
+      button.append(strong, small, action);
+      button.addEventListener("click", () => activatePredictiveDataset(dataset.dataset_id));
+      list.appendChild(button);
+    });
+    predictiveClosestOpportunities.appendChild(list);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "predictive-opportunity-list";
+  rows.forEach((row, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "predictive-opportunity-card";
+    const strong = document.createElement("strong");
+    strong.textContent = index === 0 ? `Melhor próxima: ${compactTitle(row.label, 64)}` : compactTitle(row.label, 78);
+    strong.title = row.label;
+    const small = document.createElement("small");
+    small.textContent = `${row.mode} · ${row.points} período(s) · score ${formatDecimal(row.score, 0)} · ${row.gaps.slice(0, 2).join(" · ")}`;
+    const action = document.createElement("span");
+    action.textContent = "focar série";
+    button.append(strong, small, action);
+    button.addEventListener("click", () => {
+      state.selectedPredictiveIndicator = row.label;
+      renderPredictiveForecast(forecastFromTrend(row.trend, payload));
+      renderPredictiveScenarios(forecastFromTrend(row.trend, payload));
+      renderPredictiveRisk(payload, forecastFromTrend(row.trend, payload), row);
+      renderPredictiveClosestOpportunities(payload, forecastFromTrend(row.trend, payload), eligibleCandidates);
+    });
+    list.appendChild(button);
+  });
+  predictiveClosestOpportunities.appendChild(list);
+}
+
 function predictiveConfidence(payload, forecast) {
   let score = 0;
   if ((payload?.sample_size || 0) >= 60) score += 2;
@@ -1624,7 +2900,7 @@ function predictiveConfidence(payload, forecast) {
 }
 
 function clearPredictive() {
-  [predictiveKpis, predictiveForecastChart, predictiveDrivers, predictiveScenarios, predictiveRisk].forEach((node) => {
+  [predictiveKpis, predictiveForecastChart, predictiveFitGuide, predictiveClosestOpportunities, predictiveDrivers, predictiveScenarios, predictiveRisk].forEach((node) => {
     if (node) clearElement(node);
   });
 }
@@ -1765,10 +3041,15 @@ function renderPredictiveScenarios(forecast) {
   });
 }
 
-function renderPredictiveRisk(payload, forecast) {
+function renderPredictiveRisk(payload, forecast, opportunity = null) {
   clearElement(predictiveRisk);
   const risks = [];
-  if (!forecast?.available) risks.push(["Sem projeção linear", forecast?.reason || "Não há série temporal elegível."]);
+  if (!forecast?.available) {
+    risks.push(["Sem projeção linear", forecast?.reason || "Não há série temporal elegível."]);
+    if (opportunity?.gaps?.length) {
+      risks.push(["Próxima ação", opportunity.gaps.slice(0, 3).join(" · ")]);
+    }
+  }
   if ((payload.sample_size || 0) < 40) risks.push(["Amostra curta", "A projeção pode oscilar com poucos registos."]);
   if ((payload.numeric_profiles || []).length < 2) risks.push(["Poucas medidas", "Faltam variáveis contínuas para comparar drivers."]);
   if (!(payload.correlations || []).length) risks.push(["Sem correlações", "O modelo não tem pares fortes para explicar variação."]);
@@ -1790,8 +3071,27 @@ function renderPredictiveAnalytics() {
   renderPredictiveDatasetCandidates();
   const payload = state.dataPayload;
   if (!payload) {
+    renderAnalyticsStory(predictiveStoryStrip, [
+      {
+        label: "Pergunta ativa",
+        value: "Há série para projeção?",
+        detail: "A projeção só aparece depois de analisar um dataset real com eixo temporal utilizável.",
+      },
+      {
+        label: "Leitura recomendada",
+        value: "Sem projeção ativa",
+        detail: "Evitar previsões quando não há períodos, volume ou variação suficiente.",
+        tone: "warning",
+      },
+      {
+        label: "Próxima ação",
+        value: "Escolher dataset",
+        detail: "Volta a Dados reais e seleciona uma série com melhor cobertura temporal.",
+      },
+    ]);
     predictiveMeta.textContent = "Escolhe ou analisa um dataset em Dados reais para ativar a projeção.";
     renderPredictiveIndicatorFilter([]);
+    renderPredictiveFitGuide(state.predictiveRecommendationPayload || null);
     if (state.selectedDataDataset && state._predictiveLoadDataset !== state.selectedDataDataset) {
       state._predictiveLoadDataset = state.selectedDataDataset;
       loadDataAnalytics().catch(showDataError);
@@ -1806,12 +3106,46 @@ function renderPredictiveAnalytics() {
   const forecast = forecastFromTrend(trend, payload);
   const confidence = predictiveConfidence(payload, forecast);
   const slope = forecast?.available ? forecast.slope : null;
+  renderAnalyticsStory(predictiveStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "O sinal continua a subir ou descer?",
+      detail: trend ? `${compactTitle(trend.label || trend.field, 64)} · ${formatNumber(trend.points.length)} períodos.` : "Sem série temporal elegível.",
+    },
+    {
+      label: "Leitura recomendada",
+      value: forecast?.available ? `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)} por período` : "Não projetar",
+      detail: forecast?.available ? "Usar como alerta operacional curto, não como previsão oficial." : (forecast?.reason || "Sem base temporal suficiente."),
+      tone: forecast?.available ? "ok" : "warning",
+    },
+    {
+      label: "Travão",
+      value: confidence,
+      detail: firstWarning(payload.quality_warnings || [], "Validar sazonalidade, cobertura e estabilidade antes de extrapolar."),
+      tone: confidence === "alta" ? "ok" : "warning",
+    },
+    {
+      label: "Próxima ação",
+      value: "Comparar cenários",
+      detail: "Ver drivers e risco do modelo antes de comunicar tendência.",
+    },
+  ]);
   predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · fiabilidade ${confidence}.`;
   addPredictiveKpi("Série", trend ? compactTitle(trend.label, 26) : "indisponível", trend ? `${trend.points.length} períodos` : "sem eixo temporal");
   addPredictiveKpi("Projeção", forecast?.available ? "ativa" : "não aplicável", forecast?.available ? "linear curta" : (forecast?.reason || "sem série elegível"));
   addPredictiveKpi("Elegíveis", formatNumber(candidates.length), "indicadores com volume suficiente");
   addPredictiveKpi("Tendência", slope === null ? "-" : `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)}`, "variação média por período");
+  const recommendationKey = `${state.selectedDataDataset}|${state.dataLimit}`;
+  const recommendationsCurrent = state.predictiveRecommendationPayload?.active_dataset_id === state.selectedDataDataset;
+  if (!recommendationsCurrent && state._predictiveRecommendationKey !== recommendationKey) {
+    loadPredictiveRecommendations().catch(() => {
+      renderPredictiveFitGuide({recommendations: [], active: null});
+    });
+  } else {
+    renderPredictiveFitGuide(state.predictiveRecommendationPayload || null);
+  }
   renderPredictiveForecast(forecast);
+  renderPredictiveClosestOpportunities(payload, forecast, candidates);
   renderPredictiveDrivers(payload);
   renderPredictiveScenarios(forecast);
   renderPredictiveRisk(payload, forecast);
@@ -1931,7 +3265,7 @@ function renderDistribution() {
   correlations.forEach((item) => {
     (item.dimension_kinds || ["generico"]).forEach((kind) => kindCounts.set(kind, (kindCounts.get(kind) || 0) + 1));
   });
-  const kindRows = ["temporal", "territorial", "entidade", "medida", "generico"].map((kind) => ({
+  const kindRows = ["temporal", "territorial", "entidade", "clinico", "medida", "generico"].map((kind) => ({
     key: kind,
     label: kindLabel(kind),
     count: kindCounts.get(kind) || 0,
@@ -2193,14 +3527,7 @@ function renderPublicHealthPriorityList(rows, total) {
     title.textContent = `${compactTitle(row.item.source_title, 34)} / ${compactTitle(row.item.target_title, 34)}`;
     title.title = `${row.item.source_title} / ${row.item.target_title}`;
     const meta = document.createElement("small");
-    const scope = row.geo.id === "nacional"
-      ? "Nacional · não regional"
-      : row.geo.id === "agregar"
-        ? "Entidade territorial · por validar"
-        : row.geo.resolution === "mapped"
-          ? `${row.geo.label} · ${row.geo.matchedEntity}`
-          : `${row.geo.label} · região inferida`;
-    meta.textContent = `${scope} · score ${row.priority} · viabilidade ${formatDecimal(row.viability, 0)}`;
+    meta.textContent = `${publicHealthScopeLabel(row)} · score ${row.priority} · viabilidade ${formatDecimal(row.viability, 0)}`;
     button.append(head, title, meta);
     button.addEventListener("click", () => {
       state.selectedPublicHealthKey = row.key;
@@ -2236,22 +3563,22 @@ function renderNationalSummary(rows, nationalEntry) {
   const nationalRows = rows.filter((row) => row.geo.id === "nacional");
   const aggregateRows = rows.filter((row) => row.geo.id === "agregar");
   const mappedRows = rows.filter((row) => row.geo.resolution === "mapped");
-  const pendingCount = aggregateRows.length + nationalRows.length;
+  const pendingCount = aggregateRows.length;
   const pendingRatio = rows.length ? pendingCount / rows.length : 0;
   const card = document.createElement("button");
   card.type = "button";
   card.className = `national-summary-card ${pendingRatio >= 0.7 ? "is-warning" : ""}`.trim();
   if (selected?.geo.id === "nacional" || selected?.geo.id === "agregar") card.classList.add("is-active");
   const label = document.createElement("span");
-  label.textContent = aggregateRows.length ? "Entidade territorial por validar" : "Vista nacional";
+  label.textContent = aggregateRows.length ? "Território por resolver" : "Vista nacional";
   const value = document.createElement("strong");
   value.textContent = aggregateRows.length
-    ? `${formatNumber(aggregateRows.length)} hipóteses sem região segura`
+    ? `${formatNumber(aggregateRows.length)} hipóteses com campo territorial`
     : `${formatNumber(nationalEntry?.count || 0)} hipóteses nacionais`;
   const detail = document.createElement("small");
   detail.textContent = aggregateRows.length
-    ? `${formatNumber(mappedRows.length)} hipóteses já foram agregadas por correspondência ULS/hospital→Região. As restantes têm sinal territorial indireto, mas faltam nomes reconhecíveis para classificar com segurança.`
-    : "Não é erro: são hipóteses de leitura nacional. Só devem entrar no mapa regional quando houver ULS, hospital, ARS, concelho/distrito ou região.";
+    ? `${formatNumber(mappedRows.length)} já mapeadas; restantes precisam de regra territorial.`
+    : "Separado para não falsear região.";
   card.append(label, value, detail);
   card.addEventListener("click", () => {
     const candidate = aggregateRows[0] || mappedRows[0] || nationalRows[0];
@@ -2263,45 +3590,100 @@ function renderNationalSummary(rows, nationalEntry) {
   publicHealthNationalSummary.appendChild(card);
 }
 
+function appendSvgText(parent, lines, x, y, attrs = {}) {
+  lines.forEach((line, index) => {
+    const {lineHeight = 13, ...textAttrs} = attrs;
+    const text = svgNode("text", {...textAttrs, x, y: y + index * lineHeight});
+    text.textContent = line;
+    parent.appendChild(text);
+  });
+}
+
+function healthLayerMetric(entry) {
+  if (state.activePublicHealthLayer === "impact") return `impacto ${formatDecimal(entry.avgImpact, 1)}/3`;
+  if (state.activePublicHealthLayer === "likelihood") return `viab. ${formatDecimal(entry.avgLikelihood, 1)}/3`;
+  if (state.activePublicHealthLayer === "risk") return `risco ${formatDecimal(entry.avgRisk, 1)}/10`;
+  if (state.activePublicHealthLayer === "entities") return `${formatNumber(entry.entities)} entidade(s)`;
+  return `score ${formatDecimal(entry.avgPriority, 0)}`;
+}
+
+function polygonPath(points) {
+  if (!points.length) return "";
+  const [first, ...rest] = points;
+  return `M ${first[0]} ${first[1]} ${rest.map((point) => `L ${point[0]} ${point[1]}`).join(" ")} Z`;
+}
+
+const TERRITORY_POLYGON_BLOCKS = {
+  acores: {label: "Açores", labelX: 118, labelY: 128, points: [[54, 98], [150, 88], [166, 138], [72, 154]]},
+  norte: {label: "Norte", labelX: 328, labelY: 80, points: [[268, 48], [378, 50], [398, 120], [248, 132], [238, 82]]},
+  centro: {label: "Centro", labelX: 326, labelY: 178, points: [[248, 140], [398, 126], [408, 214], [238, 230]]},
+  lisboa: {label: "Lisboa e V. Tejo", labelX: 318, labelY: 278, points: [[238, 238], [408, 222], [398, 310], [266, 328]]},
+  alentejo: {label: "Alentejo", labelX: 326, labelY: 374, points: [[266, 338], [398, 320], [410, 414], [248, 432]]},
+  algarve: {label: "Algarve", labelX: 330, labelY: 482, points: [[248, 442], [410, 424], [392, 506], [264, 512]]},
+  madeira: {label: "Madeira", labelX: 118, labelY: 438, points: [[60, 404], [158, 392], [174, 444], [76, 458]]},
+};
+
 function renderPublicHealthMap(rows) {
   clearElement(publicHealthMap);
-  const width = 500;
-  const height = 510;
+  const width = 620;
+  const height = 500;
   publicHealthMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
   const layerTitle = PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto";
-  const title = svgNode("text", {x: 22, y: 28, class: "health-map-title"});
-  title.textContent = `Cartograma · layer: ${layerTitle}`;
+  const title = svgNode("text", {x: 22, y: 30, class: "health-map-title"});
+  title.textContent = `Regiões SNS · ${layerTitle}`;
   publicHealthMap.appendChild(title);
-  const subtitle = svgNode("text", {x: 22, y: 48, class: "health-map-subtitle"});
-  subtitle.textContent = "Blocos aproximados: regiões de saúde e ilhas. Nacional não é região no mapa.";
+  const subtitle = svgNode("text", {x: 22, y: 50, class: "health-map-subtitle"});
+  subtitle.textContent = "Mostra apenas regiões com regra validada; restantes ficam por resolver.";
   publicHealthMap.appendChild(subtitle);
 
   const selected = rows.find((row) => row.key === state.selectedPublicHealthKey);
   const geoRows = aggregateHealthGeo(rows);
-  const regionalRows = geoRows.filter((entry) => entry.id !== "nacional");
-  const nationalEntry = geoRows.find((entry) => entry.id === "nacional");
+  const entriesById = new Map(geoRows.map((entry) => [entry.id, entry]));
+  const regionalRows = Object.keys(TERRITORY_POLYGON_BLOCKS).map((id) => entriesById.get(id) || {id, label: TERRITORY_POLYGON_BLOCKS[id].label, count: 0, avgImpact: 0, avgLikelihood: 0, avgRisk: 0, avgPriority: 0, entities: 0});
+  const aggregateEntry = entriesById.get("agregar");
+  const nationalEntry = entriesById.get("nacional");
   renderNationalSummary(rows, nationalEntry);
-  regionalRows.forEach((entry) => {
+
+  publicHealthMap.appendChild(svgNode("rect", {x: 18, y: 68, width: 386, height: 392, rx: 16, class: "health-map-board"}));
+  appendSvgText(publicHealthMap, ["Regiões SNS"], 36, 94, {class: "health-map-section-title"});
+  appendSvgText(publicHealthMap, ["hipóteses com regra regional"], 126, 94, {class: "health-map-legend-text"});
+
+  const maxCount = Math.max(1, ...regionalRows.map((entry) => entry.count || 0));
+  regionalRows.forEach((entry, index) => {
     const value = mapLayerValue(entry);
-    const level = Math.max(0, Math.min(5, Math.ceil(value * 5)));
+    const level = entry.count ? Math.max(1, Math.min(5, Math.ceil(value * 5))) : 0;
+    const active = selected?.geo.id === entry.id;
+    const y = 112 + index * 46;
+    const metric = entry.count ? healthLayerMetric(entry) : "sem regra regional";
+    const countWidth = entry.count ? Math.max(8, Math.round((entry.count / maxCount) * 112)) : 0;
+    const layerWidth = entry.count ? Math.max(8, Math.round(value * 112)) : 0;
     const group = svgNode("g", {
-      class: `health-map-region layer-${state.activePublicHealthLayer} level-${level} ${selected?.geo.id === entry.id ? "is-selected" : ""}`.trim(),
+      class: `health-map-region health-map-row layer-${state.activePublicHealthLayer} level-${level} ${entry.count ? "" : "is-empty"} ${active ? "is-selected" : ""}`.trim(),
     });
     const titleNode = svgNode("title");
-    titleNode.textContent = entry.id === "agregar"
-      ? `${entry.label}: ${formatNumber(entry.count)} hipóteses com entidade territorial por validar · score médio ${formatDecimal(entry.avgPriority, 0)}`
-      : `${entry.label}: ${formatNumber(entry.count)} matches regionais · score médio ${formatDecimal(entry.avgPriority, 0)}`;
+    titleNode.textContent = `${entry.label}: ${formatNumber(entry.count)} hipótese(s) · ${metric}`;
     group.appendChild(titleNode);
-    group.appendChild(svgNode("rect", {x: entry.x, y: entry.y, width: entry.w, height: entry.h, rx: 8}));
-    const labelX = entry.labelX || entry.x + entry.w / 2;
-    const labelY = entry.labelY || entry.y + entry.h / 2;
-    const label = svgNode("text", {x: labelX, y: labelY - 3, "text-anchor": "middle"});
-    label.textContent = compactTitle(entry.label, entry.id === "lisboa" ? 15 : 18);
-    const count = svgNode("text", {x: labelX, y: labelY + 15, "text-anchor": "middle", class: "health-map-count"});
-    count.textContent = entry.count
-      ? `${formatNumber(entry.count)} ${entry.id === "agregar" ? "validar" : "match"}`
-      : "sem match";
-    group.append(label, count);
+    group.appendChild(svgNode("rect", {x: 34, y, width: 354, height: 36, rx: 10}));
+
+    const label = svgNode("text", {x: 48, y: y + 15, class: "health-map-row-label"});
+    label.textContent = entry.label;
+    group.appendChild(label);
+
+    const metricText = svgNode("text", {x: 48, y: y + 29, class: "health-map-row-metric"});
+    metricText.textContent = metric;
+    group.appendChild(metricText);
+
+    if (entry.count) {
+      group.appendChild(svgNode("rect", {x: 220, y: y + 10, width: 112, height: 6, rx: 3, class: "health-map-bar-bg"}));
+      group.appendChild(svgNode("rect", {x: 220, y: y + 10, width: layerWidth, height: 6, rx: 3, class: "health-map-bar-fill"}));
+      group.appendChild(svgNode("rect", {x: 220, y: y + 23, width: 112, height: 6, rx: 3, class: "health-map-bar-bg"}));
+      group.appendChild(svgNode("rect", {x: 220, y: y + 23, width: countWidth, height: 6, rx: 3, class: "health-map-count-bar"}));
+    }
+
+    const count = svgNode("text", {x: 374, y: y + 22, "text-anchor": "end", class: entry.count ? "health-map-count" : "health-map-row-state"});
+    count.textContent = entry.count ? `${formatNumber(entry.count)} hipótese(s)` : "por mapear";
+    group.appendChild(count);
+
     group.addEventListener("click", () => {
       const candidate = rows.find((row) => row.geo.id === entry.id);
       if (candidate) {
@@ -2312,51 +3694,50 @@ function renderPublicHealthMap(rows) {
     publicHealthMap.appendChild(group);
   });
 
-  const dotCounts = new Map();
-  rows.slice(0, 48).forEach((row) => {
-    const geo = row.geo;
-    if (geo.id === "nacional") return;
-    const localIndex = dotCounts.get(geo.id) || 0;
-    const localLimit = geo.w < 70 ? 2 : 5;
-    if (localIndex >= localLimit) return;
-    dotCounts.set(geo.id, localIndex + 1);
-    const columns = Math.min(3, Math.max(1, Math.floor(geo.w / 34)));
-    const col = localIndex % columns;
-    const rowIndex = Math.floor(localIndex / columns);
-    const x = geo.x + 16 + col * Math.max(18, (geo.w - 32) / Math.max(1, columns - 1));
-    const y = geo.id === "nacional" ? geo.y + geo.h - 9 - rowIndex * 13 : geo.y + geo.h - 16 - rowIndex * 15;
-    const dot = svgNode("circle", {
-      cx: x,
-      cy: y,
-      r: row.decision === "Priorizar" ? 5 : 3.6,
-      class: `health-map-dot tone-${decisionTone(row.decision)} ${row.key === state.selectedPublicHealthKey ? "is-selected" : ""}`.trim(),
+  const statusRows = [
+    {
+      id: "agregar",
+      label: "Território por resolver",
+      value: `${formatNumber(aggregateEntry?.count || 0)} hipótese(s)`,
+      detail: ["Campo territorial existe", "mas falta regra regional."],
+      warning: true,
+    },
+    {
+      id: "nacional",
+      label: "Nacional",
+      value: `${formatNumber(nationalEntry?.count || 0)} hipótese(s)`,
+      detail: ["Sem leitura regional", "para evitar falso mapa."],
+      warning: false,
+    },
+  ];
+  statusRows.forEach((item, index) => {
+    const y = 90 + index * 142;
+    const active = selected?.geo.id === item.id;
+    const group = svgNode("g", {class: `health-map-status ${item.warning ? "is-warning" : ""} ${active ? "is-selected" : ""}`.trim()});
+    group.appendChild(svgNode("rect", {x: 424, y, width: 172, height: 118, rx: 14}));
+    appendSvgText(group, [item.label], 442, y + 28, {class: "health-map-status-label"});
+    appendSvgText(group, [item.value], 442, y + 56, {class: "health-map-status-value"});
+    appendSvgText(group, item.detail, 442, y + 80, {class: "health-map-status-detail", lineHeight: 14});
+    group.addEventListener("click", () => {
+      const candidate = rows.find((row) => row.geo.id === item.id);
+      if (candidate) {
+        state.selectedPublicHealthKey = candidate.key;
+        renderPublicHealthMatrix();
+      }
     });
-    const titleNode = svgNode("title");
-    titleNode.textContent = `${row.decision}: ${row.priority} · ${row.item.source_title} / ${row.item.target_title}`;
-    dot.appendChild(titleNode);
-    dot.addEventListener("click", () => {
-      state.selectedPublicHealthKey = row.key;
-      renderPublicHealthMatrix();
-    });
-    publicHealthMap.appendChild(dot);
+    publicHealthMap.appendChild(group);
   });
 
   const legend = svgNode("g", {class: "health-map-legend"});
-  [
-    ["Cor", "layer ativo"],
-    ["Bloco", "região SNS"],
-    ["Ponto", "hipótese regional/validar"],
-  ].forEach(([label, value], index) => {
-    const x = 22 + index * 145;
-    const y = 488;
-    legend.appendChild(svgNode("rect", {x, y: y - 10, width: 10, height: 10, rx: 2}));
-    const text = svgNode("text", {x: x + 16, y, class: "health-map-legend-text"});
-    text.textContent = `${label}: ${value}`;
-    legend.appendChild(text);
-  });
+  if (regionalRows.some((entry) => entry.count > 0)) {
+    legend.appendChild(svgNode("rect", {x: 36, y: 476, width: 10, height: 10, rx: 2}));
+    appendSvgText(legend, ["cor = layer ativo"], 52, 485, {class: "health-map-legend-text"});
+    appendSvgText(legend, ["azul = volume de hipóteses"], 178, 485, {class: "health-map-legend-text"});
+  } else {
+    appendSvgText(legend, ["Sem regiões mapeadas nesta amostra."], 36, 485, {class: "health-map-legend-text"});
+  }
   publicHealthMap.appendChild(legend);
 }
-
 function renderPublicHealthDecisionDetail(row) {
   clearElement(publicHealthDecisionDetail);
   if (!row) {
@@ -2370,19 +3751,20 @@ function renderPublicHealthDecisionDetail(row) {
   title.textContent = row.decision;
   title.className = `decision-title tone-${decisionTone(row.decision)}`;
   const relation = document.createElement("p");
-  relation.textContent = `${row.item.source_title} / ${row.item.target_title}`;
+  relation.textContent = `${compactTitle(row.item.source_title, 44)} / ${compactTitle(row.item.target_title, 44)}`;
+  relation.title = `${row.item.source_title} / ${row.item.target_title}`;
   const scope = document.createElement("p");
   scope.className = "decision-scope";
   scope.textContent = row.geo.id === "nacional"
-    ? "Âmbito: vista nacional, sem granularidade regional."
+    ? "Âmbito nacional."
     : row.geo.id === "agregar"
-      ? "Âmbito: entidade territorial detetada, mas sem correspondência regional segura."
+      ? `${publicHealthScopeLabel(row)}: validar território antes de mapear.`
       : row.geo.resolution === "mapped"
-        ? `Âmbito: ${row.geo.label}, agregado por correspondência ${row.geo.matchedEntity} → Região de Saúde (${row.geo.mappingConfidence}).`
-        : `Âmbito: ${row.geo.label}, com match regional heurístico (${row.geo.mappingConfidence || "média"}).`;
+        ? `${row.geo.label} · ${row.geo.matchedEntity}.`
+        : `${row.geo.label} · match heurístico.`;
   const reason = document.createElement("p");
   reason.className = "meta";
-  reason.textContent = row.reason;
+  reason.textContent = shortSentence(row.reason, 110);
   const drivers = document.createElement("div");
   drivers.className = "decision-driver-grid";
   [
@@ -2404,17 +3786,17 @@ function renderPublicHealthDecisionDetail(row) {
   const validation = document.createElement("p");
   validation.className = "meta";
   const keys = (row.item.join_recipe?.suggested_keys || row.item.shared_fields || []).slice(0, 4).join(", ") || "chave a validar";
-  validation.textContent = `Validação antes do uso: confirmar tipo, nulos, duplicados, cardinalidade e granularidade das chaves (${keys}).`;
+  validation.textContent = `Validar: ${compactTitle(keys, 72)}.`;
   const geoChecklist = document.createElement("div");
   geoChecklist.className = "geo-validation-note";
   const geoTitle = document.createElement("strong");
   geoTitle.textContent = row.geo.id === "agregar" ? "Como resolver este âmbito" : "Validação territorial";
   const geoText = document.createElement("span");
   geoText.textContent = row.geo.id === "agregar"
-    ? "Procurar nome de ULS/hospital/ACES no dataset original ou acrescentar regra à tabela de correspondência antes de pintar uma região."
+    ? "Confirmar valores territoriais e regra Região SNS."
     : row.geo.resolution === "mapped"
-      ? "Confirmar que a entidade pertence à região sugerida e que o período/dataset usa a hierarquia SNS atual."
-      : "Confirmar se o campo territorial representa região, ARS, concelho, distrito, ULS ou hospital antes de decidir.";
+      ? "Confirmar entidade, região e período."
+      : "Confirmar tipo de território antes de decidir.";
   geoChecklist.append(geoTitle, geoText);
   publicHealthDecisionDetail.append(title, relation, scope, reason, drivers, geoChecklist, validation);
 }
@@ -2453,7 +3835,7 @@ function renderPublicHealthPriorityTable(rows, total) {
   const decisions = ["Priorizar", "Acompanhar", "Explorar", "Validar antes"];
   const scopes = [
     ["regional", "Regional"],
-    ["agregar", "Por validar"],
+    ["agregar", "Por resolver"],
     ["nacional", "Nacional"],
   ];
   const buckets = new Map();
@@ -2526,7 +3908,7 @@ function renderHypothesisCellDetail(bucket, allRows) {
   const scopeLabel = bucket.scope === "nacional"
     ? "leitura nacional"
     : bucket.scope === "agregar"
-      ? "entidade por validar"
+      ? "território por resolver"
       : "com match regional";
   const title = document.createElement("strong");
   title.className = "hypothesis-detail-title";
@@ -2537,10 +3919,10 @@ function renderHypothesisCellDetail(bucket, allRows) {
   const explanation = document.createElement("p");
   explanation.className = "decision-scope";
   explanation.textContent = bucket.scope === "nacional"
-    ? "Estas hipóteses têm leitura nacional. Não devem ser forçadas para uma região sem campo territorial adicional."
+    ? "Leitura nacional; não forçar região."
     : bucket.scope === "agregar"
-      ? "Estas hipóteses têm sinal de ULS/hospital/ACES/USF, mas ainda não têm nome reconhecido ou regra de correspondência suficiente para pintar uma Região de Saúde."
-      : "Estas hipóteses já têm sinal territorial suficiente para análise regional inicial. Ainda assim, valida granularidade, duplicados e período antes de cruzar datasets.";
+      ? "Há sinal territorial, mas falta correspondência segura."
+      : "Sinal regional inicial; validar período e granularidade.";
   const list = document.createElement("div");
   list.className = "hypothesis-detail-list";
   bucket.rows.slice(0, 6).forEach((row) => {
@@ -2550,7 +3932,7 @@ function renderHypothesisCellDetail(bucket, allRows) {
     const strong = document.createElement("strong");
     strong.textContent = `${compactTitle(row.item.source_title, 34)} / ${compactTitle(row.item.target_title, 34)}`;
     const small = document.createElement("small");
-    small.textContent = `${row.reason} · validação: ${(row.item.risk_flags || []).join(", ") || "tipo, nulos, duplicados, cardinalidade"}`;
+    small.textContent = `${shortSentence(row.reason, 58)} · validar: ${compactTitle((row.item.risk_flags || []).join(", ") || "tipo, nulos, duplicados", 58)}`;
     button.append(strong, small);
     button.addEventListener("click", () => {
       state.selectedPublicHealthKey = row.key;
@@ -2636,6 +4018,367 @@ function localPlanRows() {
   }).sort((a, b) => b.localScore - a.localScore || b.priority - a.priority);
 }
 
+const CARE_OPS_TEMPLATES = [
+  {
+    key: "frailty-hospital-use",
+    cohort: "Fragilidade com uso hospitalar recente",
+    graIdra: "GRA/IDRA quando disponível",
+    profile: "75+; multimorbilidade; polimedicação",
+    utilization: "Urgência/internamento recente",
+    primaryCare: "CSP em falta; faltas 12m",
+    prevention: "Rastreios/social",
+    plan: "PIC por rever",
+    action: "Contacto + PIC.",
+  },
+  {
+    key: "multimorbidity-low-csp",
+    cohort: "Multimorbilidade sem continuidade CSP",
+    graIdra: "GRA/IDRA para prioridade",
+    profile: "65+; 2+ condições crónicas; 5+ medicamentos",
+    utilization: "Urgência evitável/internamento",
+    primaryCare: "Sem contacto CSP 12m",
+    prevention: "Vacinas/rastreios em atraso",
+    plan: "PIC ausente",
+    action: "Consulta + revisão terapêutica.",
+  },
+  {
+    key: "prevention-social-vulnerability",
+    cohort: "Prevenção em atraso com vulnerabilidade social",
+    graIdra: "IDRA social quando existir",
+    profile: "Faixa elegível para rastreio; doença crónica ou fragilidade social",
+    utilization: "Baixa consulta programada",
+    primaryCare: "Faltas/contacto difícil",
+    prevention: "Rastreios/social",
+    plan: "Plano social por confirmar",
+    action: "Recuperar rastreios + apoio social.",
+  },
+  {
+    key: "post-discharge-care-gap",
+    cohort: "Alta recente sem plano de continuidade",
+    graIdra: "GRA/IDRA elevado/desconhecido",
+    profile: "Alta hospitalar recente; idade avançada ou doença crónica complexa",
+    utilization: "Internamento/reinternamento",
+    primaryCare: "Sem contacto CSP pós-alta",
+    prevention: "Medicação/apoio por rever",
+    plan: "PIC desatualizado",
+    action: "Contacto pós-alta + seguimento.",
+  },
+];
+
+function careOpsItemText(item) {
+  if (!item) return "";
+  return normalizeSearchText([
+    item.source_title,
+    item.target_title,
+    item.source_theme,
+    item.target_theme,
+    ...(item.shared_fields || []),
+    ...(item.join_recipe?.suggested_keys || []),
+    ...((item.public_health_model || {}).matched_areas || []),
+  ].join(" "));
+}
+
+function inferCareInstitution(item) {
+  const text = careOpsItemText(item);
+  if (/usf|ucsp|aces|cuidados de saude primarios|csp/.test(text)) return "UF de inscrição: USF/UCSP";
+  if (/uls|unidade local de saude/.test(text)) return "UF/ULS a confirmar";
+  if (/hospital|centro hospitalar|internamento|urgencia|urgência/.test(text)) return "UF + hospital de referência";
+  if (/ars|regiao|região|distrito|concelho|freguesia/.test(text)) return "UF + território agregado";
+  return "UF de inscrição a definir";
+}
+
+function careActionBand(template) {
+  if (/alta|hospitalar|alta recente|fragilidade/.test(normalizeSearchText(`${template.key} ${template.cohort}`))) return "intervir";
+  if (/prevencao|rastreio|vulnerabilidade/.test(normalizeSearchText(`${template.key} ${template.cohort}`))) return "recuperar";
+  return "programar";
+}
+
+function careViabilityBand(source) {
+  if (!source) return "preparar";
+  if ((source.viability || 0) >= 12 || source.decision === "Priorizar") return "boa";
+  return "preparar";
+}
+
+function careOpsRows() {
+  const sourceRows = publicHealthPriorityRows().slice(0, CARE_OPS_TEMPLATES.length);
+  return CARE_OPS_TEMPLATES.map((template, index) => {
+    const source = sourceRows[index] || null;
+    const item = source?.item || null;
+    const sourceTitle = item
+      ? `Pista pública: ${compactTitle([item.source_title, item.target_title].filter(Boolean).join(" × "), 78)}`
+      : "Sem fonte autorizada ligada";
+    const geoLabel = source?.geo?.label || "freguesia/localização agregada";
+    const quality = [
+      "base UF obrigatória",
+      "período fechado",
+      item ? `pista pública: ${source.decision.toLowerCase()}` : "requer fonte clínica validada",
+      "sem identificação nesta vista",
+      ...((item?.risk_flags || []).slice(0, 2)),
+    ].slice(0, 4);
+    return {
+      ...template,
+      key: template.key,
+      source,
+      sourceTitle,
+      institution: inferCareInstitution(item),
+      location: geoLabel,
+      priority: source?.priority || 0,
+      actionBand: careActionBand(template),
+      viabilityBand: careViabilityBand(source),
+      quality,
+    };
+  });
+}
+
+function renderCareOpsKpis(rows) {
+  if (!careOpsKpis) return;
+  clearElement(careOpsKpis);
+  const linked = rows.filter((row) => row.source).length;
+  const kpis = [
+    {label: "Regras de coorte", value: rows.length, note: "modelos de trabalho, não resultados"},
+    {label: "Pistas no catálogo", value: `${linked}/${rows.length}`, note: "sinais públicos para orientar fontes"},
+    {label: "Revisão", value: "15/30 dias", note: "ciclo operacional recomendado"},
+    {label: "Dados pessoais", value: "fora desta vista", note: "só em ambiente clínico autorizado"},
+  ];
+  kpis.forEach((item) => {
+    const card = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const value = document.createElement("strong");
+    value.textContent = String(item.value);
+    const note = document.createElement("small");
+    note.textContent = item.note;
+    card.append(label, value, note);
+    careOpsKpis.appendChild(card);
+  });
+}
+
+function careOpsMatrixKey(actionBand, viabilityBand) {
+  return `${actionBand}|${viabilityBand}`;
+}
+
+function renderCareOpsActionMatrix(rows) {
+  if (!careOpsMatrix) return;
+  clearElement(careOpsMatrix);
+  const actionBands = [
+    ["intervir", "Intervenção rápida"],
+    ["programar", "Consulta programada"],
+    ["recuperar", "Recuperar prevenção"],
+  ];
+  const viabilityBands = [
+    ["boa", "Dados aproveitáveis"],
+    ["preparar", "Dados por preparar"],
+  ];
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const key = careOpsMatrixKey(row.actionBand, row.viabilityBand);
+    const bucket = buckets.get(key) || [];
+    bucket.push(row);
+    buckets.set(key, bucket);
+  });
+
+  const corner = document.createElement("div");
+  corner.className = "care-ops-axis";
+  corner.textContent = "Tipo / dados";
+  careOpsMatrix.appendChild(corner);
+  viabilityBands.forEach(([, label]) => {
+    const axis = document.createElement("div");
+    axis.className = "care-ops-axis";
+    axis.textContent = label;
+    careOpsMatrix.appendChild(axis);
+  });
+
+  actionBands.forEach(([actionKey, actionLabel]) => {
+    const axis = document.createElement("div");
+    axis.className = "care-ops-axis";
+    axis.textContent = actionLabel;
+    careOpsMatrix.appendChild(axis);
+    viabilityBands.forEach(([viabilityKey, viabilityLabel]) => {
+      const key = careOpsMatrixKey(actionKey, viabilityKey);
+      const bucket = buckets.get(key) || [];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `care-ops-cell action-${actionKey} viability-${viabilityKey}`.trim();
+      if (!bucket.length) button.classList.add("is-empty");
+      if (bucket.some((row) => row.key === state.selectedCareOpsKey)) button.classList.add("is-active");
+      const strong = document.createElement("strong");
+      strong.textContent = bucket.length ? `${bucket.length} regra(s)` : "0";
+      const small = document.createElement("small");
+      small.textContent = bucket[0]?.cohort || "sem regra nesta célula";
+      button.append(strong, small);
+      button.addEventListener("click", () => {
+        if (!bucket.length) return;
+        state.selectedCareOpsKey = bucket[0].key;
+        renderCareOpsActionMatrix(rows);
+        renderCareOpsTable(rows);
+        renderCareOpsWorkflow(rows);
+      });
+      careOpsMatrix.appendChild(button);
+    });
+  });
+}
+
+function renderCareOpsTable(rows) {
+  const tbody = careOpsTable?.querySelector("tbody");
+  if (!tbody) return;
+  clearElement(tbody);
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.className = row.key === state.selectedCareOpsKey ? "is-selected" : "";
+    tr.addEventListener("click", () => {
+      state.selectedCareOpsKey = row.key;
+      renderCareOpsActionMatrix(rows);
+      renderCareOpsTable(rows);
+      renderCareOpsWorkflow(rows);
+    });
+
+    const addTextCell = (strongText, smallText = "") => {
+      const td = document.createElement("td");
+      const strong = document.createElement("strong");
+      strong.textContent = strongText;
+      td.appendChild(strong);
+      if (smallText) {
+        const small = document.createElement("small");
+        small.textContent = smallText;
+        td.appendChild(small);
+      }
+      tr.appendChild(td);
+    };
+
+    addTextCell(row.cohort, row.sourceTitle);
+    addTextCell(row.institution, row.location);
+    addTextCell(row.graIdra);
+    addTextCell(row.profile);
+    addTextCell(row.utilization);
+    addTextCell(row.primaryCare);
+    addTextCell(row.prevention);
+    addTextCell(row.plan, row.action);
+
+    const quality = document.createElement("td");
+    row.quality.forEach((flag) => {
+      const pill = document.createElement("span");
+      pill.className = "care-ops-pill";
+      pill.textContent = flag;
+      quality.appendChild(pill);
+    });
+    tr.appendChild(quality);
+    tbody.appendChild(tr);
+  });
+}
+
+function renderCareOpsWorkflow(rows) {
+  if (!careOpsWorkflow) return;
+  clearElement(careOpsWorkflow);
+  const selected = rows.find((row) => row.key === state.selectedCareOpsKey) || rows[0];
+  if (!selected) return;
+  const steps = [
+    ["Definir coorte", "Aplicar a regra apenas a dados autorizados e confirmar a base populacional da UF."],
+    ["Validar dados", "Rever denominador, período, duplicados, missing values, geografia e falsos positivos."],
+    ["Intervir", selected.action],
+    ["Auditar ciclo", "Registar motivo de consulta, ação tomada, resultado, PIC e próxima revisão."],
+  ];
+  const headline = document.createElement("div");
+  headline.className = "care-ops-selected";
+  const title = document.createElement("strong");
+  title.textContent = selected.cohort;
+  const meta = document.createElement("span");
+  meta.textContent = `${selected.institution} · ${selected.location} · sem identificação nesta vista`;
+  headline.append(title, meta);
+  careOpsWorkflow.appendChild(headline);
+
+  steps.forEach(([label, text], index) => {
+    const step = document.createElement("div");
+    step.className = "care-ops-step";
+    const marker = document.createElement("b");
+    marker.textContent = String(index + 1);
+    const body = document.createElement("span");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const copy = document.createElement("small");
+    copy.textContent = text;
+    body.append(strong, copy);
+    step.append(marker, body);
+    careOpsWorkflow.appendChild(step);
+  });
+}
+
+function renderCareOpsGuardrails() {
+  if (!careOpsGuardrails) return;
+  clearElement(careOpsGuardrails);
+  const items = [
+    ["Sem simulação", "Não preencher com utentes fictícios nem contagens inventadas; a página fica como desenho até haver fonte autorizada."],
+    ["Campos mínimos", "UF, localização agregada, GRA/IDRA, faixa etária, multimorbilidade, polimedicação, utilização, rastreios e PIC."],
+    ["Base populacional", "A UF, ULS ou região precisa de inscritos ativos à data de referência para calcular taxas."],
+    ["Janelas", "Urgências 6m, internamentos 12m, reinternamentos 30d, faltas 12m e rastreios por elegibilidade."],
+    ["Granularidade", "Não misturar freguesia, ULS, hospital e região sem regra de agregação."],
+    ["Qualidade", "Bloquear leitura com episódios duplicados, datas em falta, unidade incerta ou atualização vencida."],
+    ["Acesso", "Perfis mínimos: equipa UF, coordenação local e auditoria; sem exportação aberta por defeito."],
+    ["Registo", "Guardar quem consultou, quando, por que motivo, coorte vista e ação tomada."],
+    ["Minimização", "Vista agregada por coorte; identificação só em ambiente clínico autorizado."],
+    ["Equidade", "Auditar enviesamento por idade, vulnerabilidade social, território e acesso digital."],
+    ["Responsabilidade", "Cada linha operacional deve ter dono, prazo, estado e resultado registado."],
+  ];
+  items.forEach(([label, text]) => {
+    const card = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const span = document.createElement("span");
+    span.textContent = text;
+    card.append(strong, span);
+    careOpsGuardrails.appendChild(card);
+  });
+}
+
+function renderCareOps() {
+  if (!careOpsMeta) return;
+  const rows = careOpsRows();
+  if (!state.selectedCareOpsKey && rows.length) {
+    state.selectedCareOpsKey = rows[0].key;
+  }
+  const linked = rows.filter((row) => row.source).length;
+  careOpsMeta.textContent = `Blueprint operacional: ${rows.length} regras de coorte para desenhar a operação; ${linked} têm pista pública no catálogo. Não há dados individuais, contagens reais ou score clínico nesta página.`;
+  const selected = rows.find((row) => row.key === state.selectedCareOpsKey) || rows[0];
+  const readyRows = rows.filter((row) => row.viabilityBand === "boa").length;
+  const actionLabel = {
+    intervir: "Intervenção rápida",
+    programar: "Consulta programada",
+    recuperar: "Recuperar prevenção",
+  }[selected?.actionBand] || "Ação por definir";
+  const viabilityLabel = {
+    boa: "dados aproveitáveis",
+    preparar: "dados por preparar",
+  }[selected?.viabilityBand] || "dados por validar";
+  renderAnalyticsStory(careOpsStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "Que coorte pode virar ação?",
+      detail: `${formatNumber(rows.length)} regras operacionais; ${formatNumber(linked)} ligadas a pistas públicas do catálogo.`,
+    },
+    {
+      label: "Leitura recomendada",
+      value: selected ? compactTitle(selected.cohort || "Coorte selecionada", 46) : "Sem coorte",
+      detail: selected ? `${actionLabel} · ${viabilityLabel}.` : "Seleciona uma célula da matriz para ver o fluxo de intervenção.",
+      tone: selected?.viabilityBand === "boa" ? "ok" : "warning",
+    },
+    {
+      label: "Travão",
+      value: "Sem dados individuais",
+      detail: "Esta aba desenha operação e campos mínimos; não calcula risco clínico nem lista utentes.",
+      tone: "warning",
+    },
+    {
+      label: "Próxima ação",
+      value: readyRows ? "Definir owner" : "Validar base",
+      detail: readyRows ? "Atribuir dono, prazo e auditoria antes de produção." : "Confirmar denominador, período e permissões antes de operacionalizar.",
+    },
+  ]);
+  renderCareOpsKpis(rows);
+  renderCareOpsActionMatrix(rows);
+  renderCareOpsTable(rows);
+  renderCareOpsWorkflow(rows);
+  renderCareOpsGuardrails();
+}
+
 function renderLocalPlanKpis(rows) {
   clearElement(localPlanKpis);
   const ready = rows.filter((row) => row.priorityBand === "Pronto para plano").length;
@@ -2643,10 +4386,10 @@ function renderLocalPlanKpis(rows) {
   const regional = rows.filter((row) => row.readiness === "regional").length;
   const surveillance = rows.filter((row) => row.surveillanceReadiness >= 55).length;
   [
-    ["Prioridades locais", formatNumber(ready)],
-    ["Backlog de dados", formatNumber(needsData)],
+    ["Pronto para discutir", formatNumber(ready)],
+    ["Precisa de dados", formatNumber(needsData)],
     ["Com território", `${formatNumber(regional)}/${formatNumber(rows.length)}`],
-    ["Com surveillance", formatNumber(surveillance)],
+    ["Com eixo temporal", formatNumber(surveillance)],
   ].forEach(([label, value]) => {
     const card = document.createElement("div");
     const span = document.createElement("span");
@@ -2682,8 +4425,8 @@ function renderLocalDiagnosis(rows) {
   const warning = document.createElement("div");
   warning.className = nationalCount > regionalCount ? "local-warning" : "local-note";
   warning.textContent = nationalCount > regionalCount
-    ? "Insuficiente para mapa local: a maioria das hipóteses ainda não tem território classificável."
-    : "Cobertura territorial suficiente para leitura local exploratória.";
+    ? "Travão: a maioria das hipóteses ainda não tem território classificável para leitura local."
+    : "Há cobertura territorial suficiente para preparar discussão local exploratória.";
   localDiagnosis.appendChild(warning);
   [...axisCounts.entries()].sort((a, b) => b[1] - a[1]).forEach(([axis, count]) => {
     localDiagnosis.appendChild(createLocalMetric(axis, count, Math.max(1, rows.length)));
@@ -2703,8 +4446,8 @@ function renderLocalPriorityMatrix(rows) {
     ["baixa", "Necessidade baixa"],
   ];
   const capacityBands = [
-    ["pronta", "Pronta"],
-    ["limitada", "A preparar"],
+    ["pronta", "Base suficiente"],
+    ["limitada", "Base por fechar"],
   ];
   const buckets = new Map();
   rows.forEach((row) => {
@@ -2722,7 +4465,7 @@ function renderLocalPriorityMatrix(rows) {
   }
   const corner = document.createElement("div");
   corner.className = "local-priority-axis";
-  corner.textContent = "Necessidade / capacidade";
+  corner.textContent = "Necessidade / dados";
   localPriorityMatrix.appendChild(corner);
   capacityBands.forEach(([, label]) => {
     const axis = document.createElement("div");
@@ -2768,12 +4511,12 @@ function renderLocalPriorityDetail(bucket, rows) {
   }
   const title = document.createElement("strong");
   title.className = "local-priority-detail-title";
-  title.textContent = `${formatNumber(bucket.rows.length)} hipóteses para planeamento`;
+  title.textContent = `${formatNumber(bucket.rows.length)} hipóteses para discutir`;
   const explanation = document.createElement("p");
   explanation.className = "decision-scope";
   explanation.textContent = bucket.capacityBand === "pronta"
-    ? "Pode alimentar diagnóstico local exploratório: há sinal analítico suficiente para preparar validações e discussão com equipas locais."
-    : "Há necessidade potencial, mas falta capacidade analítica: melhorar território, período, chave de join ou qualidade antes de usar no plano.";
+    ? "Pode alimentar uma conversa local exploratória: há sinal suficiente para preparar validações com equipas locais."
+    : "Há necessidade potencial, mas falta base analítica: fechar território, período, chave de join ou qualidade antes de usar no plano.";
   const list = document.createElement("div");
   list.className = "local-plan-list";
   bucket.rows.slice(0, 6).forEach((row) => {
@@ -2800,7 +4543,7 @@ function renderLocalSurveillance(rows) {
   meta.className = "local-note";
   meta.textContent = state.dataPayload?.trends?.length
     ? "Existe amostra temporal ativa: estes sinais podem apoiar monitorização exploratória."
-    : "A vigilância depende sobretudo de campos temporais nos metadados; carrega uma amostra real para validar tendências.";
+    : "Vigilância só deve avançar quando houver campo temporal confirmado em dados reais; aqui é uma triagem.";
   localSurveillance.appendChild(meta);
   candidates.forEach((row) => {
     const card = document.createElement("div");
@@ -2822,9 +4565,9 @@ function renderLocalRiskMatrix(rows) {
     ["baixo", "Impacto baixo"],
   ];
   const likelihoods = [
-    ["alta", "Probabilidade alta"],
-    ["media", "Probabilidade média"],
-    ["baixa", "Probabilidade baixa"],
+    ["alta", "Viabilidade alta"],
+    ["media", "Viabilidade média"],
+    ["baixa", "Viabilidade baixa"],
   ];
   const buckets = new Map();
   rows.forEach((row) => {
@@ -2839,7 +4582,7 @@ function renderLocalRiskMatrix(rows) {
   });
   const corner = document.createElement("div");
   corner.className = "local-risk-axis";
-  corner.textContent = "Impacto / probabilidade";
+  corner.textContent = "Impacto / viabilidade";
   localRiskMatrix.appendChild(corner);
   likelihoods.forEach(([, label]) => {
     const axis = document.createElement("div");
@@ -2859,7 +4602,7 @@ function renderLocalRiskMatrix(rows) {
       const strong = document.createElement("strong");
       strong.textContent = formatNumber(bucket?.rows.length || 0);
       const small = document.createElement("small");
-      small.textContent = bucket ? `risco residual ${formatDecimal(bucket.residual / bucket.rows.length, 0)}` : "sem sinal";
+      small.textContent = bucket ? `incerteza residual ${formatDecimal(bucket.residual / bucket.rows.length, 0)}` : "sem sinal";
       cell.append(strong, small);
       localRiskMatrix.appendChild(cell);
     });
@@ -2877,8 +4620,8 @@ function renderLocalActionPlan(rows) {
   ];
   const questions = top.map((row) => questionForPriority(row));
   const columns = [
-    ["Perguntas acionáveis", [...new Set(questions)].slice(0, 5)],
-    ["Validações antes do plano", validations],
+    ["Perguntas para reunião local", [...new Set(questions)].slice(0, 5)],
+    ["Validações antes de priorizar", validations],
     ["Datasets prioritários", top.map((row) => compactTitle(row.item.source_title, 52))],
   ];
   columns.forEach(([titleText, items]) => {
@@ -2901,7 +4644,39 @@ function renderLocalPlans() {
   const rows = localPlanRows();
   const regional = rows.filter((row) => row.readiness === "regional").length;
   const national = rows.length - regional;
-  localPlanMeta.textContent = `${formatNumber(rows.length)} hipóteses filtradas · ${formatNumber(regional)} com território · ${formatNumber(national)} insuficientes para mapa local.`;
+  localPlanMeta.textContent = `Triagem exploratória: ${formatNumber(rows.length)} hipóteses filtradas; ${formatNumber(regional)} têm território; ${formatNumber(national)} ainda não servem para leitura local.`;
+  const selectedBucket = state.selectedLocalPriorityCell
+    ? rows.filter((row) => {
+      const needBand = row.needScore >= 72 ? "alta" : row.needScore >= 48 ? "media" : "baixa";
+      const capacityBand = row.analysisCapacity >= 58 ? "pronta" : "limitada";
+      return localCellKey(needBand, capacityBand) === state.selectedLocalPriorityCell;
+    })
+    : [];
+  const selected = selectedBucket[0] || rows[0];
+  renderAnalyticsStory(localPlanStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "Que prioridade local merece plano?",
+      detail: `${formatNumber(rows.length)} hipóteses; ${formatNumber(regional)} com território utilizável.`,
+    },
+    {
+      label: "Leitura recomendada",
+      value: selected ? compactTitle([selected.item.source_title, selected.item.target_title].filter(Boolean).join(" / "), 48) : "Sem prioridade",
+      detail: selected ? `${selected.priorityBand} · necessidade ${formatDecimal(selected.needScore, 0)} · dados ${formatDecimal(selected.analysisCapacity, 0)}.` : "Sem hipóteses suficientes para plano local.",
+      tone: selected?.priorityBand === "Pronto para plano" ? "ok" : "warning",
+    },
+    {
+      label: "Travão",
+      value: national ? "Território por resolver" : "Território validado",
+      detail: national ? `${formatNumber(national)} sinais ainda não devem ser lidos como prioridade local.` : "Ainda assim, confirmar denominador, período e geografia antes de decidir.",
+      tone: national ? "warning" : "ok",
+    },
+    {
+      label: "Próxima ação",
+      value: selected?.readiness === "regional" ? "Discutir intervenção" : "Validar território",
+      detail: selected?.readiness === "regional" ? "Usar a matriz para priorizar owner, prazo e métrica de acompanhamento." : "Fechar regra territorial antes de passar para plano.",
+    },
+  ]);
   renderLocalPlanKpis(rows);
   renderLocalDiagnosis(rows);
   renderLocalPriorityMatrix(rows);
@@ -2916,7 +4691,34 @@ function renderPublicHealthMatrix() {
   const correlations = filteredCorrelations();
   const priorityRows = publicHealthPriorityRows();
   const cells = summarizePublicHealthCells(correlations);
-  publicHealthMeta.textContent = `${formatNumber(correlations.length)} hipóteses de cruzamento filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} a validar primeiro · layer ativo: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
+  publicHealthMeta.textContent = `${formatNumber(correlations.length)} hipóteses filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} com impacto+viabilidade altos · risco/incerteza como travão · layer: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
+  const selectedPriority = priorityRows.find((row) => row.key === state.selectedPublicHealthKey) || priorityRows[0];
+  const mappedCount = priorityRows.filter((row) => row.geo.resolution === "mapped").length;
+  const unresolvedCount = priorityRows.filter((row) => row.geo.id === "agregar").length;
+  renderAnalyticsStory(publicHealthStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "Que sinais merecem acompanhamento?",
+      detail: `${formatNumber(priorityRows.length)} hipóteses; ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} para priorizar por impacto e viabilidade.`,
+    },
+    {
+      label: "Leitura recomendada",
+      value: selectedPriority ? compactTitle(selectedPriority.decision, 40) : "Sem hipótese",
+      detail: selectedPriority ? `${compactTitle(selectedPriority.item.source_title, 48)} / ${compactTitle(selectedPriority.item.target_title, 48)}.` : "Alarga filtros ou baixa score mínimo.",
+      tone: selectedPriority?.decision === "Priorizar" ? "ok" : "warning",
+    },
+    {
+      label: "Travão",
+      value: mappedCount ? `${formatNumber(mappedCount)} mapeadas` : "Território por validar",
+      detail: unresolvedCount ? `${formatNumber(unresolvedCount)} hipóteses têm campo territorial mas falta regra regional.` : "Território regional disponível para os sinais visíveis.",
+      tone: unresolvedCount ? "warning" : "ok",
+    },
+    {
+      label: "Próxima ação",
+      value: "Acompanhar drivers",
+      detail: "Abrir a hipótese líder e confirmar fonte, período, entidade e denominador.",
+    },
+  ]);
   renderPublicHealthCockpit(priorityRows);
 
   const likelihoodLevels = ["alta", "media", "baixa"];
@@ -2925,19 +4727,19 @@ function renderPublicHealthMatrix() {
 
   const corner = document.createElement("div");
   corner.className = "public-health-axis public-health-corner";
-  corner.textContent = "Viabilidade × impacto";
+  corner.textContent = "Viabilidade ↓ / impacto →";
   publicHealthMatrix.appendChild(corner);
   impactLevels.forEach((impact) => {
     const axis = document.createElement("div");
     axis.className = "public-health-axis";
-    axis.textContent = impactLabel(impact);
+    axis.textContent = `Impacto ${impactLabel(impact).toLowerCase()}`;
     publicHealthMatrix.appendChild(axis);
   });
 
   likelihoodLevels.forEach((likelihood) => {
     const axis = document.createElement("div");
     axis.className = "public-health-axis";
-    axis.textContent = likelihoodLabel(likelihood);
+    axis.textContent = viabilityLabel(likelihood);
     publicHealthMatrix.appendChild(axis);
     impactLevels.forEach((impact) => {
       const cell = cells.get(`${likelihood}|${impact}`);
@@ -2972,7 +4774,7 @@ function renderPublicHealthStrata(cell, likelihood, impact) {
   const title = document.createElement("div");
   title.className = "public-health-strata-title";
   const titleLabel = document.createElement("strong");
-  titleLabel.textContent = `${likelihoodLabel(likelihood)} viabilidade × ${impactLabel(impact)} impacto`;
+  titleLabel.textContent = `${viabilityLabel(likelihood)} × ${impactLabel(impact)} impacto`;
   const titleCount = document.createElement("span");
   titleCount.textContent = `${formatNumber(cell?.count || 0)} hipóteses`;
   title.append(titleLabel, titleCount);
@@ -3160,6 +4962,26 @@ function renderCorrelationTable() {
   });
   thead.appendChild(header);
 
+  if (!rows.length) {
+    const emptyRow = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    const message = document.createElement("span");
+    message.textContent = "Sem hipóteses para estes filtros.";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "ghost-button";
+    clear.textContent = "Limpar filtros";
+    clear.addEventListener("click", clearSemanticFilters);
+    empty.append(message, clear);
+    cell.appendChild(empty);
+    emptyRow.appendChild(cell);
+    tbody.appendChild(emptyRow);
+    return;
+  }
+
   rows.forEach((item) => {
     const row = document.createElement("tr");
     if (state.selectedCorrelationKey === relationKey(item)) {
@@ -3182,7 +5004,7 @@ function renderCorrelationTable() {
     const publicHealthModel = item.public_health_model || {};
     const publicHealthChip = document.createElement("span");
     publicHealthChip.className = `analytics-chip public-health-chip likelihood-${publicHealthModel.likelihood?.level || "baixa"} impact-${publicHealthModel.impact?.level || "baixo"}`;
-    publicHealthChip.textContent = `${likelihoodLabel(publicHealthModel.likelihood?.level || "baixa")} × ${impactLabel(publicHealthModel.impact?.level || "baixo")}`;
+    publicHealthChip.textContent = `${viabilityLabel(publicHealthModel.likelihood?.level || "baixa")} × ${impactLabel(publicHealthModel.impact?.level || "baixo")} impacto`;
     const publicHealthSub = document.createElement("small");
     publicHealthSub.textContent = (publicHealthModel.matched_areas || ["Area nao especificada"]).slice(0, 2).join(", ");
     publicHealth.append(publicHealthChip, publicHealthSub);
@@ -3205,7 +5027,7 @@ function renderCorrelationTable() {
     keys.textContent = (item.join_recipe?.suggested_keys || []).slice(0, 5).join(", ") || "-";
 
     const risks = document.createElement("td");
-    risks.textContent = (item.risk_flags || []).join(", ") || "baixo";
+    risks.textContent = (item.risk_flags || []).join(", ") || "sem flags detetadas";
 
     row.append(relation, confidence, publicHealth, kinds, score, keys, risks);
     row.addEventListener("click", () => {
@@ -3248,6 +5070,11 @@ function renderAll() {
     renderPublicHealthMatrix();
     return;
   }
+  if (state.activeTab === "care") {
+    renderSummary();
+    renderCareOps();
+    return;
+  }
   if (state.activeTab === "local") {
     renderSummary();
     renderLocalPlans();
@@ -3266,13 +5093,27 @@ function setupEvents() {
   dataSampleLimit.value = state.dataLimit;
   dataSampleLimitValue.textContent = state.dataLimit;
   const initialTab = new URLSearchParams(window.location.search).get("tab");
-  if (["data", "finprod", "predictive", "semantic", "health", "local", "tables"].includes(initialTab)) {
+  if (["data", "finprod", "predictive", "semantic", "health", "care", "local", "tables"].includes(initialTab)) {
     state.activeTab = initialTab;
   }
+  setupTabAccessibility();
   renderDatasetMode();
 
   analyticsTabs.forEach((button) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.analyticsTab));
+    button.addEventListener("keydown", (event) => {
+      const currentIndex = analyticsTabs.indexOf(button);
+      let nextIndex = null;
+      if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % analyticsTabs.length;
+      if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + analyticsTabs.length) % analyticsTabs.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = analyticsTabs.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const nextButton = analyticsTabs[nextIndex];
+      setActiveTab(nextButton.dataset.analyticsTab);
+      nextButton.focus();
+    });
   });
   predictiveDataButton?.addEventListener("click", () => setActiveTab("data"));
   predictiveIndicatorFilter?.addEventListener("change", () => {
@@ -3285,14 +5126,22 @@ function setupEvents() {
     loadFinProdAnalytics().catch(showError);
   });
   finProdFinancialDataset?.addEventListener("change", () => {
+    activeFinProdRequest += 1;
+    activeFinProdRecommendationRequest += 1;
     state.selectedFinancialDataset = finProdFinancialDataset.value;
     state.finProdPayload = null;
+    state.finProdRecommendationPayload = null;
     renderFinProdAnalytics();
+    loadFinProdRecommendations().catch(() => {
+      renderFinProdRecommendations({recommendations: [], warning: "Não foi possível calcular compatibilidade para este financeiro."});
+    });
   });
   finProdProductionDataset?.addEventListener("change", () => {
+    activeFinProdRequest += 1;
     state.selectedProductionDataset = finProdProductionDataset.value;
     state.finProdPayload = null;
     renderFinProdAnalytics();
+    renderFinProdRecommendations(state.finProdRecommendationPayload || {recommendations: []});
   });
   setActiveTab(state.activeTab, {syncUrl: false, force: true});
 
@@ -3307,6 +5156,12 @@ function setupEvents() {
 
   analyticsKind.addEventListener("change", () => {
     state.kind = analyticsKind.value;
+    invalidateFilterCache();
+    renderAll();
+  });
+
+  analyticsLocalScope?.addEventListener("change", () => {
+    state.localScope = analyticsLocalScope.value;
     invalidateFilterCache();
     renderAll();
   });
@@ -3332,6 +5187,9 @@ function setupEvents() {
     renderDatasetMode();
     state.selectedDataDataset = dataDatasetSelect.value;
     state.dataPayload = null;
+    state.predictiveRecommendationPayload = null;
+    state._predictiveRecommendationKey = "";
+    activePredictiveRecommendationRequest += 1;
     renderDataAnalytics();
     loadDataAnalytics().catch(showDataError);
   });
@@ -3339,6 +5197,9 @@ function setupEvents() {
   dataSampleLimit.addEventListener("input", () => {
     state.dataLimit = Number(dataSampleLimit.value);
     dataSampleLimitValue.textContent = state.dataLimit;
+    state.predictiveRecommendationPayload = null;
+    state._predictiveRecommendationKey = "";
+    activePredictiveRecommendationRequest += 1;
     debounceLoadDataAnalytics();
   });
 
@@ -3349,6 +5210,9 @@ function setupEvents() {
   dataRichMode?.addEventListener("click", () => {
     state.datasetMode = "rich";
     state.dataPayload = null;
+    state.predictiveRecommendationPayload = null;
+    state._predictiveRecommendationKey = "";
+    activePredictiveRecommendationRequest += 1;
     populateDataDatasetOptions();
     renderDataAnalytics();
     loadDataAnalytics().catch(showDataError);
@@ -3361,15 +5225,27 @@ function setupEvents() {
 
   analyticsExport.addEventListener("click", () => {
     const payload = {
+      methodology_version: state.payload?.methodology?.version || "semantic-links-v1",
       generated_at: state.payload?.generated_at,
+      exported_at: new Date().toISOString(),
+      active_tab: state.activeTab,
       filters: {
         min_score: state.minScore,
         search: state.search,
         dimension: state.kind,
+        local_scope: state.localScope,
         confidence: state.confidence,
         low_risk_only: state.lowRiskOnly,
       },
-      correlations: state.filteredCorrelations,
+      context: {
+        selected_data_dataset: state.selectedDataDataset,
+        selected_financial_dataset: state.selectedFinancialDataset,
+        selected_production_dataset: state.selectedProductionDataset,
+        sample_limit: state.dataLimit,
+        data_quality_warnings: state.dataPayload?.quality_warnings || [],
+        finprod_warnings: state.finProdPayload?.diagnostics?.warnings || [],
+      },
+      link_hypotheses: state.filteredCorrelations,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json"});
     const anchor = document.createElement("a");

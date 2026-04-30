@@ -5,29 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=geo-mapping-20260427" />
+    <link rel="stylesheet" href="styles.css?v=copy-tight-20260430" />
   </head>
   <body>
     <main class="analytics-layout">
       <header class="topbar">
+        <div class="analytics-hero-bg"></div>
         <div>
           <p class="eyebrow">Saúde+ Pública</p>
           <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública - Analytics</h1>
-          <p class="meta">Amostras reais, sinais fortes, prioridades e tabelas de validação.</p>
+          <p class="meta">Amostras, sinais e validação.</p>
         </div>
         <div class="topbar-actions">
           <a href="/" class="top-link">Vista principal</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
+          <a href="analytics.html" class="top-link is-active" aria-current="page">Analytics</a>
+          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link">Metodologia</a>
         </div>
+
       </header>
 
-      <nav class="analytics-tabs" aria-label="Secções de analytics">
+      <nav class="analytics-tabs" aria-label="Secções de analytics" role="tablist">
         <button class="analytics-tab is-active" type="button" data-analytics-tab="data">Dados reais</button>
         <button class="analytics-tab" type="button" data-analytics-tab="finprod">Financeiro × Produção</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="predictive">Preditiva</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="predictive">Projeção</button>
         <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
         <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="care">Cuidados</button>
         <button class="analytics-tab" type="button" data-analytics-tab="local">Planos Locais</button>
         <button class="analytics-tab" type="button" data-analytics-tab="tables">Validação</button>
       </nav>
@@ -40,6 +45,8 @@
           </div>
           <div id="dataAnalyticsStatus" class="sync-state">A aguardar catálogo...</div>
         </div>
+
+        <section id="dataStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada dos dados reais"></section>
 
         <div class="data-analytics-toolbar">
           <label>
@@ -64,16 +71,19 @@
             <strong id="dataStatRows">-</strong>
           </div>
           <div>
-            <span>Medidas numéricas</span>
-            <strong id="dataStatNumeric">-</strong>
+            <span>Completude</span>
+            <div id="dataStatCompleteness" class="completeness-wrap">
+              <strong id="dataStatCompletenessValue">-</strong>
+              <div class="completeness-bar"><div id="dataStatCompletenessBar" class="completeness-fill" style="width: 0%"></div></div>
+            </div>
           </div>
           <div>
-            <span>Dimensões categóricas</span>
-            <strong id="dataStatCategorical">-</strong>
+            <span>Medidas / Dimensões</span>
+            <strong id="dataStatCounts">-</strong>
           </div>
           <div>
-            <span>Correlação mais forte</span>
-            <strong id="dataStatCorrelation">-</strong>
+            <span>Adequação estatística</span>
+            <div id="dataStatSuitability">-</div>
           </div>
         </section>
 
@@ -84,14 +94,14 @@
             <div class="panel-heading">
               <div>
                 <h2>Top dados-chave</h2>
-                <p class="meta">Ranking exploratório por completude, variação, diversidade e centralidade.</p>
+                <p class="meta">Ranking por completude e variação.</p>
               </div>
             </div>
             <div id="dataFeatureImportance" class="feature-importance-list"></div>
           </section>
           <aside id="featureDetailPanel" class="feature-detail-panel">
             <strong>Driver selecionado</strong>
-            <p class="meta">Seleciona um dado-chave para ver os sinais completos.</p>
+            <p class="meta">Abre um dado-chave.</p>
           </aside>
           <section>
             <div class="panel-heading">
@@ -109,7 +119,10 @@
         <section class="data-analytics-grid">
           <section>
             <div class="panel-heading">
-              <h2>Correlação entre medidas</h2>
+              <div>
+                <h2>Correlação entre medidas</h2>
+                <p class="meta">Oculta duplicados e relações derivadas.</p>
+              </div>
             </div>
             <div id="dataCorrelationList" class="data-correlation-list"></div>
           </section>
@@ -143,10 +156,11 @@
         <div class="panel-heading">
           <div>
             <h2>Cruzamento financeiro × produção</h2>
-            <p id="finProdMeta" class="meta">Seleciona um dataset financeiro e um de produção para comparar custo unitário por período.</p>
+            <p id="finProdMeta" class="meta">Custo unitário por período comum.</p>
           </div>
           <div id="finProdStatus" class="sync-state">A aguardar seleção...</div>
         </div>
+        <section id="finProdStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada do cruzamento financeiro e produção"></section>
         <div class="data-analytics-toolbar">
           <label>
             <span>Dataset financeiro</span>
@@ -158,6 +172,7 @@
           </label>
           <button id="finProdRefreshButton" class="ghost-button" type="button">Cruzar datasets</button>
         </div>
+        <section id="finProdRecommendations" class="finprod-recommendations" aria-label="Alternativas com melhor estrutura temporal"></section>
         <section class="panel analytics-panel finprod-check-panel">
           <div class="panel-heading">
             <h3>Checklist de comparabilidade</h3>
@@ -199,18 +214,20 @@
       <section class="panel analytics-panel predictive-panel" data-tab-panel="predictive" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Análise preditiva simples</h2>
-            <p id="predictiveMeta" class="meta">Projeções exploratórias sobre a amostra real selecionada.</p>
+            <h2>Projeção exploratória simples</h2>
+            <p id="predictiveMeta" class="meta">Projeção curta, não oficial.</p>
           </div>
           <button id="predictiveDataButton" class="ghost-button" type="button">Escolher dataset</button>
         </div>
+
+        <section id="predictiveStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada da projeção"></section>
 
         <section id="predictiveKpis" class="predictive-kpis" aria-label="Resumo preditivo"></section>
 
         <section class="predictive-filter-bar" aria-label="Filtro de indicadores preditivos">
           <div>
             <strong>Indicador com fiabilidade</strong>
-            <span>Mostra apenas séries com volume e variação suficientes para leitura exploratória.</span>
+            <span>Séries com volume e variação mínimos.</span>
           </div>
           <label>
             <span>Indicador</span>
@@ -218,12 +235,16 @@
           </label>
         </section>
 
+        <section id="predictiveFitGuide" class="predictive-fit-guide" aria-label="Orientação de viabilidade preditiva"></section>
+
+        <section id="predictiveClosestOpportunities" class="predictive-opportunities" aria-label="Melhores oportunidades próximas"></section>
+
         <section class="predictive-grid predictive-grid-primary">
           <article class="predictive-card predictive-forecast-card">
             <div class="panel-heading">
               <div>
                 <h2>Projeção curta</h2>
-                <p class="meta">Linear, baseada nos períodos disponíveis.</p>
+                <p class="meta">Linear, só se houver períodos.</p>
               </div>
             </div>
             <div class="predictive-chart-wrap">
@@ -257,7 +278,7 @@
           <div class="panel-heading">
             <div>
               <h2>Datasets com potencial temporal</h2>
-              <p class="meta">Sugestões do catálogo com sinais de mês, trimestre, evolução ou campos temporais.</p>
+              <p class="meta">Séries temporais prováveis.</p>
             </div>
           </div>
           <div id="predictiveDatasetCandidates" class="predictive-dataset-candidates"></div>
@@ -271,7 +292,7 @@
         </div>
         <label>
           <span>Pesquisar relação</span>
-          <input id="analyticsSearch" name="analytics-search" autocomplete="off" placeholder="período, hospital, mortalidade" type="text" />
+          <input id="analyticsSearch" name="analytics-search" autocomplete="off" placeholder="ICPC, problemas, utentes, ULS, UF, rastreios" type="text" />
         </label>
         <label>
           <span>Dimensão</span>
@@ -281,7 +302,21 @@
             <option value="territorial">Território</option>
             <option value="entidade">Entidade</option>
             <option value="medida">Medida</option>
+            <option value="clinico">Clínico</option>
             <option value="generico">Genérico</option>
+          </select>
+        </label>
+        <label>
+          <span>Âmbito local</span>
+          <select id="analyticsLocalScope" name="analytics-local-scope">
+            <option value="">Todos</option>
+            <option value="uls">ULS</option>
+            <option value="uf">UF/CSP</option>
+            <option value="regiao">Região/ARS</option>
+            <option value="hospital">Hospital</option>
+            <option value="concelho">Concelho/Distrito</option>
+            <option value="entidade">Instituição/Entidade</option>
+            <option value="none">Sem dimensão local</option>
           </select>
         </label>
         <label>
@@ -324,16 +359,16 @@
 
       <section class="semantic-explainer" data-tab-panel="semantic" hidden aria-label="Como usar a análise semântica">
         <div>
-          <strong>Para que serve</strong>
-          <span>Descobre que datasets podem ser cruzados porque partilham campos, dimensões ou temas próximos.</span>
+          <strong>Cruzar</strong>
+          <span>Campos, dimensões ou temas próximos.</span>
         </div>
         <div>
-          <strong>Como ler</strong>
-          <span>Começa pelas oportunidades, confirma os campos comuns e valida granularidade antes de juntar dados.</span>
+          <strong>Validar</strong>
+          <span>Chaves, período, granularidade.</span>
         </div>
         <div>
-          <strong>O que não é</strong>
-          <span>Não prova causalidade nem qualidade oficial do join; é uma triagem para investigação e planeamento.</span>
+          <strong>Limite</strong>
+          <span>Não prova qualidade, causalidade ou decisão.</span>
         </div>
       </section>
 
@@ -341,7 +376,7 @@
         <div class="panel-heading">
           <div>
             <h2>Oportunidades agora</h2>
-            <p class="meta">Combina score semântico, viabilidade técnica, impacto e baixo risco.</p>
+            <p class="meta">Score, viabilidade e risco.</p>
           </div>
         </div>
         <div id="analyticsTopOpportunities" class="top-opportunity-list"></div>
@@ -376,28 +411,30 @@
         <div class="panel-heading">
           <div>
             <h2>Leitura de saúde pública</h2>
-            <p id="publicHealthMeta" class="meta">Hipóteses exploratórias por viabilidade técnica, impacto, área e qualidade de cruzamento.</p>
+            <p id="publicHealthMeta" class="meta">Hipóteses por impacto e viabilidade.</p>
           </div>
         </div>
+
+        <section id="publicHealthStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada de saúde pública"></section>
 
         <section id="publicHealthKpis" class="public-health-kpis" aria-label="Resumo de prioridade em saúde pública"></section>
 
         <section class="health-guidance" aria-label="Como usar a leitura de saúde pública">
           <div>
-            <strong>1. Escolhe uma hipótese</strong>
-            <span>Usa a lista à esquerda para selecionar um tema de análise prioritário.</span>
+            <strong>1. Escolhe</strong>
+            <span>Seleciona uma hipótese.</span>
           </div>
           <div>
-            <strong>2. Valida a matriz</strong>
-            <span>Procura alta viabilidade e alto impacto; confirma território, tempo e entidade.</span>
+            <strong>2. Valida</strong>
+            <span>Tempo, território, entidade.</span>
           </div>
           <div>
             <strong>3. Lê o âmbito</strong>
-            <span>O cartograma separa leitura regional, entidades territoriais por validar e vista nacional.</span>
+            <span>Regional, nacional ou por resolver.</span>
           </div>
           <div>
-            <strong>4. Usa com cautela</strong>
-            <span>É triagem exploratória para perguntas e validações, não recomendação oficial.</span>
+            <strong>4. Cautela</strong>
+            <span>Triagem, não decisão.</span>
           </div>
         </section>
 
@@ -405,11 +442,16 @@
           <section>
             <div class="panel-heading">
               <div>
-                <h2>Matriz viabilidade técnica × impacto</h2>
-                <p class="meta">Viabilidade técnica nas linhas, impacto potencial nas colunas. Priorizar validação no canto superior direito.</p>
+                <h2>Matriz impacto × viabilidade</h2>
+                <p class="meta">Priorizar canto alto-alto; risco trava.</p>
               </div>
             </div>
-            <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de viabilidade técnica versus impacto"></div>
+            <div class="matrix-objective-strip" aria-label="Objetivo da matriz">
+              <span><strong>Impacto</strong> valor público</span>
+              <span><strong>Viabilidade</strong> dados usáveis</span>
+              <span><strong>Risco</strong> travão</span>
+            </div>
+            <div id="publicHealthMatrix" class="public-health-matrix" aria-label="Matriz de impacto potencial versus viabilidade analítica"></div>
           </section>
           <aside>
             <h3>Estratificação por área matched</h3>
@@ -422,7 +464,7 @@
             <div class="panel-heading">
               <div>
                 <h2>Hipóteses de análise</h2>
-                <p class="meta">Triagem Hanlon/PNS-like. Não é recomendação oficial.</p>
+                <p class="meta">Triagem PNS-like.</p>
               </div>
             </div>
             <div id="publicHealthPriorityList" class="public-health-priority-list"></div>
@@ -431,14 +473,14 @@
           <section class="public-health-map-panel">
             <div class="panel-heading">
               <div>
-                <h2>Cartograma SNS</h2>
-                <p class="meta">Leitura regional: continente norte-sul e ilhas. O nacional fica separado.</p>
+                <h2>Leitura territorial SNS</h2>
+                <p class="meta">Regiões; sem match fica separado.</p>
               </div>
               <div id="publicHealthLayerControls" class="map-layer-controls" role="group" aria-label="Layers do mapa SNS"></div>
             </div>
             <div id="publicHealthNationalSummary" class="public-health-national-summary"></div>
             <div class="public-health-map-wrap">
-              <svg id="publicHealthMap" role="img" aria-label="Mapa/cartograma de prioridades em saúde pública"></svg>
+              <svg id="publicHealthMap" role="img" aria-label="Leitura territorial de prioridades em saúde pública"></svg>
             </div>
           </section>
 
@@ -452,7 +494,7 @@
           <div class="panel-heading">
             <div>
               <h2>Perguntas úteis</h2>
-              <p class="meta">Geradas a partir das prioridades disponíveis.</p>
+              <p class="meta">A partir das prioridades.</p>
             </div>
           </div>
           <div id="publicHealthQuestions" class="public-health-questions"></div>
@@ -462,7 +504,7 @@
           <div class="panel-heading">
             <div>
               <h2>Matriz de hipóteses</h2>
-              <p id="publicHealthTableMeta" class="meta">Seleciona uma célula para ver explicação e hipóteses candidatas.</p>
+              <p id="publicHealthTableMeta" class="meta">Abre uma célula.</p>
             </div>
           </div>
           <div class="hypothesis-matrix-layout">
@@ -472,13 +514,156 @@
         </section>
       </section>
 
+      <section class="panel analytics-panel care-ops-panel" data-tab-panel="care" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Cuidados: modelo operacional</h2>
+            <p id="careOpsMeta" class="meta">Modelo de coortes; sem dados individuais.</p>
+          </div>
+        </div>
+
+        <section id="careOpsStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada para cuidados"></section>
+
+        <section class="care-ops-explainer" aria-label="Como ler a página de cuidados">
+          <div class="care-ops-explainer-main">
+            <strong>Como ler</strong>
+            <span>Campos, validações e ação. Só avança com dados autorizados.</span>
+          </div>
+          <div class="care-ops-explainer-steps">
+            <div>
+              <b>1</b>
+              <span><strong>Definir coorte</strong><small>UF, local, idade, utilização.</small></span>
+            </div>
+            <div>
+              <b>2</b>
+              <span><strong>Validar base</strong><small>Denominador, período, nulos.</small></span>
+            </div>
+            <div>
+              <b>3</b>
+              <span><strong>Agir com dono</strong><small>Contacto, consulta, rastreio, PIC.</small></span>
+            </div>
+            <div>
+              <b>4</b>
+              <span><strong>Auditar</strong><small>Quem, motivo, ação, revisão.</small></span>
+            </div>
+          </div>
+        </section>
+
+        <section id="careOpsKpis" class="care-ops-kpis" aria-label="Resumo do painel de cuidados proativos"></section>
+
+        <section class="care-ops-guidance" aria-label="Princípios do painel de cuidados proativos">
+          <div>
+            <strong>Unidade de trabalho</strong>
+            <span>UF e localização agregada.</span>
+          </div>
+          <div>
+            <strong>Coorte antes de score</strong>
+            <span>Quem entra, porquê, período.</span>
+          </div>
+          <div>
+            <strong>Ação antes da métrica</strong>
+            <span>Dono, prazo e próxima ação.</span>
+          </div>
+          <div>
+            <strong>Travões RGPD</strong>
+            <span>Minimização e acesso por perfil.</span>
+          </div>
+        </section>
+
+        <section class="care-ops-card">
+          <div class="panel-heading">
+            <div>
+              <h2>Onde começar</h2>
+              <p class="meta">Escolhe intervenção por maturidade dos dados.</p>
+            </div>
+          </div>
+          <div id="careOpsMatrix" class="care-ops-matrix" aria-label="Matriz de intervenção versus prontidão dos dados"></div>
+        </section>
+
+        <section class="care-ops-grid">
+          <article class="care-ops-card care-ops-wide">
+            <div class="panel-heading">
+              <div>
+                <h2>Campos da tabela operacional</h2>
+                <p class="meta">Regras de coorte; sem contagens reais.</p>
+              </div>
+            </div>
+            <div class="analytics-table-wrap care-ops-table-wrap">
+              <table id="careOpsTable" class="analytics-table care-ops-table">
+                <thead>
+                  <tr>
+                    <th>Regra de coorte</th>
+                    <th>Âmbito local</th>
+                    <th>GRA/IDRA</th>
+                    <th>Perfil clínico</th>
+                    <th>Utilização hospitalar</th>
+                    <th>CSP e faltas</th>
+                    <th>Prevenção/social</th>
+                    <th>Intervenção</th>
+                    <th>Validações</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+
+          <aside class="care-ops-card">
+            <div class="panel-heading">
+              <div>
+                <h2>Do sinal à intervenção</h2>
+                <p class="meta">Passos mínimos.</p>
+              </div>
+            </div>
+            <div id="careOpsWorkflow" class="care-ops-workflow"></div>
+          </aside>
+        </section>
+
+        <section class="care-ops-card">
+          <div class="panel-heading">
+            <div>
+              <h2>Condições antes de produção</h2>
+              <p class="meta">Sem controlos, fica desenho.</p>
+            </div>
+          </div>
+          <div id="careOpsGuardrails" class="care-ops-guardrails"></div>
+        </section>
+      </section>
+
       <section class="panel analytics-panel local-plans-panel" data-tab-panel="local" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Cockpit de Planos Locais de Saúde</h2>
-            <p id="localPlanMeta" class="meta">Diagnóstico, prioridades, vigilância, risco e plano de ação a partir dos cruzamentos disponíveis.</p>
+            <h2>Planos Locais: triagem para decisão</h2>
+            <p id="localPlanMeta" class="meta">Triagem local; não é PLS final.</p>
           </div>
         </div>
+
+        <section id="localPlanStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada para planos locais"></section>
+
+        <section class="local-plan-explainer" aria-label="Como ler a página de planos locais">
+          <div class="local-plan-explainer-main">
+            <strong>Para que serve</strong>
+            <span>Separa sinais usáveis dos que precisam de território, período ou denominador.</span>
+          </div>
+          <div class="local-plan-explainer-steps">
+            <div>
+              <b>1</b>
+              <span><strong>Diagnóstico</strong><small>Temas e territórios com sinal.</small></span>
+            </div>
+            <div>
+              <b>2</b>
+              <span><strong>Priorizar</strong><small>Necessidade + dados usáveis.</small></span>
+            </div>
+            <div>
+              <b>3</b>
+              <span><strong>Vigiar</strong><small>Sinais com eixo temporal.</small></span>
+            </div>
+            <div>
+              <b>4</b>
+              <span><strong>Decidir</strong><small>Validações antes de planear.</small></span>
+            </div>
+          </div>
+        </section>
 
         <section id="localPlanKpis" class="local-plan-kpis" aria-label="Resumo para planos locais"></section>
 
@@ -487,7 +672,7 @@
             <div class="panel-heading">
               <div>
                 <h2>Diagnóstico local</h2>
-                <p class="meta">Temas PNS, cobertura territorial e lacunas que condicionam planeamento subnacional.</p>
+                <p class="meta">Território e temas dominantes.</p>
               </div>
             </div>
             <div id="localDiagnosis" class="local-diagnosis"></div>
@@ -496,8 +681,8 @@
           <article class="local-plan-card">
             <div class="panel-heading">
               <div>
-                <h2>Prioridades</h2>
-                <p class="meta">Necessidade local versus capacidade analítica. Clica numa célula para ver hipóteses e validações.</p>
+                <h2>Prioridades para discutir</h2>
+                <p class="meta">Necessidade vs base analítica.</p>
               </div>
             </div>
             <div class="local-priority-layout">
@@ -512,7 +697,7 @@
             <div class="panel-heading">
               <div>
                 <h2>Vigilância</h2>
-                <p class="meta">Sinal temporal, capacidade de monitorização e qualidade da série.</p>
+                <p class="meta">Só com eixo temporal confirmado.</p>
               </div>
             </div>
             <div id="localSurveillance" class="local-signal-list"></div>
@@ -521,8 +706,8 @@
           <article class="local-plan-card">
             <div class="panel-heading">
               <div>
-                <h2>Risco residual</h2>
-                <p class="meta">Probabilidade × impacto, ajustado por vulnerabilidade e capacidade analítica.</p>
+                <h2>Incerteza e travões</h2>
+                <p class="meta">Travões para leituras frágeis.</p>
               </div>
             </div>
             <div id="localRiskMatrix" class="local-risk-matrix"></div>
@@ -532,8 +717,8 @@
         <section class="local-plan-card">
           <div class="panel-heading">
             <div>
-              <h2>Plano de ação</h2>
-              <p class="meta">Perguntas acionáveis, datasets necessários e validações antes de usar em planeamento local.</p>
+              <h2>Próximas decisões</h2>
+              <p class="meta">Perguntas e validações.</p>
             </div>
           </div>
           <div id="localActionPlan" class="local-action-plan"></div>
@@ -564,8 +749,8 @@
       <section class="panel analytics-panel analytics-table-panel tables-primary-panel" data-tab-panel="tables" hidden>
         <div class="panel-heading">
           <div>
-            <h2>Ligações candidatas para cruzar dados</h2>
-            <p id="analyticsCorrelationMeta" class="meta">Ordenadas por score semântico.</p>
+            <h2>Hipóteses candidatas para cruzar dados</h2>
+            <p id="analyticsCorrelationMeta" class="meta">Ordenadas por score; validar antes de juntar.</p>
           </div>
         </div>
         <div class="tables-guidance">
@@ -611,6 +796,6 @@
       </footer>
     </main>
 
-    <script src="analytics.js?v=geo-mapping-20260427" defer></script>
+    <script src="analytics.js?v=copy-tight-20260430" defer></script>
   </body>
 </html>

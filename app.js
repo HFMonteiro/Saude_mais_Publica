@@ -4,6 +4,9 @@ const state = {
   opportunities: [],
   selectedDataset: null,
   activeTheme: "",
+  localScope: "",
+  institutionType: "",
+  dimensionType: "",
   minScore: 4,
   filterText: "",
   themes: [],
@@ -40,6 +43,13 @@ const THEME_COLORS = {
   Outros: "#6d7787",
 };
 
+const FALLBACK_ANALYSIS = {
+  datasets: [],
+  links: [],
+  opportunities: [],
+  themes: [],
+};
+
 function getThemeColor(theme) {
   return THEME_COLORS[theme] || THEME_COLORS.Outros;
 }
@@ -61,7 +71,11 @@ const statLinks = document.getElementById("statLinks");
 const statFields = document.getElementById("statFields");
 const statFocus = document.getElementById("statFocus");
 const themeCards = document.getElementById("themeCards");
+const catalogCockpit = document.getElementById("catalogCockpit");
 const themeFilter = document.getElementById("themeFilter");
+const localScopeFilter = document.getElementById("localScopeFilter");
+const institutionFilter = document.getElementById("institutionFilter");
+const dimensionFilter = document.getElementById("dimensionFilter");
 const recentDataMeta = document.getElementById("recentDataMeta");
 const recentDataTable = document.getElementById("recentDataTable");
 const recentDataEmpty = document.getElementById("recentDataEmpty");
@@ -96,6 +110,24 @@ function repairEncoding(value) {
 
 function safeText(value) {
   return value == null ? "" : repairEncoding(value);
+}
+
+function normalizeSearch(value) {
+  return safeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function datasetFacets(dataset) {
+  return dataset?.facets || {};
+}
+
+function hasFacetValue(dataset, group, value) {
+  if (!value) return true;
+  const values = datasetFacets(dataset)[group] || [];
+  if (value === "none") return !values.length;
+  return values.includes(value);
 }
 
 async function fetchJson(url, {timeoutMs = 18000} = {}) {
@@ -147,6 +179,23 @@ function createShowMoreButton(text, onClick) {
   return button;
 }
 
+function createDisclosure(summaryText, nodes = [], className = "inline-disclosure") {
+  const details = document.createElement("details");
+  details.className = className;
+  const summary = document.createElement("summary");
+  summary.textContent = summaryText;
+  details.appendChild(summary);
+  nodes.forEach((node) => details.appendChild(node));
+  return details;
+}
+
+function createChip(text, className = "tag") {
+  const chip = document.createElement("span");
+  chip.className = className;
+  chip.textContent = safeText(text);
+  return chip;
+}
+
 function svgNode(tag, attributes = {}) {
   const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
   Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
@@ -174,14 +223,17 @@ function getViewState() {
     return state._viewState;
   }
 
-  const value = state.filterText.trim().toLowerCase();
+  const value = normalizeSearch(state.filterText).trim();
   const datasets = [];
   for (const item of state.datasets) {
     if (state.activeTheme && item.mega_theme !== state.activeTheme) {
       continue;
     }
+    if (!hasFacetValue(item, "local_scopes", state.localScope)) continue;
+    if (!hasFacetValue(item, "institution_types", state.institutionType)) continue;
+    if (!hasFacetValue(item, "dimension_types", state.dimensionType)) continue;
     if (value) {
-      if (!getDatasetSearchText(item).includes(value)) {
+      if (!matchesExpandedSearch(item, value)) {
         continue;
       }
     }
@@ -216,10 +268,36 @@ function debounceRender() {
   }, 120);
 }
 
+function fallbackAnalysisPayload(error) {
+  const payload = structuredClone(FALLBACK_ANALYSIS);
+  payload.links = payload.links.filter((link) => link.score >= state.minScore);
+  payload.total = payload.datasets.length;
+  payload.link_count = payload.links.length;
+  payload.generated_at = Math.floor(Date.now() / 1000);
+  payload.fallback = true;
+  payload.error_message = error?.message || "API indisponível";
+  payload.error_kind = "client_fetch_error";
+  payload.warning = `API indisponível: ${payload.error_message}. Sem dados fictícios carregados.`;
+  payload.empty_reason = "api_unavailable";
+  return payload;
+}
+
+function fallbackStatusText(payload) {
+  const warning = payload?.warning || payload?.error_message || "falha desconhecida";
+  if (/pedido|parâmetro|parametro|configura/i.test(warning)) return "API indisponível · rever configuração";
+  if (/indispon|sem resposta|fetch|timeout|network/i.test(warning)) return "API indisponível · sem dados fictícios";
+  return "API indisponível · ver diagnóstico";
+}
+
 async function loadAnalysis() {
   syncState.textContent = "A sincronizar…";
   const url = `/api/analysis?min_score=${state.minScore}`;
-  const payload = await fetchJson(url, {timeoutMs: 24000});
+  let payload;
+  try {
+    payload = await fetchJson(url, {timeoutMs: 24000});
+  } catch (error) {
+    payload = fallbackAnalysisPayload(error);
+  }
   state.datasets = payload.datasets || [];
   state.links = payload.links || [];
   state.opportunities = payload.opportunities || [];
@@ -249,7 +327,10 @@ async function loadAnalysis() {
     touchSelectionState(filteredDatasets()[0]?.dataset_id || null);
     state.recentData = null;
   }
-  syncState.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
+  syncState.textContent = payload.fallback
+    ? fallbackStatusText(payload)
+    : `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
+  syncState.title = payload.fallback ? (payload.warning || payload.error_message || "") : "";
   renderAll();
   if (state.selectedDataset) {
     loadRecentRecords(state.selectedDataset).catch(showRecordsError);
@@ -271,13 +352,12 @@ function displayTitle(dataset) {
     return state._titleCache.get(datasetId);
   }
 
-  const value = dataset?.title || datasetId;
+  const value = dataset?.title ? safeText(dataset.title) : datasetId;
   const title = value
     .replace(/-/g, " ")
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .trim();
   setBoundedCache(state._titleCache, datasetId, title, TITLE_CACHE_SIZE);
   return title;
 }
@@ -287,14 +367,65 @@ function getDatasetSearchText(dataset) {
   if (state._searchTextCache.has(datasetId)) {
     return state._searchTextCache.get(datasetId);
   }
-  const text = `${datasetId} ${displayTitle(dataset)} ${(dataset?.fields || []).join(" ")}`.toLowerCase();
+  const facets = datasetFacets(dataset);
+  const text = normalizeSearch([
+    datasetId,
+    displayTitle(dataset),
+    dataset?.mega_theme,
+    ...(dataset?.fields || []),
+    ...(facets.tags || []),
+    ...(facets.labels || []),
+    ...(facets.local_scopes || []),
+    ...(facets.institution_types || []),
+    ...(facets.dimension_types || []),
+    ...(dataset?.quality_flags || []),
+  ].join(" "));
   setBoundedCache(state._searchTextCache, datasetId, text, SEARCH_TEXT_CACHE_SIZE);
   return text;
+}
+
+const SEARCH_SYNONYM_GROUPS = [
+  ["icpc", "problema", "problemas", "diagnostico", "diagnosticos", "morbilidade"],
+  ["utente", "utentes", "inscrito", "inscritos", "populacao", "populacao inscrita"],
+  ["uf", "unidade funcional", "usf", "ucsp", "aces", "csp", "cuidados primarios"],
+  ["uls", "unidade local de saude"],
+  ["regiao", "regiao ars", "ars", "norte", "centro", "lisboa", "alentejo", "algarve"],
+  ["hospital", "hospitais", "centro hospitalar", "internamento", "urgencia"],
+  ["fragilidade", "multimorbilidade", "polimedicacao", "idra", "gra", "pic", "plano individual"],
+  ["rastreio", "rastreios", "vacina", "vacinacao", "prevencao"],
+];
+
+function searchAlternatives(token) {
+  const normalized = normalizeSearch(token).trim();
+  if (!normalized) return [];
+  const group = SEARCH_SYNONYM_GROUPS.find((items) => items.some((item) => normalizeSearch(item) === normalized));
+  return group ? group.map(normalizeSearch) : [normalized];
+}
+
+function matchesExpandedSearch(dataset, rawSearch) {
+  const tokens = normalizeSearch(rawSearch).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const text = getDatasetSearchText(dataset);
+  return tokens.every((token) => searchAlternatives(token).some((candidate) => text.includes(candidate)));
 }
 
 function compactTitle(value, max = 54) {
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
+function readiness(dataset) {
+  return dataset?.analysis_readiness || {score: 0, band: "fragil", label: "Frágil", gaps: ["validar"]};
+}
+
+function readinessChip(dataset, compact = false) {
+  const info = readiness(dataset);
+  const chip = document.createElement("span");
+  chip.className = `quality-chip quality-${info.band || "fragil"}`;
+  const gaps = (info.gaps || []).slice(0, 2).join(", ");
+  chip.textContent = compact ? `${info.label || "Rever"} ${info.score ?? 0}` : `${info.label || "Rever"} · ${info.score ?? 0}`;
+  chip.title = gaps ? `Validar: ${gaps}` : "Validar fonte e denominadores";
+  return chip;
 }
 
 function ensureSelectionInFilter() {
@@ -369,6 +500,98 @@ function renderThemeCards() {
   });
 }
 
+function countDatasetsByFacet(datasets, group, value) {
+  return datasets.filter((dataset) => (datasetFacets(dataset)[group] || []).includes(value)).length;
+}
+
+function hasClinicalSignal(dataset) {
+  return matchesExpandedSearch(dataset, "icpc") || matchesExpandedSearch(dataset, "fragilidade") || matchesExpandedSearch(dataset, "rastreios");
+}
+
+function setQuickCatalogFilter({search = "", localScope = "", institutionType = "", dimensionType = ""} = {}) {
+  state.filterText = search;
+  state.localScope = localScope;
+  state.institutionType = institutionType;
+  state.dimensionType = dimensionType;
+  datasetFilter.value = search;
+  if (localScopeFilter) localScopeFilter.value = localScope;
+  if (institutionFilter) institutionFilter.value = institutionType;
+  if (dimensionFilter) dimensionFilter.value = dimensionType;
+  state.datasetRenderLimit = DATASET_RENDER_STEP;
+  invalidateViewState();
+  ensureSelectionInFilter();
+  renderAll();
+}
+
+function renderCatalogCockpit() {
+  if (!catalogCockpit) return;
+  clearElement(catalogCockpit);
+  const visible = filteredDatasets();
+  const ready = visible.filter((dataset) => ["pronto", "rever"].includes(readiness(dataset).band)).length;
+  const local = visible.filter((dataset) => (datasetFacets(dataset).local_scopes || []).length).length;
+  const uf = countDatasetsByFacet(visible, "local_scopes", "uf");
+  const uls = countDatasetsByFacet(visible, "local_scopes", "uls");
+  const clinical = visible.filter(hasClinicalSignal).length;
+  const fallback = state.datasets.length === 0;
+  const cards = fallback
+    ? [
+        {
+          label: "API",
+          value: "sem catálogo",
+          detail: "Sem dados fictícios. Atualiza quando a API SNS responder.",
+          action: "Atualizar",
+          onClick: () => loadAnalysis().catch(showError),
+        },
+      ]
+    : [
+        {
+          label: "Prontos para triagem",
+          value: `${formatNumber(ready)}/${formatNumber(visible.length)}`,
+          detail: "Com metadados suficientes para abrir amostra e validações.",
+          action: "Ver prontos",
+          onClick: () => setQuickCatalogFilter({dimensionType: ""}),
+        },
+        {
+          label: "Localização",
+          value: `${formatNumber(local)} datasets`,
+          detail: `ULS ${formatNumber(uls)} · UF/CSP ${formatNumber(uf)} · região/concelho/hospital quando existir.`,
+          action: "Focar ULS/UF",
+          onClick: () => setQuickCatalogFilter({localScope: uf ? "uf" : "uls"}),
+        },
+        {
+          label: "Clínico/CSP",
+          value: `${formatNumber(clinical)} sinais`,
+          detail: "ICPC, problemas, utentes, fragilidade, rastreios ou continuidade CSP nos metadados.",
+          action: "Pesquisar clínico",
+          onClick: () => setQuickCatalogFilter({search: "icpc problemas utentes"}),
+        },
+        {
+          label: "Ação seguinte",
+          value: visible.length ? "analisar" : "sem resultados",
+          detail: visible.length ? "Seleciona dataset, abre Analytics ou limpa filtros se a lista ficou estreita." : "Os filtros atuais não devolvem datasets.",
+          action: visible.length ? "Limpar filtros" : "Limpar filtros",
+          onClick: clearCatalogFilters,
+        },
+      ];
+  cards.forEach((card) => {
+    const article = document.createElement("article");
+    article.className = "cockpit-card";
+    const label = document.createElement("span");
+    label.textContent = card.label;
+    const value = document.createElement("strong");
+    value.textContent = card.value;
+    const detail = document.createElement("small");
+    detail.textContent = card.detail;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost-button";
+    button.textContent = card.action;
+    button.addEventListener("click", card.onClick);
+    article.append(label, value, button, createDisclosure("detalhe", [detail], "compact-disclosure"));
+    catalogCockpit.appendChild(article);
+  });
+}
+
 function renderSummary() {
   const visible = filteredDatasets();
   const totalFields = visible.reduce((acc, item) => acc + (item.field_count || 0), 0);
@@ -383,15 +606,35 @@ function renderSummary() {
     : (state.activeTheme || "Catálogo");
 
   datasetCountLabel.textContent = `${visible.length} visíveis`;
-  datasetSummary.textContent = state.selectedDataset
+  const fallbackNote = state.datasets.length ? "" : "Sem catálogo carregado: verifica a API e atualiza. ";
+  datasetSummary.textContent = fallbackNote + (state.selectedDataset
     ? "Ordenado por relevância face ao dataset em foco."
-    : "Ordenado por número de ligações encontradas.";
+    : "Ordenado por número de ligações encontradas.");
 }
 
 function renderDatasetList() {
   const visible = filteredDatasets();
   const selected = state.selectedDataset;
   clearElement(datasetList);
+
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    const title = document.createElement("strong");
+    title.textContent = state.datasets.length ? "Sem datasets para estes filtros" : "Catálogo indisponível";
+    const detail = document.createElement("span");
+    detail.textContent = state.datasets.length
+      ? "Ajusta pesquisa, âmbito local ou dimensão."
+      : "A API não carregou dados; não há fallback fictício.";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost-button";
+    button.textContent = state.datasets.length ? "Limpar filtros" : "Atualizar";
+    button.addEventListener("click", state.datasets.length ? clearCatalogFilters : () => loadAnalysis().catch(showError));
+    empty.append(title, detail, button);
+    datasetList.appendChild(empty);
+    return;
+  }
 
   const selectedIndex = selected ? visible.findIndex((dataset) => dataset.dataset_id === selected) : -1;
   if (selectedIndex >= state.datasetRenderLimit) {
@@ -401,9 +644,10 @@ function renderDatasetList() {
   const visibleRows = visible.slice(0, state.datasetRenderLimit);
   const fragment = document.createDocumentFragment();
   visibleRows.forEach((dataset) => {
-    const item = document.createElement("button");
-    item.type = "button";
+    const item = document.createElement("div");
     item.className = "dataset-item";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
     if (selected === dataset.dataset_id) item.classList.add("active");
     item.style.setProperty("--item-theme", getThemeColor(dataset.mega_theme || "Outros"));
 
@@ -419,24 +663,41 @@ function renderDatasetList() {
     const linksCount = document.createElement("span");
     linksCount.textContent = `${degree} ligações`;
     meta.append(fieldsCount, linksCount);
+    meta.appendChild(readinessChip(dataset, true));
 
-    const fieldRow = document.createElement("div");
-    fieldRow.className = "dataset-meta-row";
-    const themeChip = document.createElement("span");
-    themeChip.className = "tag theme-tag";
-    themeChip.textContent = dataset.mega_theme || "Outros";
-    fieldRow.appendChild(themeChip);
-    (dataset.fields || []).slice(0, 3).forEach((field) => {
-      const chip = document.createElement("span");
-      chip.className = "tag";
-      chip.textContent = field;
-      fieldRow.appendChild(chip);
+    const conceptRow = document.createElement("div");
+    conceptRow.className = "dataset-meta-row concept-row";
+    const themeChip = createChip(dataset.mega_theme || "Outros", "tag theme-tag");
+    conceptRow.appendChild(themeChip);
+    (datasetFacets(dataset).labels || []).slice(0, 3).forEach((label) => {
+      const chip = createChip(label, "tag facet-tag");
+      chip.textContent = label;
+      chip.title = "Faceta inferida a partir dos metadados";
+      conceptRow.appendChild(chip);
     });
+    const fieldWrap = document.createElement("div");
+    fieldWrap.className = "dataset-field-wrap";
+    (dataset.fields || []).slice(0, 10).forEach((field) => fieldWrap.appendChild(createChip(field)));
+    const fieldDisclosure = createDisclosure(
+      `${Math.min((dataset.fields || []).length, 10)} campos`,
+      [fieldWrap],
+      "compact-disclosure dataset-fields-disclosure",
+    );
 
     item.appendChild(title);
     item.appendChild(meta);
-    item.appendChild(fieldRow);
-    item.onclick = () => selectDataset(dataset.dataset_id);
+    item.appendChild(conceptRow);
+    item.appendChild(fieldDisclosure);
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("details")) return;
+      selectDataset(dataset.dataset_id);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectDataset(dataset.dataset_id);
+      }
+    });
     fragment.appendChild(item);
   });
   datasetList.appendChild(fragment);
@@ -454,7 +715,14 @@ function renderDatasetList() {
   if (!visible.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem resultados para esta pesquisa.";
+    const message = document.createElement("span");
+    message.textContent = "Sem resultados para estes filtros.";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "ghost-button";
+    clear.textContent = "Limpar filtros";
+    clear.addEventListener("click", clearCatalogFilters);
+    empty.append(message, clear);
     datasetList.appendChild(empty);
   }
 }
@@ -665,9 +933,10 @@ function buildTreeForSelected(datasetId) {
     .sort((a, b) => b[1].length - a[1].length)
     .slice(0, 12)
     .forEach(([field, datasets]) => {
-      const group = document.createElement("section");
+      const group = document.createElement("details");
       group.className = "relation-group";
-      const heading = document.createElement("h3");
+      group.open = linkTree.childElementCount < 3;
+      const heading = document.createElement("summary");
       const fieldLabel = document.createElement("span");
       fieldLabel.className = "tag";
       fieldLabel.textContent = safeText(field);
@@ -732,11 +1001,11 @@ function renderOpportunities() {
       .map((id) => compactTitle(displayTitle(state.datasetById.get(id) || {dataset_id: id}), 34))
       .join(", ");
     const more = opp.dataset_count > 4 ? ` +${opp.dataset_count - 4}` : "";
-    const key = document.createElement("strong");
-    key.textContent = safeText(opp.key);
-    const extra = document.createElement("small");
-    extra.textContent = `${opp.dataset_count} datasets · ${shown}${more}`;
-    box.append(key, extra);
+      const key = document.createElement("strong");
+      key.textContent = safeText(opp.key);
+      const extra = document.createElement("small");
+      extra.textContent = `${opp.dataset_count} datasets · ${shown}${more}`;
+    box.append(key, createDisclosure("datasets", [extra], "compact-disclosure"));
     opportunitiesSection.appendChild(box);
   });
 }
@@ -760,25 +1029,25 @@ function renderSelectedInfo() {
 
   const metaRow = document.createElement("div");
   metaRow.className = "dataset-meta-row";
-  const themeTag = document.createElement("span");
-  themeTag.className = "tag theme-tag";
-  themeTag.textContent = safeText(dataset?.mega_theme || "Outros");
+  const themeTag = createChip(dataset?.mega_theme || "Outros", "tag theme-tag");
   const fieldCount = document.createElement("span");
   fieldCount.textContent = `${dataset?.field_count || 0} campos`;
   const degree = document.createElement("span");
   degree.textContent = `${state.degreeById.get(state.selectedDataset) || 0} ligações`;
-  metaRow.append(themeTag, fieldCount, degree);
+  metaRow.append(themeTag, fieldCount, degree, readinessChip(dataset));
 
   const fieldRow = document.createElement("div");
-  fieldRow.className = "dataset-meta-row";
+  fieldRow.className = "dataset-field-wrap";
   fields.forEach((field) => {
-    const tag = document.createElement("span");
-    tag.className = "tag";
-    tag.textContent = safeText(field);
-    fieldRow.appendChild(tag);
+    fieldRow.appendChild(createChip(field));
   });
 
-  selectedModel.append(title, metaRow, fieldRow);
+  const gaps = document.createElement("div");
+  gaps.className = "quality-note";
+  const info = readiness(dataset);
+  gaps.textContent = `Fit analítico: ${info.label || "Rever"} · validar ${(info.gaps || ["fonte"]).slice(0, 3).join(", ")}.`;
+
+  selectedModel.append(title, metaRow, gaps, createDisclosure("ver campos", [fieldRow], "compact-disclosure"));
 }
 
 async function selectDataset(datasetId) {
@@ -1389,6 +1658,7 @@ function stripHtml(value) {
 function renderAll() {
   renderThemeOptions();
   renderThemeCards();
+  renderCatalogCockpit();
   renderSummary();
   renderDatasetList();
   renderGraph();
@@ -1406,6 +1676,23 @@ function setActiveTheme(theme) {
   state.datasetRenderLimit = DATASET_RENDER_STEP;
   invalidateViewState();
   themeFilter.value = state.activeTheme;
+  ensureSelectionInFilter();
+  renderAll();
+}
+
+function clearCatalogFilters() {
+  state.activeTheme = "";
+  state.filterText = "";
+  state.localScope = "";
+  state.institutionType = "";
+  state.dimensionType = "";
+  datasetFilter.value = "";
+  themeFilter.value = "";
+  if (localScopeFilter) localScopeFilter.value = "";
+  if (institutionFilter) institutionFilter.value = "";
+  if (dimensionFilter) dimensionFilter.value = "";
+  state.datasetRenderLimit = DATASET_RENDER_STEP;
+  invalidateViewState();
   ensureSelectionInFilter();
   renderAll();
 }
@@ -1445,6 +1732,18 @@ function setupEvents() {
 
   themeFilter.addEventListener("change", () => {
     setActiveTheme(themeFilter.value);
+  });
+
+  [localScopeFilter, institutionFilter, dimensionFilter].forEach((element) => {
+    element?.addEventListener("change", () => {
+      state.localScope = localScopeFilter?.value || "";
+      state.institutionType = institutionFilter?.value || "";
+      state.dimensionType = dimensionFilter?.value || "";
+      state.datasetRenderLimit = DATASET_RENDER_STEP;
+      invalidateViewState();
+      ensureSelectionInFilter();
+      renderAll();
+    });
   });
 
   document.getElementById("refreshButton").addEventListener("click", () => {

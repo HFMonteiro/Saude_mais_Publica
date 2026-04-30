@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Cruzamentos</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=pt-copy-20260427" />
+    <link rel="stylesheet" href="styles.css?v=layout-clean-20260429" />
   </head>
   <body>
     <main class="crosswalk-layout">
@@ -16,16 +16,19 @@
           <p class="meta">Chaves comuns, pares fortes e caminhos de integração.</p>
         </div>
         <div class="topbar-actions">
-          <a href="analytics.html" class="top-link">Analytics</a>
-          <a href="metodologia.html" class="top-link">Metodologia</a>
           <a href="/" class="top-link">Vista principal</a>
+          <a href="crosswalk.html" class="top-link is-active" aria-current="page">Cruzamentos</a>
+          <a href="analytics.html" class="top-link">Analytics</a>
+          <a href="research.html" class="top-link">Investigação</a>
+          <a href="metodologia.html" class="top-link">Metodologia</a>
         </div>
+
       </header>
 
       <section class="crosswalk-toolbar">
         <label>
           <span>Pesquisar dataset</span>
-          <input id="crossDatasetFilter" name="cross-dataset-search" autocomplete="off" placeholder="hospital, despesa, ULS" type="text" />
+          <input id="crossDatasetFilter" name="cross-dataset-search" autocomplete="off" placeholder="ICPC, problemas, ULS, UF, hospital" type="text" />
         </label>
         <label>
           <span>Mega-tema</span>
@@ -35,6 +38,31 @@
           <span>Foco de campo</span>
           <select id="crossFieldFilter" name="cross-field-filter">
             <option value="">Todos os campos</option>
+          </select>
+        </label>
+        <label>
+          <span>Âmbito local</span>
+          <select id="crossLocalScopeFilter" name="cross-local-scope-filter">
+            <option value="">Todos</option>
+            <option value="uls">ULS</option>
+            <option value="uf">UF/CSP</option>
+            <option value="regiao">Região/ARS</option>
+            <option value="hospital">Hospital</option>
+            <option value="concelho">Concelho/Distrito</option>
+            <option value="entidade">Instituição/Entidade</option>
+            <option value="none">Sem dimensão local</option>
+          </select>
+        </label>
+        <label>
+          <span>Tipo de dimensão</span>
+          <select id="crossDimensionFilter" name="cross-dimension-filter">
+            <option value="">Todas</option>
+            <option value="temporal">Temporal</option>
+            <option value="territorial">Territorial</option>
+            <option value="entidade">Entidade</option>
+            <option value="medida">Medida</option>
+            <option value="clinico">Clínico</option>
+            <option value="generico">Genérico</option>
           </select>
         </label>
         <label class="range-control">
@@ -144,6 +172,6 @@
       </footer>
     </main>
 
-    <script src="crosswalk.js?v=pt-copy-20260427" defer></script>
+    <script src="crosswalk.js?v=layout-clean-20260429" defer></script>
   </body>
 </html>

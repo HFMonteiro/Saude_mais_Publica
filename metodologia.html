@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Metodologia</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=pt-copy-20260427" />
+    <link rel="stylesheet" href="styles.css?v=layout-clean-20260429" />
   </head>
   <body>
     <main class="methodology-layout">
@@ -19,12 +19,14 @@
           <a href="/" class="top-link">Vista principal</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
+          <a href="research.html" class="top-link">Investigação</a>
+          <a href="metodologia.html" class="top-link is-active" aria-current="page">Metodologia</a>
+
         </div>
       </header>
 
       <section class="methodology-hero">
         <div>
-          <span class="methodology-pill">Heurístico, auditável, leve</span>
           <h2>Do dado publicado à pergunta útil</h2>
           <p>
             A app não tenta substituir validação epidemiológica. Faz triagem: encontra chaves prováveis,
@@ -35,6 +37,24 @@
           <strong>Regra central</strong>
           <p>Quanto mais clara for a chave, a granularidade, a cobertura temporal e a pergunta, maior o valor do cruzamento.</p>
         </aside>
+      </section>
+
+      <section class="methodology-fit-strip" aria-label="Semáforo de fit analítico">
+        <article>
+          <span class="quality-chip quality-pronto">Pronto</span>
+          <strong>Há base para analisar</strong>
+          <p>Temporalidade, medida e dimensão local estão suficientemente claras para exploração.</p>
+        </article>
+        <article>
+          <span class="quality-chip quality-rever">Rever</span>
+          <strong>Bom candidato, com cautela</strong>
+          <p>Falta validar chave, denominador, cobertura ou granularidade antes de interpretar.</p>
+        </article>
+        <article>
+          <span class="quality-chip quality-fragil">Frágil</span>
+          <strong>Usar como pista</strong>
+          <p>Sem estrutura estatística mínima; sugerir dataset próximo ou clarificar metadados.</p>
+        </article>
       </section>
 
       <section class="methodology-grid">
@@ -51,7 +71,7 @@
         <article class="methodology-card">
           <span>3</span>
           <h2>Dados reais</h2>
-          <p>Sobre amostras leves, calcula perfis, completude, variação, correlações, tendência e PCA simples, evitando cache pesada no browser.</p>
+          <p>Sobre amostras leves, calcula perfis, completude, variação, associações numéricas, tendência e PCA simples, sem tratar a amostra como estimativa oficial do dataset.</p>
         </article>
         <article class="methodology-card">
           <span>4</span>
@@ -72,7 +92,23 @@
           <li><strong>Cardinalidade:</strong> medir duplicados e joins 1:1, 1:N ou N:N antes de agregar.</li>
           <li><strong>Cobertura:</strong> comparar anos, regiões, entidades e campos nulos entre datasets.</li>
           <li><strong>Semântica:</strong> validar nomes de campos contra dicionários oficiais ou documentação do portal.</li>
-          <li><strong>Uso público:</strong> priorizar perguntas com impacto, ação possível e risco interpretativo baixo.</li>
+          <li><strong>Denominadores:</strong> confirmar numerador, denominador, unidade, população, período e base contabilística antes de interpretar rácios ou custo unitário.</li>
+          <li><strong>Uso público:</strong> priorizar perguntas com impacto, ação possível e risco interpretativo explicitamente validado.</li>
+        </ol>
+      </section>
+
+      <section class="panel methodology-steps">
+        <div class="panel-heading">
+          <div>
+            <h2>Limites estatísticos</h2>
+            <p class="meta">O protótipo é uma triagem exploratória; os resultados exigem validação antes de apoiar decisão.</p>
+          </div>
+        </div>
+        <ol>
+          <li><strong>Amostra:</strong> as análises usam uma amostra leve da API, frequentemente truncada e ordenada por período recente.</li>
+          <li><strong>Associação:</strong> Pearson, Spearman, PCA e tendências são sinais exploratórios, não prova de causalidade.</li>
+          <li><strong>Projeção:</strong> extrapolações lineares devem ser lidas como cenários de triagem, não previsões oficiais.</li>
+          <li><strong>Financeiro × produção:</strong> custo unitário só é interpretável após validar geografia, entidade, unidade, base contabilística e denominador.</li>
         </ol>
       </section>
 

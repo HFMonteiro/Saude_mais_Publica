@@ -5,6 +5,8 @@ const state = {
   themes: [],
   analysisAt: null,
   activeTheme: "",
+  localScope: "",
+  dimensionType: "",
   minScore: 4,
   filterText: "",
   selectedField: "",
@@ -49,6 +51,8 @@ const THEME_COLORS = {
 const datasetFilter = document.getElementById("crossDatasetFilter");
 const themeFilter = document.getElementById("crossThemeFilter");
 const fieldFilter = document.getElementById("crossFieldFilter");
+const localScopeFilter = document.getElementById("crossLocalScopeFilter");
+const dimensionFilter = document.getElementById("crossDimensionFilter");
 const minScore = document.getElementById("crossMinScore");
 const minScoreValue = document.getElementById("crossMinScoreValue");
 const statusEl = document.getElementById("crossStatus");
@@ -98,6 +102,24 @@ function repairEncoding(value) {
 
 function safeText(value) {
   return value == null ? "" : repairEncoding(value);
+}
+
+function normalizeSearch(value) {
+  return safeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function datasetFacets(dataset) {
+  return dataset?.facets || {};
+}
+
+function hasFacetValue(dataset, group, value) {
+  if (!value) return true;
+  const values = datasetFacets(dataset)[group] || [];
+  if (value === "none") return !values.length;
+  return values.includes(value);
 }
 
 async function fetchJson(url, {timeoutMs = 22000} = {}) {
@@ -156,12 +178,13 @@ function getViewState() {
     return state._viewState;
   }
 
-  const text = state.filterText.trim().toLowerCase();
+  const text = normalizeSearch(state.filterText).trim();
   const datasets = [];
   for (const dataset of state.datasets) {
     if (state.activeTheme && dataset.mega_theme !== state.activeTheme) continue;
+    if (!hasFacetValue(dataset, "local_scopes", state.localScope)) continue;
     if (text) {
-      if (!getDatasetSearchText(dataset).includes(text)) continue;
+      if (!matchesExpandedSearch(dataset, text)) continue;
     }
     datasets.push(dataset);
   }
@@ -173,10 +196,12 @@ function getViewState() {
 
   for (const link of state.links) {
     if (!visibleDatasetIds.has(link.source) || !visibleDatasetIds.has(link.target)) continue;
+    if (state.dimensionType && !(link.shared_fields || []).some((field) => classifySemanticField(field) === state.dimensionType)) continue;
     links.push(link);
 
     const shared = link.shared_fields || [];
     for (const field of shared) {
+      if (state.dimensionType && classifySemanticField(field) !== state.dimensionType) continue;
       const current = fieldOptions.get(field);
       if (!current) {
         const datasetSet = new Set();
@@ -237,13 +262,12 @@ function displayTitle(dataset) {
     return state._titleCache.get(datasetId);
   }
 
-  const value = dataset?.title || datasetId;
+  const value = dataset?.title ? safeText(dataset.title) : datasetId;
   const title = value
     .replace(/-/g, " ")
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .trim();
   setBoundedCache(state._titleCache, datasetId, title, TITLE_CACHE_SIZE);
   return title;
 }
@@ -253,14 +277,64 @@ function getDatasetSearchText(dataset) {
   if (state._searchTextCache.has(datasetId)) {
     return state._searchTextCache.get(datasetId);
   }
-  const text = `${datasetId} ${displayTitle(dataset)} ${(dataset?.fields || []).join(" ")}`.toLowerCase();
+  const facets = datasetFacets(dataset);
+  const text = normalizeSearch([
+    datasetId,
+    displayTitle(dataset),
+    dataset?.mega_theme,
+    ...(dataset?.fields || []),
+    ...(facets.tags || []),
+    ...(facets.labels || []),
+    ...(facets.local_scopes || []),
+    ...(facets.institution_types || []),
+    ...(facets.dimension_types || []),
+    ...(dataset?.quality_flags || []),
+  ].join(" "));
   setBoundedCache(state._searchTextCache, datasetId, text, SEARCH_TEXT_CACHE_SIZE);
   return text;
+}
+
+const SEARCH_SYNONYM_GROUPS = [
+  ["icpc", "problema", "problemas", "diagnostico", "diagnosticos", "morbilidade"],
+  ["utente", "utentes", "inscrito", "inscritos", "populacao", "populacao inscrita"],
+  ["uf", "unidade funcional", "usf", "ucsp", "aces", "csp", "cuidados primarios"],
+  ["uls", "unidade local de saude"],
+  ["regiao", "ars", "norte", "centro", "lisboa", "alentejo", "algarve"],
+  ["hospital", "hospitais", "centro hospitalar", "internamento", "urgencia"],
+  ["fragilidade", "multimorbilidade", "polimedicacao", "idra", "gra", "pic", "plano individual"],
+  ["rastreio", "rastreios", "vacina", "vacinacao", "prevencao"],
+];
+
+function searchAlternatives(token) {
+  const normalized = normalizeSearch(token).trim();
+  if (!normalized) return [];
+  const group = SEARCH_SYNONYM_GROUPS.find((items) => items.some((item) => normalizeSearch(item) === normalized));
+  return group ? group.map(normalizeSearch) : [normalized];
+}
+
+function matchesExpandedSearch(dataset, rawSearch) {
+  const tokens = normalizeSearch(rawSearch).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const text = getDatasetSearchText(dataset);
+  return tokens.every((token) => searchAlternatives(token).some((candidate) => text.includes(candidate)));
 }
 
 function compactTitle(value, max = 46) {
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function readiness(dataset) {
+  return dataset?.analysis_readiness || {score: 0, band: "fragil", label: "Frágil", gaps: ["validar"]};
+}
+
+function readinessChip(dataset, compact = false) {
+  const info = readiness(dataset);
+  const chip = document.createElement("span");
+  chip.className = `quality-chip quality-${info.band || "fragil"}`;
+  chip.textContent = compact ? `${info.label || "Rever"} ${info.score ?? 0}` : `${info.label || "Rever"} · ${info.score ?? 0}`;
+  chip.title = (info.gaps || ["validar fonte"]).slice(0, 3).join(", ");
+  return chip;
 }
 
 function compactGraphLabel(value, max = 22) {
@@ -276,10 +350,11 @@ function compactGraphLabel(value, max = 22) {
 }
 
 function classifySemanticField(field) {
-  const normalized = safeText(field).toLowerCase();
+  const normalized = normalizeSearch(field);
   if (/(tempo|periodo|ano|data|trimestre|semana|mes|dia)/.test(normalized)) return "temporal";
-  if (/(regiao|ars|uls|localizacao|geografica|concelho|distrito|postal|hospital)/.test(normalized)) return "territorial";
-  if (/(entidade|instituicao|unidade|servico|grupo|fornecedor|utente|doente)/.test(normalized)) return "entidade";
+  if (/(regiao|ars|uls|localizacao|geografica|concelho|distrito|postal|hospital|freguesia)/.test(normalized)) return "territorial";
+  if (/(entidade|instituicao|unidade|servico|grupo|fornecedor|utente|doente|uf|usf|ucsp|aces|csp)/.test(normalized)) return "entidade";
+  if (/(icpc|problema|diagnostico|multimorbilidade|polimedicacao|fragilidade|idra|gra|pic)/.test(normalized)) return "clinico";
   if (/(valor|total|taxa|numero|contagem|volume|quantidade|dias|encargos|custo|pvp)/.test(normalized)) return "medida";
   return "generico";
 }
@@ -290,13 +365,14 @@ function semanticClassLabel(kind) {
     territorial: "Território",
     entidade: "Entidade",
     medida: "Medida",
+    clinico: "Clínico",
     generico: "Genérico",
   }[kind] || "Genérico";
 }
 
 function fieldRisk(kind) {
   if (kind === "generico" || kind === "medida") return "validar granularidade";
-  if (kind === "temporal" || kind === "territorial" || kind === "entidade") return "boa base de cruzamento";
+  if (kind === "temporal" || kind === "territorial" || kind === "entidade" || kind === "clinico") return "boa base de cruzamento";
   return "validar";
 }
 
@@ -548,7 +624,14 @@ function renderFieldList() {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem campos para este filtro.";
+    const message = document.createElement("span");
+    message.textContent = "Sem campos para estes filtros.";
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "ghost-button";
+    clear.textContent = "Limpar filtros";
+    clear.addEventListener("click", clearCrossFilters);
+    empty.append(message, clear);
     fieldListEl.appendChild(empty);
     return;
   }
@@ -771,7 +854,7 @@ function renderPairTable() {
           wrapper.className = "pair-focus-cell";
           const label = document.createElement("span");
           label.textContent = value;
-          wrapper.append(label, icon);
+          wrapper.append(label, readinessChip(index === 0 ? datasetA : datasetB, true), icon);
           cell.appendChild(wrapper);
         } else {
           cell.textContent = value;
@@ -1367,6 +1450,25 @@ function renderAll() {
   renderSemanticGraph();
 }
 
+function clearCrossFilters() {
+  state.activeTheme = "";
+  state.localScope = "";
+  state.dimensionType = "";
+  state.filterText = "";
+  state.selectedField = "";
+  state.selectedPairKey = null;
+  state.selectedPairIsAuto = true;
+  setSelectedDataset(null);
+  datasetFilter.value = "";
+  themeFilter.value = "";
+  fieldFilter.value = "";
+  if (localScopeFilter) localScopeFilter.value = "";
+  if (dimensionFilter) dimensionFilter.value = "";
+  invalidateViewState();
+  resetRenderWindows();
+  renderAll();
+}
+
 function setupEvents() {
   minScore.value = state.minScore;
   minScoreValue.textContent = state.minScore;
@@ -1414,6 +1516,18 @@ function setupEvents() {
     renderAll();
   });
 
+  [localScopeFilter, dimensionFilter].forEach((element) => {
+    element?.addEventListener("change", () => {
+      state.localScope = localScopeFilter?.value || "";
+      state.dimensionType = dimensionFilter?.value || "";
+      invalidateViewState();
+      state.selectedPairKey = null;
+      state.selectedPairIsAuto = true;
+      resetRenderWindows();
+      renderAll();
+    });
+  });
+
   clearFieldButton.addEventListener("click", () => {
     state.selectedField = "";
     if (fieldFilter) fieldFilter.value = "";
@@ -1442,6 +1556,8 @@ function setupEvents() {
       generated_at: state.analysisAt,
       filter: {
         theme: state.activeTheme || "Todos",
+        local_scope: state.localScope || "Todos",
+        dimension_type: state.dimensionType || "Todas",
         min_score: state.minScore,
         dataset_search: state.filterText || "",
         focused_field: state.selectedField || "",

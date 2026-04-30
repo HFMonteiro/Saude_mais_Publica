@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Radar de dados</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=pt-copy-20260427" />
+    <link rel="stylesheet" href="styles.css?v=network-first-20260430" />
     <script
       src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
       integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
@@ -20,30 +20,72 @@
           <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública</h1>
         </div>
         <div class="topbar-actions">
+          <a href="/" class="top-link is-active" aria-current="page">Vista principal</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
+          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link">Metodologia</a>
+
           <div class="sync-state" id="syncState">A carregar...</div>
         </div>
       </header>
 
-      <section class="start-page" aria-label="Arranque">
-        <div class="start-copy">
-          <h2>Mega-temas</h2>
-          <p>Escolhe uma área para focar datasets, ligações e registos recentes.</p>
-        </div>
-        <div id="themeCards" class="theme-grid"></div>
+      <section class="discovery-row" aria-label="Arranque">
+        <section class="start-page" aria-label="Mega-temas">
+          <div class="start-copy">
+            <h2>Mega-temas</h2>
+            <p>Escolhe uma área.</p>
+          </div>
+          <div id="themeCards" class="theme-grid"></div>
+        </section>
+
+        <section id="catalogCockpit" class="catalog-cockpit" aria-label="Cockpit do catálogo"></section>
       </section>
 
       <section class="toolbar">
         <label>
           <span>Pesquisar dataset</span>
-          <input id="datasetFilter" name="dataset-search" autocomplete="off" placeholder="gastos, hospitais, receita" type="text" />
+          <input id="datasetFilter" name="dataset-search" autocomplete="off" placeholder="ICPC, problemas, utentes, ULS, UF, rastreios" type="text" />
         </label>
         <label>
           <span>Mega-tema</span>
           <select id="themeFilter" name="theme-filter" autocomplete="off">
             <option value="">Todos</option>
+          </select>
+        </label>
+        <label>
+          <span>Âmbito local</span>
+          <select id="localScopeFilter" name="local-scope-filter" autocomplete="off">
+            <option value="">Todos</option>
+            <option value="uls">ULS</option>
+            <option value="uf">UF/CSP</option>
+            <option value="regiao">Região/ARS</option>
+            <option value="hospital">Hospital</option>
+            <option value="concelho">Concelho/Distrito</option>
+            <option value="entidade">Instituição/Entidade</option>
+            <option value="none">Sem dimensão local</option>
+          </select>
+        </label>
+        <label>
+          <span>Instituição</span>
+          <select id="institutionFilter" name="institution-filter" autocomplete="off">
+            <option value="">Todas</option>
+            <option value="uls">ULS</option>
+            <option value="uf">UF/CSP</option>
+            <option value="hospital">Hospital</option>
+            <option value="entidade">Entidade/Instituição</option>
+            <option value="none">Sem instituição</option>
+          </select>
+        </label>
+        <label>
+          <span>Dimensão</span>
+          <select id="dimensionFilter" name="dimension-filter" autocomplete="off">
+            <option value="">Todas</option>
+            <option value="temporal">Temporal</option>
+            <option value="territorial">Territorial</option>
+            <option value="entidade">Entidade</option>
+            <option value="medida">Medida</option>
+            <option value="clinico">Clínico</option>
           </select>
         </label>
         <label class="range-control">
@@ -83,7 +125,7 @@
           <div id="datasetList" class="list"></div>
         </aside>
 
-        <section class="panel workspace">
+        <section class="panel workspace network-hero">
           <div class="panel-heading">
             <h2>Mapa de ligações</h2>
             <span id="graphScope">Top ligações</span>
@@ -92,7 +134,7 @@
             <svg id="linkGraph"></svg>
           </div>
           <div id="linkHelp" class="meta">
-            Clique num nó para detalhar as ligações e criar árvore de cruzamentos.
+            Clique num nó para detalhar.
           </div>
         </section>
 
@@ -132,7 +174,7 @@
             <div class="panel-heading">
               <div>
                 <h2 id="quickAnalysisTitle">Leitura rápida da amostra</h2>
-                <p id="quickAnalysisMeta" class="meta">Deteta tempo, local, medidas contínuas e sinais fora do padrão.</p>
+                <p id="quickAnalysisMeta" class="meta">Tempo, local, medidas e anomalias.</p>
               </div>
             </div>
             <div id="quickAnalysisKpis" class="quick-analysis-kpis"></div>
@@ -162,9 +204,9 @@
         </section>
       </section>
       <footer class="legal-strip" aria-label="Fonte e nota legal">
-        <div><strong>Fonte dos dados:</strong> Portal Transparência SNS / dados abertos Opendatasoft.</div>
-        <div>Análises exploratórias e heurísticas, sem valor oficial, clínico ou decisório isolado. Validar sempre fonte, granularidade, atualização e contexto antes de interpretar.</div>
-        <div>Informação preparada para transparência, investigação, literacia e planeamento público. Não utilizar para fins comerciais, publicidade, profiling individual ou conclusões sobre pessoas.</div>
+        <div><strong>Fonte:</strong> Portal Transparência SNS / Opendatasoft.</div>
+        <div>Leitura exploratória; validar fonte, período e granularidade.</div>
+        <div>Não usar para profiling individual ou conclusões sobre pessoas.</div>
       </footer>
     </main>
 
@@ -174,6 +216,6 @@
       Campos partilhados: {{fields}}
     </template>
 
-    <script src="app.js?v=pt-copy-20260427" defer></script>
+    <script src="app.js?v=network-first-20260430" defer></script>
   </body>
 </html>

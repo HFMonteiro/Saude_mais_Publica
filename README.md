@@ -45,6 +45,35 @@ Aceder a:
 
 - `http://127.0.0.1:8000/analytics.html`
 
+## Validação local
+
+Antes de publicar alterações de analytics, correr:
+
+```bash
+python scripts/qa.py
+```
+
+A gate valida sintaxe Python/JavaScript e testes determinísticos para métodos estatísticos críticos
+(mediana, Spearman com empates, metadados metodológicos e checklist financeiro × produção).
+
+Quando o servidor local estiver a correr e se quiser confirmar a ligação viva à API SNS:
+
+```powershell
+$env:RUN_LIVE_API_SMOKE = "1"; python scripts\qa.py
+```
+
+Ou isoladamente:
+
+```powershell
+python scripts\api_contract_smoke.py
+```
+
+Para smoke browser com API sintética, em ambiente com Playwright disponível:
+
+```bash
+node scripts/browser_smoke.js
+```
+
 ## Endpoints locais
 
 - `GET /api/analysis?min_score=1`  
@@ -76,3 +105,6 @@ Esta implementação está pronta para funcionar com os dados expostos pelo port
 O servidor está configurado para uso local em `127.0.0.1`, com allowlist de ficheiros estáticos,
 headers de segurança, limite simples de pedidos e cache em memória limitada por tamanho. Registos
 brutos não são mantidos em cache.
+
+As análises são exploratórias: usam amostras leves da API e servem para triagem de hipóteses,
+não para inferência causal, ranking oficial, avaliação clínica ou decisão pública isolada.

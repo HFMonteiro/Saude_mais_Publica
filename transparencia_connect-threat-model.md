@@ -1,134 +1,145 @@
-# Threat Model: Transparência SNS Cross-Analysis
+# Threat Model: transparencia_connect
 
 ## Executive summary
-`server.py` funciona como proxy local e servidor estático para duas interfaces de análise (principal e cruzamentos), e consulta diretamente a API pública do portal SNS para construir um grafo de vínculos. O maior risco está em exibição de conteúdo de API em sinks HTML (`innerHTML`) na UI e em exposição pública ampla dos endpoints sem controles de origem, rate limiting e proteção de ficheiros estáticos. A superfície de risco é principalmente XSS de DOM e abuso de API por automação/DoS, não manipulação de credenciais, porque não há sessão/autenticação no produto atual.
+O projeto é um explorador local-first em Python `http.server` + frontend vanilla JS que serve páginas estáticas e expõe endpoints `/api/*` para consultar e analisar a API pública do Portal Transparência SNS. O risco principal não é autenticação ou segredos, porque não há login nem credenciais no código; é disponibilidade e abuso de endpoints analíticos caros se o serviço for exposto fora de `127.0.0.1`, mais integridade/confiança da UI ao renderizar dados vindos de uma API externa. A postura atual é razoável para uso local, mas ainda não deve ser tratada como perfil de produção pública.
 
 ## Scope and assumptions
-- **In-scope:** `server.py`, `index.html`, `crosswalk.html`, `app.js`, `crosswalk.js`, `styles.css`, `README.md`, estrutura Git pública (`main` local).
-- **Out-of-scope:** infra de deployment (IaaS/PaaS), browser extensions dos utilizadores e segurança da infra da `transparencia.sns.pt`.
+- In-scope paths: `server.py`, `index.html`, `analytics.html`, `crosswalk.html`, `research.html`, `app.js`, `analytics.js`, `crosswalk.js`, `research.js`, `styles.css`, `scripts/`, `tests/`.
+- Out-of-scope: infraestrutura de produção, reverse proxy, TLS, gestão de DNS, segurança da API `transparencia.sns.gov.pt`, extensões do browser do utilizador.
+- Assumption: o modo suportado é local em `127.0.0.1:8000`, conforme `server.py:3701` e `README.md`.
+- Assumption: os dados são públicos/agregados, mas podem conter metadados inesperados; dados clínicos identificáveis não devem ser usados nesta aplicação.
+- Assumption: não há multi-tenant nem autenticação; qualquer pessoa com acesso ao processo local pode consultar os endpoints.
 
-### Assumptions
-- O serviço pode correr em modo local (o código documenta `127.0.0.1:8000`) e também pode ser exposto como site público sem adaptação.
-- Não existe autenticação de utilizador no backend atual.
-- Os metadados/definições de campos fornecidos pela API de origem podem incluir conteúdo não esperado.
-
-### Open questions
-- O backend vai correr apenas localmente ou é planeado deploy público persistente?
-- Existe ou existiu intenção de adicionar autenticação/quotas em produção?
-- Estão disponíveis logs/alertas para monitorizar volume e erros da API local?
+Open questions that change risk ranking:
+- Vai haver deploy público persistente ou continuará estritamente local?
+- O serviço ficará atrás de reverse proxy com rate limiting/logs, ou diretamente exposto?
+- Há intenção de processar dados internos, identificáveis ou semi-identificáveis no futuro?
 
 ## System model
 ### Primary components
-1. **Browser UI principal** (`index.html` + `app.js`)
-2. **Browser UI cruzamentos** (`crosswalk.html` + `crosswalk.js`)
-3. **Servidor local Python** (`server.py`) – `ThreadingHTTPServer`, endpoints `/api/*`, ficheiros estáticos.
-4. **API de origem SNS** (`https://transparencia.sns.gov.pt/api/explore/v2.1`).
+- Python local server: `TransparenciaHandler` em `server.py`, baseado em `ThreadingHTTPServer` e `SimpleHTTPRequestHandler`.
+- API proxy/analytics layer: endpoints `/api/analysis`, `/api/analytics`, `/api/data-analytics`, `/api/finprod`, `/api/deep-research`, `/api/recent`, `/api/records`, `/api/dataset`.
+- Static frontend: HTML/CSS/JS vanilla com D3 externo em `index.html`.
+- Upstream: API pública Opendatasoft/SNS em `ODS_BASE`.
+- In-memory state: cache `_cache`, locks `_fetch_locks`, rate-limit map `_rate_limit_hits`.
 
 ### Data flows and trust boundaries
-- **Utilizador → Navegador:** interação de filtros, clique em nós e seleção de dataset; entradas não autenticadas.
-- **Navegador → Servidor local:** chamadas `fetch` para `/api/analysis`, `/api/records/<dataset>`, `/api/dataset/<dataset>`, `/api/recent/<dataset>`.
-  - Controlo atual: parsing básico de parâmetros e validação parcial de limites.
-- **Servidor local → API SNS:** reencaminhamento de consultas para catálogo/registos em `server.py` (`_ods_fetch`).
-  - Controlo atual: timeout HTTP 30s e cache local em memória.
-- **Servidor local → Navegador (ficha estaticos):** serve `index.html`, `crosswalk.html`, JS/CSS via `SimpleHTTPRequestHandler`.
-  - Controlo atual: sem diretório raiz dedicado, sem headers de hardening de segurança.
-- **Navegador → DOM:** renderização de títulos/campos/chaves partilhadas via template strings e `innerHTML`.
-  - Controlo atual: mistura de `textContent` e `innerHTML` (misto de segurança).
+- Browser -> local server: HTTP GET/OPTIONS, no auth, parameters such as `dataset_id`, `limit`, `min_score`; validation via `_parse_dataset_id` and `_parse_int_param`.
+- Local server -> upstream SNS API: HTTPS via `urllib.request.urlopen`; fixed base URL `ODS_BASE`; dataset path constructed with `quote(dataset_id)` and query via `urlencode`.
+- Upstream SNS API -> local server: JSON catalog/records; parsed with `json.loads`; cached in memory with bounded size.
+- Local server -> browser: JSON API responses and static assets; security headers in `_set_security_headers`.
+- API data -> DOM: frontend uses DOM APIs in reviewed app files; QA now blocks common dangerous sinks.
 
 #### Diagram
 ```mermaid
-flowchart TD
-A["Utilizador"] -->|Interação| B["Navegador"]
-B -->|fetch API local| C["Servidor Python"]
-C -->|proxy para catálogo e registos| D["API SNS"]
-D -->|JSON de dados| C
-C -->|ficheiros estáticos| B
-B -->|render HTML/DOM| B
+flowchart LR
+A["User browser"] -->|GET static and API| B["Local Python server"]
+B -->|HTTPS JSON requests| C["SNS ODS API"]
+C -->|Public JSON data| B
+B -->|JSON and assets| A
+B -->|In memory cache| D["Cache and locks"]
+A -->|DOM rendering| E["Vanilla JS UI"]
 ```
 
 ## Assets and security objectives
-| Asset | Why it matters | Security objective |
+| Asset | Why it matters | Security objective (C/I/A) |
 | --- | --- | --- |
-| `server.py` API endpoints | Interface de agregação/cálculo usada por todas as páginas | Integridade (respostas consistentes), disponibilidade (evitar DoS), confidencialidade (se houver dados futuros sensíveis) |
-| Cache em memória local | Evita chamadas repetidas à API e reduz latência | Integridade e disponibilidade |
-| HTML/CSS/JS servidos localmente | Superfície de execução em browser do utilizador | Integridade do código e redução de XSS |
-| Links entre datasets (`source`, `target`, `shared_fields`) | Núcleo da análise semântica | Integridade e veracidade | 
-| Registos recentes (`/api/recent`) | Fonte de dados que passa para tabela | Integridade dos dados e desempenho |
-| Estado da sessão UI (seleção/filtros) | Contexto de exploração | Disponibilidade e integridade (UX estável) |
+| Local server process | Handles all API and static requests | A/I |
+| Upstream API availability | App depends on external SNS data | A |
+| Cache contents | Holds catalog/analysis payloads and can affect UI correctness | I/A |
+| Frontend JS/HTML | Runs with page origin privileges | I |
+| Public datasets and records | Public but can be misunderstood or overexposed through future internal use | C/I |
+| Analytics methodology outputs | Drives user interpretation and decisions | I |
+| Local logs | May reveal upstream paths/status and operational behavior | C/I |
 
 ## Attacker model
 ### Capabilities
-- Atacante remoto consegue efetuar requisições HTTP públicas para endpoints disponíveis.
-- Pode manipular o conteúdo mostrado no DOM (via fontes remotas se controladas ou comprometidas).
-- Pode automatizar chamadas de API para sobrecarga.
+- Can send unauthenticated HTTP GET/OPTIONS to the local server if reachable on their network.
+- Can vary query parameters and dataset IDs within validation rules.
+- Can trigger expensive analytics endpoints repeatedly until rate limiting applies.
+- Can influence displayed content only if upstream public metadata/records are compromised or unexpectedly contain hostile strings.
 
 ### Non-capabilities
-- Não há evidência de acesso privilegiado ao servidor da SNS ou às credenciais internas do projeto.
-- Não há sessão autenticada persistente neste fluxo para serem roubadas por sessão hijack.
+- No repository evidence of secrets, credentials, user sessions, write APIs, uploads, database writes, subprocess execution, `eval`, or authenticated admin actions.
+- If bound only to `127.0.0.1`, a remote internet attacker cannot directly reach the service without local compromise or browser-mediated access.
 
 ## Entry points and attack surfaces
 | Surface | How reached | Trust boundary | Notes | Evidence |
 | --- | --- | --- | --- | --- |
-| `/api/analysis` | GET sem auth | Browser → servidor local | `min_score` é parseado sem validação robusta contra tipos extremos | `server.py:523-526` |
-| `/api/records/<dataset_id>` | GET sem auth | Browser → servidor local | `limit` passa quase sem validação de teto | `server.py:562-573` |
-| `/api/dataset/<dataset_id>` | GET sem auth | Browser → servidor local | `dataset_id` normalizado só com `quote()`, não há allowlist de formato | `server.py:550-557` |
-| `/api/recent/<dataset_id>` | GET sem auth | Browser → servidor local | `limit` parseado como int sem teto explícito aqui | `server.py:579-586` |
-| Render DOM em `app.js` | API → browser | Dados não íntegros entram no DOM | Muitos `innerHTML` com valores vindos da API | `app.js:227,275,390,493,549,561` |
-| Render DOM em `crosswalk.js` | API → browser | Mesma superfície de DOM sink | `innerHTML` em células e texto de detalhes | `crosswalk.js:454,474,477,561,661` |
-| Static file serving | HTTP GET | Servidor → ficheiros locais | Servidor baseado em diretório atual; sem allowlist | `server.py:480` |
-| CORS headers | respostas HTTP | Browser de terceiros | `*` expõe respostas para qualquer origem | `server.py:482-483` |
-| Scripts terceiros | HTML carregamento | Browser runtime | D3 via CDN sem integridade | `index.html:8` |
+| Static files | `GET /`, `/*.html`, JS/CSS/assets | Browser -> local server | Allowlist protects against directory traversal and report leakage | `server.py:322`, `server.py:3683` |
+| `/api/analysis` and `/api/analytics` | GET with `min_score` | Browser -> analytics | Catalog-wide computation, cached | `server.py:3467`, `server.py:3595` |
+| `/api/data-analytics` | GET with `dataset_id`, `limit` | Browser -> analytics | Pulls and analyzes records sample | `server.py:3487` |
+| `/api/finprod` and recommendations | GET with two dataset IDs | Browser -> analytics | Cross-analysis can call multiple sampled datasets | `server.py:3502`, `server.py:3539` |
+| `/api/deep-research` | GET with `dataset_id`, `limit` | Browser -> analytics | Copies analytics payload and derives feature screening/map | `server.py:3567` |
+| `/api/dataset`, `/api/records`, `/api/recent` | GET path param dataset ID | Browser -> upstream proxy | Dataset ID regex and limits reduce route abuse | `server.py:3641`, `server.py:3653`, `server.py:3671` |
+| CORS | `Origin` header | Other origins -> local API | Allowlist only for localhost/127.0.0.1 variants | `server.py:486`, `server.py:3361` |
+| Frontend rendering | API JSON -> DOM | Upstream data -> browser | Safe DOM APIs in reviewed app files; QA now blocks common dangerous sinks | `analytics.js`, `scripts/qa.py` |
+| Third-party JS | CDN D3 load | jsDelivr -> browser | Pinned version with SRI | `index.html:9` |
 
 ## Top abuse paths
-1. **XSS de DOM por metadados do dataset**
-   - Atacante com acesso para influenciar metadados (ou encadeamento via fornecedor comprometido) insere HTML malicioso.
-   - Esse conteúdo entra em `innerHTML` na UI.
-   - Impacto: execução de JS no navegador do analista e exfiltração de estado local.
+1. **Local DoS through expensive analytics endpoints**
+   1. Attacker reaches the local server over network or compromised browser context.
+   2. Repeatedly requests `/api/deep-research`, `/api/finprod/recommendations`, `/api/data-analytics` with varied datasets.
+   3. Threading server opens concurrent work and upstream calls until rate limit/cache reduce impact.
+   4. Impact: degraded local UI and unnecessary upstream load.
 
-2. **Abuso de parâmetros para sobrecarga**
-   - Atacante dispara pedidos em massa para `/api/records/<dataset>?limit=999999` ou variação de limites.
-   - Impacto: chamadas simultâneas e respostas volumosas da API externa, latência e indisponibilidade local.
+2. **Public deployment without production edge controls**
+   1. Operator exposes the current `ThreadingHTTPServer` beyond localhost.
+   2. Anonymous users use all endpoints with no auth or quota beyond per-IP in-process rate limit.
+   3. Impact: noisy scraping, unreliable availability, weak operational observability.
 
-3. **Exploração de caminho de dataset**
-   - Atacante chama endpoint com `dataset_id` contendo separadores ou codificação ambígua.
-   - `quote()` não está com `safe=""`, pode manter `/`, alterando rota destino.
-   - Impacto: consulta de paths não previstas e possível exposição de informação externa/acoplada.
+3. **Upstream metadata/record content misleads or stresses frontend rendering**
+   1. Upstream data includes unusually long or hostile strings.
+   2. UI renders text safely in most places, but layout/interpretation can still be degraded.
+   3. Impact: UI integrity/reliability issue; XSS likelihood is low because dangerous sinks are not used for API-derived content in observed paths.
 
-4. **Consumo de recursos por scraping público**
-   - Com CORS aberto e ausência de rate limit, qualquer origem pode consultar `/api/analysis`/`/api/recent`.
-   - Impacto: egress descontrolado e esgotamento do backend local.
+4. **CSP weakened by inline style allowance**
+   1. If a DOM injection bug is introduced later, `style-src 'unsafe-inline'` gives less protection against UI redressing/style injection.
+   2. Current script execution remains constrained by `script-src 'self' https://cdn.jsdelivr.net`.
+   3. Impact: defense-in-depth gap, not an active exploit by itself.
 
-5. **Levantamento de ficheiros locais**
-   - Se o serviço estiver publicado com o diretório atual do repo, ficheiros sensíveis em cwd podem ser servidos.
-   - Impacto: exposição de `.git`, configurações e arquivos de trabalho não destinados ao público.
+5. **CORS confusion in local context**
+   1. A malicious local-origin page may receive CORS approval if it matches allowlisted localhost variants.
+   2. It can read public API outputs from the local service.
+   3. Impact: low for public data, higher if future endpoints expose internal/private data.
+
+6. **Cache poisoning by trusted-but-wrong upstream/fallback data**
+   1. Upstream returns malformed but valid JSON or stale data is reused.
+   2. Cache serves it to users for the TTL or stale fallback path.
+   3. Impact: integrity of analytics/interpretation, not code execution.
 
 ## Threat model table
 | Threat ID | Threat source | Prerequisites | Threat action | Impact | Impacted assets | Existing controls (evidence) | Gaps | Recommended mitigations | Detection ideas | Likelihood | Impact severity | Priority |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TM-001 | Browser attacker / third-party site | API metadata com conteúdo não confiável | DOM XSS via `innerHTML` nas listas de ligações e detalhes | Execução de script no browser da vítima | `app.js` render, estado UI | `textContent` usado em parte do UI (`themeFilter`, títulos etc.) | múltiplos sinks `innerHTML` com campos de origem remota | substituir por `textContent`, usar DOM APIs seguras, sanitizer para campos HTML, adicionar CSP | CSP report/canário de erro JS, CSP reporturi (se disponível), audit no console por injeções | Médio | High | High |
-| TM-002 | Browser attacker / malformed remote metadata | API retorna campos com HTML/JS | Similar XSS em `crosswalk.js` (`pairTable`, `crossPaths`, `crossDetail`) | Compromisso da sessão do browser, modificação UI, exfiltração | `crosswalk.js` | alguns valores de texto usam `textContent` | `innerHTML` em células e detalhes sem escape (`crosswalk.js:470-475`, `561`, `661`) | sanitize/escape, evitar interpolação direta; manter `formatCell` como texto puro | testes e2e com payload `<img src onerror>` na resposta simulada | Médio | High | High |
-| TM-003 | Script de origem externa (site malicioso) | Servidor local publicamente acessível | CORS permissivo permite leitura por qualquer origem | Exposição de dados analíticos e automação cross-site não autorizada | endpoints API | apenas GET + CORS mínimo | `Access-Control-Allow-Origin: *` sem allowlist | definir origem permitida e `Vary: Origin`, remover cabeçalho se não necessário | logs de origem com rejeições, monitorização de User-Agent anómalos | Alto | Medium | High |
-| TM-004 | Remote user sem limite de taxa | Endpoint sem throttling | Requisições repetidas a `/api/analysis` e `/api/records` | Saturação da API local e da origem SNS | `server.py`, cache, thread pool implícito | cache TTL e limite de entradas | sem limite por IP/rota e sem quotas | token bucket simples, limite de requests por 5s, cache de negativos e backoff no erro | métricas de 429, latência, filas de conexão | Alto | High | High |
-| TM-005 | Malicious caller | Endpoint `/api/dataset/<id>` e `/api/records/<id>` | Path injection parcial e rotas internas inesperadas | Consulta de recurso interno de API não pretendido e bypass de análise | `server.py` e ODS API | `unquote` e `int` cast, cap em partes de lógica | quote padrão com `/` permitido e pouca validação de `dataset_id` | validar `dataset_id` com regex (`^[a-zA-Z0-9._-]+$`), `quote(..., safe="")`, recusar entradas largas | alerta em 404 inesperados e picos por id inválido | Médio | Medium | Medium |
-| TM-006 | Atacante com acesso a origem de deploy | Servidor mal configurado em folder root | `SimpleHTTPRequestHandler` expõe ficheiros não públicos | Divulgação de ficheiros internos e metadados | diretório do projeto | nenhum isolamento de raiz documentado | nenhum `DocumentRoot` dedicado, sem deny list explícita | restringir diretório estático e validar path, usar WSGI/Proxy reverso com ACL | varredura de path (`/.git`, `/.env`) e 404 policy | Médio | Medium | Medium |
-| TM-007 | Usuário sem controlo de infra | Deploy direto em produção | Sem headers de segurança em resposta HTTP | Aumento de impacto de XSS/injeção por exploração de terceiros | respostas HTTP do servidor local | `Cache-Control` e CORS apenas | ausência de CSP, X-Content-Type-Options, frame options | implementar header hardening e `Referrer-Policy` | monitorizar CSP report-uri / bloqueios de navegador | Médio | Medium | Medium |
-| TM-008 | Cliente/operador | Crescimento do catálogo | Pipeline `O(n^2)` para `links` sem paginar | Consumo elevado de CPU/memória sob muitos datasets | processos de análise | cache de resultados | limite de saída rígido e paginação para análise incremental | limitar pares gerados por top-k, worker assíncrono, cache por `min_score` | monitorizar duração média e uso de RAM | Médio | Medium | Medium |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TM-001 | Anonymous local/network caller | Service reachable beyond trusted localhost or browser-mediated local requests possible | Repeatedly invoke costly analytics routes | UI/server degradation and upstream API pressure | Server availability, upstream quota/goodwill | Per-IP rate limit, route-specific expensive endpoint limit, bounded concurrent expensive request semaphore, cache caps and request timeouts | ThreadingHTTPServer and rate limits are still in-process only | Add production edge limits if public; add tests for expensive route throttling; document non-production server profile | Count 429s/503s, endpoint latency, concurrent requests, upstream error rates | Medium | Medium | Medium |
+| TM-002 | Operator/deployer mistake | Current local server exposed publicly | Use no-auth API as public analytics proxy | Scraping, DoS, unexpected public data service | Availability, reputation | Binds to `127.0.0.1`; static allowlist; security headers | No production auth/edge quota/deployment guard | Keep bind local by default; if public, deploy behind reverse proxy with TLS, request limits, logging, optional auth | Alert if server starts on non-loopback; proxy access logs | Medium if public, Low if local | Medium | Medium |
+| TM-003 | Malicious/compromised upstream data | API metadata/records contain hostile strings | Attempt DOM XSS or visual manipulation | Browser compromise if unsafe sinks are introduced; current impact mostly UI confusion | Frontend integrity | Rendering uses DOM APIs in reviewed files; QA blocks common dangerous sinks; CSP blocks inline scripts; no eval found | No Trusted Types; CSP still has inline styles | Keep QA sink scan; consider Trusted Types later; keep API-derived data out of HTML sinks | Browser tests with `<img onerror>` payloads in mocked API | Low | High if exploitable | Medium |
+| TM-004 | Malicious site on same machine/origin pattern | Victim has local server running and hostile page from allowlisted localhost origin | Read local API outputs via CORS | Public data exposure; future private data risk | API outputs | `_normalize_origin` only allows localhost/127.0.0.1 | Localhost origins are broad; future private endpoints would be exposed to other local apps | For sensitive future data, require per-run random token or disable CORS entirely unless needed | Log Origin, reject unexpected ports if not needed | Low now | Medium future | Low |
+| TM-005 | Upstream/API failure or stale data | SNS API down or returns stale/malformed data | App serves fallback/stale outputs as if available | Incorrect analysis decisions | Analytics integrity | Fallback flags and warnings propagated; cache metadata included | Users may still over-trust stale/fallback views | Keep persistent fallback banners; add generated_at/source freshness to every analytical page | Monitor fallback/degraded status frequency | Medium | Medium | Medium |
+| TM-006 | Supply-chain compromise | CDN or dependency path compromised and SRI bypass/updated incorrectly | Execute modified D3 in page origin | Browser-side compromise | Frontend integrity | D3 is pinned with SHA-384 SRI and CSP source restricted | CDN still allowed in CSP; operational dependency on third party | Vendor D3 locally if public deployment matters; remove CDN from CSP | CSP violation logs, dependency review | Low | High | Low |
+| TM-007 | Local user or scanner | Requests unknown/static paths | Attempt path traversal or dotfile access | File disclosure if allowlist fails | Repo files | `ALLOWED_STATIC_PATHS`, directory listing disabled | Error message reflects requested path in JSON | Keep allowlist; make 404 generic if exposed publicly | Track 404 path scans | Low | Medium | Low |
 
 ## Criticality calibration
-- **Crítico:** perda de integridade da sessão do browser com execução remota (XSS confirmável com origem controlada).
-- **Alto:** exposição pública sem rate limiting ou CORS mal configurado com potencial de DoS consistente.
-- **Médio:** exposição de assets não sensíveis e falta de hardening HTTP.
-- **Baixo:** falhas de robustez de input (ex.: parâmetros fora de range) sem impacto direto imediato.
+- Critical: any pre-auth RCE, file read outside allowlist, or confirmed DOM XSS from public upstream data that executes script under app origin.
+- High: public deployment enabling sustained unauthenticated DoS, private/internal data exposure, or removal of static allowlist/CSP.
+- Medium: expensive unauthenticated computation, stale/fallback integrity issues, CORS risk that becomes serious if future private data is added.
+- Low: local-only information leakage, broad image/style policy, CDN dependency with SRI.
 
 ## Focus paths for security review
 | Path | Why it matters | Related Threat IDs |
 | --- | --- | --- |
-| `server.py:480-601` | API local, roteamento, headers e controle de origem | TM-003, TM-004, TM-005, TM-006, TM-007 |
-| `app.js:190-713` | Renderização principal e árvore de cruzamentos com múltiplos sinks | TM-001, TM-008 |
-| `crosswalk.js:150-713` | Renderização detalhada de pares/caminhos com HTML dinâmico | TM-002 |
-| `index.html:1-130` | Dependências e scripts externos sem SRI | TM-007 |
-| `crosswalk.html:1-120` | Fluxo alternativo com mesmos dados e riscos de DOM sinks | TM-002 |
+| `server.py` | All routing, proxying, cache, rate limit, headers and loopback binding live here | TM-001, TM-002, TM-004, TM-005, TM-007 |
+| `analytics.js` | Largest frontend surface, export flow and heavy analytics rendering | TM-003 |
+| `app.js` | Main catalog UI and recent records rendering from upstream data | TM-003 |
+| `crosswalk.js` | Complex relation rendering and JSON export | TM-003 |
+| `research.js` | Deep-research page reads dataset ID from URL and requests `/api/deep-research` | TM-001, TM-003 |
+| `index.html` | Third-party D3 dependency and SRI/CSP compatibility | TM-006 |
+| `scripts/browser_smoke.js` | Browser smoke coverage should include security regression payloads | TM-003 |
+| `tests/` | Best place to lock route validation, rate limits and cache/fallback behavior | TM-001, TM-005, TM-007 |
 
-## Notes on use
-- Foco inicial recomendado: TM-001 e TM-002 (alto impacto no browser), TM-004 (estabilidade do serviço) e TM-006 (publicação).
-- Para validação final, confirmar se existe deploy público e qual origem de terceiros pode carregar o site.
+## Quality check
+- Covered discovered runtime entry points: static routes and all visible `/api/*` handlers.
+- Covered trust boundaries: browser/local server, local server/upstream, upstream data/DOM, CDN/browser.
+- Separated runtime from dev/tests: tests and scripts are review paths, not runtime surfaces.
+- User clarifications not yet provided: deployment model and future data sensitivity remain assumptions.
+- No secrets were printed or found during this review.
