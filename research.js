@@ -4,6 +4,16 @@ const state = {
   selectedDataset: new URLSearchParams(window.location.search).get("dataset_id") || "",
   payload: null,
 };
+const DEEP_RESEARCH_LIMIT = 150;
+const RESULT_LIMITS = {
+  findings: 6,
+  numericProfiles: 6,
+  categoryProfiles: 3,
+  categoryTopValues: 5,
+  associations: 4,
+  confirmedDrivers: 6,
+  territories: 10,
+};
 
 const datasetSelect = document.getElementById("researchDatasetSelect");
 const statusLabel = document.getElementById("researchStatus");
@@ -86,7 +96,10 @@ function formatDecimal(value, digits = 1) {
 }
 
 function percent(value) {
-  return `${Math.round(value * 100)}%`;
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio)) return "-";
+  const bounded = Math.max(0, Math.min(1, ratio));
+  return `${Math.round(bounded * 100)}%`;
 }
 
 function compactText(value, max = 78) {
@@ -202,7 +215,7 @@ async function loadData() {
   thresholdsLabel.textContent = "A calcular referência...";
 
   try {
-    const data = await fetchJson(`/api/deep-research?dataset_id=${encodeURIComponent(state.selectedDataset)}&limit=150`);
+    const data = await fetchJson(`/api/deep-research?dataset_id=${encodeURIComponent(state.selectedDataset)}&limit=${DEEP_RESEARCH_LIMIT}`);
     state.payload = data;
     renderAll();
     statusLabel.textContent = "Análise concluída";
@@ -313,11 +326,16 @@ function renderKeyFindings(analysis) {
     keyFindings.appendChild(emptyState("Sem síntese automática", "A amostra não gerou achados suficientemente estáveis para resumo."));
     return;
   }
-  insights.forEach((insight) => {
+  const visibleInsights = insights.slice(0, RESULT_LIMITS.findings);
+  visibleInsights.forEach((insight) => {
     const card = el("article", "research-finding-card");
     card.append(el("span", "", insight.label), el("strong", "", compactText(insight.value, 52)), el("small", "", insight.detail || "validar contexto antes de usar"));
     keyFindings.appendChild(card);
   });
+  const omitted = insights.length - visibleInsights.length;
+  if (omitted > 0) {
+    keyFindings.appendChild(el("small", "research-omitted", `Mostrados ${visibleInsights.length} de ${formatNumber(insights.length)} achados; restantes disponíveis para aprofundamento técnico.`));
+  }
 }
 
 function renderNumericResults(analysis) {
@@ -327,7 +345,8 @@ function renderNumericResults(analysis) {
     return;
   }
   const maxStddev = Math.max(...profiles.map((profile) => Number(profile.stddev || 0)), 1);
-  profiles.slice(0, 6).forEach((profile) => {
+  const visibleProfiles = profiles.slice(0, RESULT_LIMITS.numericProfiles);
+  visibleProfiles.forEach((profile) => {
     const row = el("article", "research-result-row");
     const head = el("div", "research-result-head");
     head.append(el("strong", "", fieldLabel(profile)), el("span", "", measureRoleLabel(profile.measure_role)));
@@ -350,6 +369,10 @@ function renderNumericResults(analysis) {
     row.append(head, stats, meter, note);
     numericResults.appendChild(row);
   });
+  const omitted = profiles.length - visibleProfiles.length;
+  if (omitted > 0) {
+    numericResults.appendChild(el("small", "research-omitted", `Mostrados ${visibleProfiles.length} de ${formatNumber(profiles.length)} indicadores; ${formatNumber(omitted)} omitido(s) para leitura compacta.`));
+  }
 }
 
 function renderTrendExplorer(analysis) {
@@ -391,11 +414,12 @@ function renderCategoryResults(analysis) {
     categoryResults.appendChild(emptyState("Sem categorias relevantes", "A amostra não tem campos categóricos com distribuição legível."));
     return;
   }
-  profiles.slice(0, 3).forEach((profile) => {
+  const visibleProfiles = profiles.slice(0, RESULT_LIMITS.categoryProfiles);
+  visibleProfiles.forEach((profile) => {
     const block = el("article", "research-category-block");
     block.append(el("strong", "", fieldLabel(profile)));
     const max = Math.max(...profile.top_values.map((item) => Number(item.count || 0)), 1);
-    profile.top_values.slice(0, 5).forEach((item) => {
+    profile.top_values.slice(0, RESULT_LIMITS.categoryTopValues).forEach((item) => {
       const row = el("div", "research-category-row");
       row.append(el("span", "", compactText(item.value, 42)));
       const meter = el("i");
@@ -407,6 +431,10 @@ function renderCategoryResults(analysis) {
     });
     categoryResults.appendChild(block);
   });
+  const omittedProfiles = profiles.length - visibleProfiles.length;
+  if (omittedProfiles > 0) {
+    categoryResults.appendChild(el("small", "research-omitted", `Mostrados ${visibleProfiles.length} de ${formatNumber(profiles.length)} dimensões categóricas para leitura rápida.`));
+  }
 }
 
 function renderAssociations(analysis) {
@@ -415,7 +443,8 @@ function renderAssociations(analysis) {
     associationResults.appendChild(emptyState("Sem associações robustas", "Não há pares numéricos suficientes acima do limiar exploratório."));
     return;
   }
-  correlations.slice(0, 4).forEach((item) => {
+  const visibleCorrelations = correlations.slice(0, RESULT_LIMITS.associations);
+  visibleCorrelations.forEach((item) => {
     const row = el("div", "research-association");
     row.append(
       el("strong", "", `${compactText(item.label_a, 34)} ↔ ${compactText(item.label_b, 34)}`),
@@ -424,6 +453,10 @@ function renderAssociations(analysis) {
     );
     associationResults.appendChild(row);
   });
+  const omitted = correlations.length - visibleCorrelations.length;
+  if (omitted > 0) {
+    associationResults.appendChild(el("small", "research-omitted", `Mostradas ${visibleCorrelations.length} de ${formatNumber(correlations.length)} associações com maior evidência.`));
+  }
 }
 
 function renderFeatures(rows) {
@@ -465,11 +498,12 @@ function renderTerritory(territory, analysis) {
     territorySummary.appendChild(card);
   });
 
-  if (!regions.length) {
+  const visibleRegions = regions.slice(0, RESULT_LIMITS.territories);
+  if (!visibleRegions.length) {
     territoryBars.appendChild(emptyState("Sem sinal regional", "A amostra não expõe região/ARS reconhecível. Usar entidade ou ULS se existirem."));
   } else {
-    const max = Math.max(...regions.map((item) => item.count), 1);
-    regions.forEach((item, index) => {
+    const max = Math.max(...visibleRegions.map((item) => item.count), 1);
+    visibleRegions.forEach((item, index) => {
       const row = el("div", "territory-row");
       const label = el("div", "territory-label");
       label.append(el("strong", "", item.name), el("small", "", `${formatNumber(item.count)} ocorrências`));
@@ -481,6 +515,10 @@ function renderTerritory(territory, analysis) {
       row.append(label, meter);
       territoryBars.appendChild(row);
     });
+    const omittedRegions = regions.length - visibleRegions.length;
+    if (omittedRegions > 0) {
+      territoryBars.appendChild(el("small", "research-omitted", `${formatNumber(omittedRegions)} regiões com menor sinal ocultadas para evitar sobrecarga visual.`));
+    }
   }
 
   [...entities.slice(0, 6), ...uls.slice(0, 4)].forEach((item) => {
