@@ -22,6 +22,7 @@ const state = {
   datasetMode: "rich",
   dataLimit: 80,
   dataPayload: null,
+  dataLoading: false,
   selectedFinancialDataset: "",
   selectedProductionDataset: "",
   finProdPayload: null,
@@ -111,6 +112,7 @@ const modelMeta = document.getElementById("analyticsModelMeta");
 const semanticModel = document.getElementById("analyticsSemanticModel");
 const publicHealthMeta = document.getElementById("publicHealthMeta");
 const publicHealthStoryStrip = document.getElementById("publicHealthStoryStrip");
+const publicHealthTerritoryNotice = document.getElementById("publicHealthTerritoryNotice");
 const publicHealthKpis = document.getElementById("publicHealthKpis");
 const publicHealthPriorityList = document.getElementById("publicHealthPriorityList");
 const publicHealthLayerControls = document.getElementById("publicHealthLayerControls");
@@ -245,7 +247,7 @@ const PUBLIC_HEALTH_NATIONAL_GEO = {
 };
 const PUBLIC_HEALTH_AGGREGATION_GEO = {
   id: "agregar",
-  label: "Território por resolver",
+  label: "Território por validar",
   x: 346,
   y: 174,
   w: 132,
@@ -848,12 +850,15 @@ function populateFinProdOptions() {
 async function loadDataAnalytics() {
   if (!state.selectedDataDataset) return;
   const requestId = ++activeDataRequest;
+  state.dataLoading = true;
   dataAnalyticsStatus.textContent = "A analisar amostra...";
+  renderDataAnalytics();
   const payload = await fetchJson(`/api/data-analytics?dataset_id=${encodeURIComponent(state.selectedDataDataset)}&limit=${state.dataLimit}`, {
     timeoutMs: 26000,
   });
   if (requestId !== activeDataRequest) return;
   state.dataPayload = payload;
+  state.dataLoading = false;
   dataAnalyticsStatus.textContent = `Amostra atualizada · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   if (state.activeTab === "predictive") {
     renderPredictiveAnalytics();
@@ -867,6 +872,42 @@ function debounceLoadDataAnalytics() {
   dataLoadTimer = setTimeout(() => {
     loadDataAnalytics().catch(showDataError);
   }, 180);
+}
+
+function renderDataLoadingState() {
+  renderAnalyticsStory(dataStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "O que a amostra mostra?",
+      detail: "A carregar registos reais da API para medir indicadores, dimensões e tendências.",
+    },
+    {
+      label: "Leitura recomendada",
+      value: "A analisar amostra",
+      detail: "Os resultados aparecem assim que a resposta do dataset terminar.",
+      tone: "warning",
+    },
+    {
+      label: "Travão",
+      value: "A validar cobertura",
+      detail: "A página não interpreta valores até receber amostra, denominador e avisos.",
+      tone: "warning",
+    },
+  ]);
+  dataAnalyticsMeta.textContent = "A analisar amostra real...";
+  dataStatRows.textContent = "A analisar";
+  dataStatCompletenessValue.textContent = "A analisar";
+  if (dataStatCompletenessBar) dataStatCompletenessBar.style.width = "0%";
+  dataStatCounts.textContent = "A analisar";
+  clearElement(dataStatSuitability);
+  const badge = document.createElement("div");
+  badge.className = "suitability-badge is-rever";
+  badge.textContent = "Rever";
+  dataStatSuitability.appendChild(badge);
+  [dataInsightCards, dataCorrelationList, dataNumericProfiles, dataCategoricalProfiles, dataFeatureImportance].forEach(clearElement);
+  clearElement(dataTrendChart);
+  clearElement(dataPcaChart);
+  dataPcaMeta.textContent = "A aguardar medidas numéricas da amostra.";
 }
 
 async function loadFinProdAnalytics() {
@@ -1518,9 +1559,9 @@ function publicHealthScopeLabel(row) {
   if (!row) return "Âmbito por validar";
   if (row.geo.id === "nacional") return "Nacional · sem campo regional";
   if (row.geo.id === "agregar") {
-    if (row.geo.resolution === "regional-field") return "Campo regional · valores por resolver";
-    if (row.geo.resolution === "territorial-field") return "Campo territorial · valores por resolver";
-    return "Entidade local · por corresponder";
+    if (row.geo.resolution === "regional-field") return "Território por validar";
+    if (row.geo.resolution === "territorial-field") return "Território por validar";
+    return "Entidade local por validar";
   }
   if (row.geo.resolution === "mapped") return `${row.geo.label} · ${row.geo.matchedEntity}`;
   return `${row.geo.label} · região inferida`;
@@ -1729,6 +1770,10 @@ function renderTopOpportunities() {
 
 function renderDataAnalytics() {
   const payload = state.dataPayload;
+  if (state.dataLoading) {
+    renderDataLoadingState();
+    return;
+  }
   if (!payload) {
     renderAnalyticsStory(dataStoryStrip, [
       {
@@ -3570,14 +3615,14 @@ function renderNationalSummary(rows, nationalEntry) {
   card.className = `national-summary-card ${pendingRatio >= 0.7 ? "is-warning" : ""}`.trim();
   if (selected?.geo.id === "nacional" || selected?.geo.id === "agregar") card.classList.add("is-active");
   const label = document.createElement("span");
-  label.textContent = aggregateRows.length ? "Território por resolver" : "Vista nacional";
+  label.textContent = aggregateRows.length ? "Bloqueio territorial" : "Vista nacional";
   const value = document.createElement("strong");
   value.textContent = aggregateRows.length
-    ? `${formatNumber(aggregateRows.length)} hipóteses com campo territorial`
+    ? `${formatNumber(aggregateRows.length)} por validar`
     : `${formatNumber(nationalEntry?.count || 0)} hipóteses nacionais`;
   const detail = document.createElement("small");
   detail.textContent = aggregateRows.length
-    ? `${formatNumber(mappedRows.length)} já mapeadas; restantes precisam de regra territorial.`
+    ? `${formatNumber(mappedRows.length)} já mapeadas; falta regra Região SNS.`
     : "Separado para não falsear região.";
   card.append(label, value, detail);
   card.addEventListener("click", () => {
@@ -3588,6 +3633,33 @@ function renderNationalSummary(rows, nationalEntry) {
     }
   });
   publicHealthNationalSummary.appendChild(card);
+}
+
+function renderPublicHealthTerritoryNotice(rows) {
+  if (!publicHealthTerritoryNotice) return;
+  clearElement(publicHealthTerritoryNotice);
+  const unresolvedRows = rows.filter((row) => row.geo.id === "agregar");
+  const mappedCount = rows.filter((row) => row.geo.resolution === "mapped").length;
+  if (!unresolvedRows.length) {
+    publicHealthTerritoryNotice.hidden = true;
+    return;
+  }
+  publicHealthTerritoryNotice.hidden = false;
+  const text = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = "Bloqueio territorial";
+  const detail = document.createElement("span");
+  detail.textContent = `${formatNumber(unresolvedRows.length)} hipótese(s) têm campo territorial, mas ainda precisam de regra Região SNS. ${formatNumber(mappedCount)} já estão mapeadas.`;
+  text.append(title, detail);
+  const action = document.createElement("button");
+  action.type = "button";
+  action.textContent = "Abrir território";
+  action.addEventListener("click", () => {
+    state.selectedPublicHealthKey = unresolvedRows[0].key;
+    renderPublicHealthMatrix();
+    document.getElementById("health-territory-step")?.scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  publicHealthTerritoryNotice.append(text, action);
 }
 
 function appendSvgText(parent, lines, x, y, attrs = {}) {
@@ -3697,9 +3769,9 @@ function renderPublicHealthMap(rows) {
   const statusRows = [
     {
       id: "agregar",
-      label: "Território por resolver",
+      label: "Por validar",
       value: `${formatNumber(aggregateEntry?.count || 0)} hipótese(s)`,
-      detail: ["Campo territorial existe", "mas falta regra regional."],
+      detail: ["Falta regra Região SNS", "antes de mapear."],
       warning: true,
     },
     {
@@ -3758,7 +3830,7 @@ function renderPublicHealthDecisionDetail(row) {
   scope.textContent = row.geo.id === "nacional"
     ? "Âmbito nacional."
     : row.geo.id === "agregar"
-      ? `${publicHealthScopeLabel(row)}: validar território antes de mapear.`
+      ? "Território por validar: confirmar regra Região SNS antes de mapear."
       : row.geo.resolution === "mapped"
         ? `${row.geo.label} · ${row.geo.matchedEntity}.`
         : `${row.geo.label} · match heurístico.`;
@@ -3908,7 +3980,7 @@ function renderHypothesisCellDetail(bucket, allRows) {
   const scopeLabel = bucket.scope === "nacional"
     ? "leitura nacional"
     : bucket.scope === "agregar"
-      ? "território por resolver"
+      ? "território por validar"
       : "com match regional";
   const title = document.createElement("strong");
   title.className = "hypothesis-detail-title";
@@ -4695,6 +4767,7 @@ function renderPublicHealthMatrix() {
   const selectedPriority = priorityRows.find((row) => row.key === state.selectedPublicHealthKey) || priorityRows[0];
   const mappedCount = priorityRows.filter((row) => row.geo.resolution === "mapped").length;
   const unresolvedCount = priorityRows.filter((row) => row.geo.id === "agregar").length;
+  renderPublicHealthTerritoryNotice(priorityRows);
   renderAnalyticsStory(publicHealthStoryStrip, [
     {
       label: "Pergunta ativa",
@@ -4709,8 +4782,8 @@ function renderPublicHealthMatrix() {
     },
     {
       label: "Travão",
-      value: mappedCount ? `${formatNumber(mappedCount)} mapeadas` : "Território por validar",
-      detail: unresolvedCount ? `${formatNumber(unresolvedCount)} hipóteses têm campo territorial mas falta regra regional.` : "Território regional disponível para os sinais visíveis.",
+      value: unresolvedCount ? "Território por validar" : `${formatNumber(mappedCount)} mapeadas`,
+      detail: unresolvedCount ? `${formatNumber(unresolvedCount)} hipótese(s) precisam de regra Região SNS.` : "Território regional disponível para os sinais visíveis.",
       tone: unresolvedCount ? "warning" : "ok",
     },
     {
@@ -5261,7 +5334,10 @@ function showError(error) {
 }
 
 function showDataError(error) {
+  state.dataLoading = false;
+  state.dataPayload = null;
   dataAnalyticsStatus.textContent = error.message || "Erro ao analisar dados";
+  renderDataAnalytics();
 }
 
 setupEvents();

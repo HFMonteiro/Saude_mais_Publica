@@ -1564,7 +1564,7 @@ td.numeric {
 }
 
 .research-results-grid {
-  grid-template-columns: minmax(380px, 1.25fr) minmax(380px, 1fr) minmax(280px, 0.72fr);
+  grid-template-columns: minmax(420px, 1.38fr) minmax(360px, 0.96fr) minmax(270px, 0.62fr);
 }
 
 .research-panel {
@@ -1591,6 +1591,17 @@ td.numeric {
   overflow: visible;
 }
 
+.research-method-panel.is-soft {
+  background: #fbfdff;
+}
+
+.research-method-panel.is-soft .research-warning {
+  border-color: #d7e2ea;
+  border-left-color: #8da0b3;
+  background: #f7fbff;
+  color: #4e6479;
+}
+
 .research-territory-panel {
   gap: 12px;
 }
@@ -1602,6 +1613,30 @@ td.numeric {
   border-radius: 10px;
   padding: 12px;
   background: linear-gradient(135deg, #f4fbf8, #fff);
+}
+
+.research-result-caveat {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8a45d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff8ec;
+  color: #6e430d;
+}
+
+.research-result-caveat[hidden] {
+  display: none;
+}
+
+.research-result-caveat strong {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.research-result-caveat span {
+  color: #5d4932;
+  line-height: 1.35;
 }
 
 .research-narrative p,
@@ -4742,6 +4777,50 @@ td.numeric {
   font-variant-numeric: tabular-nums;
 }
 
+.public-health-territory-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d8a45d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff8ec;
+  color: #6e430d;
+}
+
+.public-health-territory-notice[hidden] {
+  display: none;
+}
+
+.public-health-territory-notice div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.public-health-territory-notice strong {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.public-health-territory-notice span {
+  color: #5d4932;
+  line-height: 1.35;
+}
+
+.public-health-territory-notice button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  border: 1px solid #b87929;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #fff;
+  color: #7a4610;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .health-guidance {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4769,9 +4848,13 @@ td.numeric {
   line-height: 1.35;
 }
 
+.health-flow-step {
+  scroll-margin-top: 16px;
+}
+
 .public-health-cockpit {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(520px, 1fr) minmax(300px, 380px);
+  grid-template-columns: minmax(250px, 0.72fr) minmax(580px, 1.55fr) minmax(280px, 0.82fr);
   gap: 12px;
   min-width: 0;
 }
@@ -7001,6 +7084,11 @@ td.numeric {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .public-health-territory-notice {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .methodology-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7097,6 +7185,13 @@ td.numeric {
 
   .analytics-tabs {
     display: flex;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .analytics-tab {
+    flex: 1 1 150px;
+    white-space: normal;
   }
 
   .top-opportunity-list {

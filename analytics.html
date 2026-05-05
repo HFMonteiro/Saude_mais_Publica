@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=copy-tight-20260430" />
+    <link rel="stylesheet" href="styles.css?v=ux-flow-20260505" />
   </head>
   <body>
     <main class="analytics-layout">
@@ -417,28 +417,30 @@
 
         <section id="publicHealthStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada de saúde pública"></section>
 
+        <section id="publicHealthTerritoryNotice" class="public-health-territory-notice" aria-label="Bloqueio territorial" hidden></section>
+
         <section id="publicHealthKpis" class="public-health-kpis" aria-label="Resumo de prioridade em saúde pública"></section>
 
-        <section class="health-guidance" aria-label="Como usar a leitura de saúde pública">
+        <section class="health-guidance health-flow-nav" aria-label="Como usar a leitura de saúde pública">
           <div>
-            <strong>1. Escolhe</strong>
-            <span>Seleciona uma hipótese.</span>
+            <strong>1. Matriz</strong>
+            <span>Prioriza impacto × viabilidade.</span>
           </div>
           <div>
-            <strong>2. Valida</strong>
-            <span>Tempo, território, entidade.</span>
+            <strong>2. Hipóteses</strong>
+            <span>Abre a relação concreta.</span>
           </div>
           <div>
-            <strong>3. Lê o âmbito</strong>
-            <span>Regional, nacional ou por resolver.</span>
+            <strong>3. Território</strong>
+            <span>Confirma regra regional.</span>
           </div>
           <div>
-            <strong>4. Cautela</strong>
-            <span>Triagem, não decisão.</span>
+            <strong>4. Drivers</strong>
+            <span>Valida fonte e denominador.</span>
           </div>
         </section>
 
-        <div class="public-health-layout public-health-layout-primary">
+        <div id="health-matrix-step" class="public-health-layout public-health-layout-primary health-flow-step">
           <section>
             <div class="panel-heading">
               <div>
@@ -460,7 +462,7 @@
         </div>
 
         <section class="public-health-cockpit">
-          <section class="public-health-priority-panel">
+          <section id="health-hypotheses-step" class="public-health-priority-panel health-flow-step">
             <div class="panel-heading">
               <div>
                 <h2>Hipóteses de análise</h2>
@@ -470,7 +472,7 @@
             <div id="publicHealthPriorityList" class="public-health-priority-list"></div>
           </section>
 
-          <section class="public-health-map-panel">
+          <section id="health-territory-step" class="public-health-map-panel health-flow-step">
             <div class="panel-heading">
               <div>
                 <h2>Leitura territorial SNS</h2>
@@ -484,7 +486,7 @@
             </div>
           </section>
 
-          <aside class="public-health-detail-panel">
+          <aside id="health-drivers-step" class="public-health-detail-panel health-flow-step">
             <h3>Drivers e leitura</h3>
             <div id="publicHealthDecisionDetail" class="public-health-decision-detail"></div>
           </aside>
@@ -796,6 +798,6 @@
       </footer>
     </main>
 
-    <script src="analytics.js?v=copy-tight-20260430" defer></script>
+    <script src="analytics.js?v=ux-flow-20260505" defer></script>
   </body>
 </html>

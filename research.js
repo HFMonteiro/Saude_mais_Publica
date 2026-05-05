@@ -19,6 +19,7 @@ const datasetSelect = document.getElementById("researchDatasetSelect");
 const statusLabel = document.getElementById("researchStatus");
 const thresholdsLabel = document.getElementById("borutaThresholds");
 const overview = document.getElementById("researchOverview");
+const resultCaveat = document.getElementById("researchResultCaveat");
 const resultNarrative = document.getElementById("resultNarrative");
 const keyFindings = document.getElementById("keyFindings");
 const numericResults = document.getElementById("numericResults");
@@ -34,6 +35,7 @@ const territoryReadout = document.getElementById("territoryReadout");
 const kpiGrid = document.getElementById("territorialKpis");
 const warningList = document.getElementById("qualityWarnings");
 const confirmedDrivers = document.getElementById("confirmedDrivers");
+const methodPanel = document.querySelector(".research-method-panel");
 
 const STATUS_LABELS = {
   confirmada: "confirmada",
@@ -58,6 +60,7 @@ function ptText(value) {
 function clearAll() {
   [
     overview,
+    resultCaveat,
     resultNarrative,
     keyFindings,
     numericResults,
@@ -239,6 +242,7 @@ function renderAll() {
   mapMeta.textContent = `${analysis.title || state.payload?.title || "Dataset"} · ${formatNumber(analysis.sample_size)} registos lidos · ${analysis.fallback ? "dados indisponíveis" : "amostra real"}.`;
 
   renderOverview(analysis, rows, warnings);
+  renderResultCaveat(analysis, warnings);
   renderResultNarrative(analysis, warnings);
   renderKeyFindings(analysis);
   renderNumericResults(analysis);
@@ -248,6 +252,26 @@ function renderAll() {
   renderTerritory(territory, analysis);
   renderQuality(analysis, screening, rows, warnings);
   renderConfirmedDrivers(confirmed);
+}
+
+function renderResultCaveat(analysis, warnings) {
+  if (!resultCaveat) return;
+  resultCaveat.hidden = true;
+  resultCaveat.replaceChildren();
+  const sample = analysis.sample || {};
+  const coverage = Number(sample.coverage_ratio);
+  const lowCoverage = Number.isFinite(coverage) && coverage < 0.75;
+  if (!lowCoverage && !analysis.fallback) return;
+  resultCaveat.hidden = false;
+  const title = el("strong", "", lowCoverage ? "Amostra limitada" : "Dados indisponíveis");
+  const detail = el(
+    "span",
+    "",
+    lowCoverage
+      ? `${percent(coverage)} de cobertura nesta leitura. Lê os resultados como sinal da amostra; a validação completa está no painel lateral.`
+      : "A página não substitui por dados fictícios; valida fonte e disponibilidade antes de interpretar.",
+  );
+  resultCaveat.append(title, detail);
 }
 
 function renderOverview(analysis, rows, warnings) {
@@ -539,6 +563,9 @@ function renderQuality(analysis, screening, rows, warnings) {
   const confirmed = rows.filter((row) => row.status === "confirmada").length;
   const tentative = rows.filter((row) => row.status === "tentativa").length;
   const method = screening.method || "feature_screening";
+  const coverage = Number(analysis.sample?.coverage_ratio);
+  const criticalValidation = analysis.fallback || warnings.length > 0 || (Number.isFinite(coverage) && coverage < 0.75);
+  methodPanel?.classList.toggle("is-soft", !criticalValidation);
   const cards = [
     ["Sinais fortes", confirmed, "campos acima da referência de ruído"],
     ["A confirmar", tentative, "sinal útil, mas ainda frágil"],
