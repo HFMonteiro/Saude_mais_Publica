@@ -174,6 +174,12 @@ class AnalyticsMethodTests(unittest.TestCase):
         self.assertIn("analysis_readiness", payload)
         self.assertIn(payload["analysis_readiness"]["band"], {"pronto", "rever", "fragil"})
         self.assertGreaterEqual(payload["analysis_readiness"]["score"], 0)
+        self.assertIn("epidemiology_review", payload)
+        self.assertIn("dataset_family", payload["epidemiology_review"])
+        self.assertIn("source_reliability_profile", payload["epidemiology_review"])
+        self.assertIn("ontology_version", payload["epidemiology_review"])
+        self.assertIn("rule_trace", payload["epidemiology_review"])
+        self.assertIn("evidence_grade", payload["epidemiology_review"])
 
     def test_geopoint_dimension_is_not_rendered_as_nominal_categories(self):
         def mock_fetch(path, params=None, cacheable=True):
@@ -305,6 +311,11 @@ class AnalyticsMethodTests(unittest.TestCase):
         self.assertIn("aggregation", payload)
         self.assertIn("numerator", payload)
         self.assertIn("denominator", payload)
+        self.assertIn("ontology_version", payload["epidemiology_review"])
+        self.assertIn("rule_trace", payload["epidemiology_review"])
+        for blocker in payload.get("blocking_factors", []):
+            self.assertIn("domain", blocker)
+            self.assertIn("rule_id", blocker)
 
     def test_finprod_uses_period_sums_for_unit_cost(self):
         def mock_fetch(path, params=None, cacheable=True):
@@ -555,6 +566,24 @@ class AnalyticsMethodTests(unittest.TestCase):
         self.assertLessEqual(readiness["score"], 68)
         self.assertIn("tempo", readiness["gaps"])
         self.assertIn("missing", readiness["gaps"])
+
+    def test_zero_semantics_depends_on_dataset_family(self):
+        rare = server._zero_semantics_review(
+            family={"code": "eventos_raros", "zero_policy": "zero plausível", "lag_sensitivity": "media"},
+            temporal_points=[{"period": f"2025-{index:02d}", "count": 3} for index in range(1, 7)],
+            values=[0, 1, 0, 0, 1, 0],
+            ordering="temporal_desc",
+        )
+        coverage = server._zero_semantics_review(
+            family={"code": "cobertura_populacional", "zero_policy": "zero suspeito", "lag_sensitivity": "alta"},
+            temporal_points=[{"period": f"2025-{index:02d}", "count": 3} for index in range(1, 7)],
+            values=[0, 1, 0, 0, 1, 0],
+            ordering="temporal_desc",
+        )
+
+        self.assertIn(rare["status"], {"pronto", "rever"})
+        self.assertEqual(coverage["status"], "fragil")
+        self.assertNotEqual(rare["reason_code"], coverage["reason_code"])
 
 
 if __name__ == "__main__":

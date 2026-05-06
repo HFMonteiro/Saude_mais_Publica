@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Cruzamentos</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=layout-clean-20260429" />
+    <link rel="stylesheet" href="styles.css?v=simplify-20260506" />
   </head>
   <body>
     <main class="crosswalk-layout">
@@ -16,10 +16,9 @@
           <p class="meta">Chaves comuns, pares fortes e caminhos de integração.</p>
         </div>
         <div class="topbar-actions">
-          <a href="/" class="top-link">Vista principal</a>
+          <a href="/" class="top-link">Radar</a>
           <a href="crosswalk.html" class="top-link is-active" aria-current="page">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
-          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link">Metodologia</a>
         </div>
 
@@ -111,60 +110,64 @@
         <aside class="panel cross-panel cross-focus-panel">
           <div class="panel-heading">
             <h2>Receita do foco</h2>
+            <a id="crossRadarLink" class="ghost-link" href="/">Voltar ao Radar</a>
           </div>
           <div id="recommendedPath" class="recommended-path-panel">
             <strong>Caminho recomendado</strong>
-            <p class="meta">Seleciona um dataset, campo ou par para calcular recomendação.</p>
+            <p class="meta">Selecione um dataset, campo ou par para calcular a recomendação.</p>
           </div>
           <div id="crossDetail" class="cross-detail-grid">
             <div class="empty-state">
               <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="" />
-              <span>Seleciona uma linha para abrir o detalhe de ligação.</span>
+              <span>Selecione uma linha para abrir o detalhe da ligação.</span>
             </div>
           </div>
         </aside>
       </section>
 
-      <section class="cross-grid">
-        <aside class="panel cross-panel">
-          <div class="panel-heading">
-            <h2>Campos fortes</h2>
-            <button id="crossClearField" class="ghost-button" type="button">Limpar campo</button>
-          </div>
-          <div id="crossFieldList" class="field-list-wrap"></div>
-        </aside>
+      <details class="cross-details-drawer">
+        <summary>Ver mais pares, campos e caminhos</summary>
+        <section class="cross-grid">
+          <aside class="panel cross-panel">
+            <div class="panel-heading">
+              <h2>Campos fortes</h2>
+              <button id="crossClearField" class="ghost-button" type="button">Limpar campo</button>
+            </div>
+            <div id="crossFieldList" class="field-list-wrap"></div>
+          </aside>
 
-        <section class="panel cross-panel cross-main">
-          <div class="panel-heading">
-            <div>
-              <h2 id="pairTitle">Pares para cruzar</h2>
-              <p id="pairDescription" class="meta">A ordenar por força.</p>
+          <section class="panel cross-panel cross-main">
+            <div class="panel-heading">
+              <div>
+                <h2 id="pairTitle">Pares para cruzar</h2>
+                <p id="pairDescription" class="meta">A ordenar por força.</p>
+              </div>
+              <button id="crossClearDataset" class="ghost-button" type="button">Limpar dataset</button>
             </div>
-            <button id="crossClearDataset" class="ghost-button" type="button">Limpar dataset</button>
-          </div>
-          <div id="pairWrap" class="pair-list-wrap">
-            <table id="pairTable" class="pair-table">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-            <div id="pairsEmpty" class="empty-state">
-              <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="" />
-              <span>Sem pares para este filtro.</span>
+            <div id="pairWrap" class="pair-list-wrap">
+              <table id="pairTable" class="pair-table">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+              <div id="pairsEmpty" class="empty-state">
+                <img src="visual_assets/logo.jpg" class="empty-state-icon" alt="" />
+                <span>Sem pares para este filtro.</span>
+              </div>
             </div>
-          </div>
+          </section>
+
+          <aside class="panel cross-panel">
+            <div class="panel-heading">
+              <h2>Caminhos</h2>
+            </div>
+            <div id="crossPathMeta" class="cross-meta-box">
+              <h3>Selecione um dataset ou par</h3>
+              <p id="crossPathMetaText" class="meta">Sem foco ativo para análise de caminhos.</p>
+            </div>
+            <div id="crossPaths" class="cross-paths"></div>
+          </aside>
         </section>
-
-        <aside class="panel cross-panel">
-          <div class="panel-heading">
-            <h2>Caminhos</h2>
-          </div>
-          <div id="crossPathMeta" class="cross-meta-box">
-            <h3>Seleciona um dataset ou par</h3>
-            <p id="crossPathMetaText" class="meta">Sem foco ativo para análise de caminhos.</p>
-          </div>
-          <div id="crossPaths" class="cross-paths"></div>
-        </aside>
-      </section>
+      </details>
       <footer class="legal-strip" aria-label="Fonte e nota legal">
         <div><strong>Fonte dos dados:</strong> Portal Transparência SNS / dados abertos Opendatasoft.</div>
         <div>Análises exploratórias e heurísticas, sem valor oficial, clínico ou decisório isolado. Validar sempre fonte, granularidade, atualização e contexto antes de interpretar.</div>
@@ -172,6 +175,6 @@
       </footer>
     </main>
 
-    <script src="crosswalk.js?v=layout-clean-20260429" defer></script>
+    <script src="crosswalk.js?v=simplify-20260506" defer></script>
   </body>
 </html>

@@ -1,0 +1,148 @@
+[
+  {
+    "name": "financeiro_conta_sns_mensal",
+    "dataset_id": "conta-do-servico-nacional-de-saude",
+    "dataset_title": "Conta do Serviço Nacional de Saúde",
+    "mega_theme": "Finanças & Compras",
+    "fields": [
+      {"name": "tempo", "label": "Tempo"},
+      {"name": "orcamento_consumo_publico", "label": "Orçamento / Consumo público"}
+    ],
+    "numeric_profiles": [
+      {"field": "orcamento_consumo_publico", "label": "Orçamento / Consumo público", "measure_role": "monetario"}
+    ],
+    "categorical_profiles": [],
+    "temporal_field": "tempo",
+    "ordering": "temporal_desc",
+    "values": [14183.2, 14183.2, 14183.2, 14183.2, 14183.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "quality_summary": {
+      "coverage": {"status": "rever", "ratio": 0.25},
+      "denominator": {"status": "rever", "label": "validar unidade"},
+      "granularity": {"status": "pronto", "label": "granularidade legível", "max_missing_ratio": 0}
+    },
+    "expected": {
+      "domain": "financeiro",
+      "time_axis_status": "pronto",
+      "zero_status": "rever",
+      "reporting_status": "rever"
+    }
+  },
+  {
+    "name": "atividade_consultas_cauda_reporte",
+    "dataset_id": "acesso-de-consultas-medicas-pela-populacao-inscrita",
+    "dataset_title": "Acesso de consultas médicas pela população inscrita",
+    "mega_theme": "Acesso & Produção",
+    "fields": [
+      {"name": "periodo", "label": "Período"},
+      {"name": "consultas", "label": "Consultas médicas"}
+    ],
+    "numeric_profiles": [
+      {"field": "consultas", "label": "Consultas médicas", "measure_role": "contagem"}
+    ],
+    "categorical_profiles": [{"field": "regiao", "label": "Região"}],
+    "temporal_field": "periodo",
+    "ordering": "temporal_desc",
+    "values": [1300, 1290, 1310, 1280, 1260, 1240, 0, 0],
+    "counts": [24, 24, 24, 24, 24, 24, 1, 1],
+    "quality_summary": {
+      "coverage": {"status": "rever", "ratio": 0.5},
+      "denominator": {"status": "pronto", "label": "medida simples"},
+      "granularity": {"status": "pronto", "label": "granularidade legível", "max_missing_ratio": 0}
+    },
+    "expected": {
+      "domain": "atividade_assistencial",
+      "time_axis_status": "pronto",
+      "zero_status": "fragil",
+      "reporting_status": "fragil"
+    }
+  },
+  {
+    "name": "cobertura_utentes_zero_impossivel",
+    "dataset_id": "utentes-inscritos-nos-cuidados-de-saude-primarios",
+    "dataset_title": "Percentagem de utentes inscritos com médico de família",
+    "mega_theme": "Acesso & Produção",
+    "fields": [
+      {"name": "periodo", "label": "Período"},
+      {"name": "percentagem", "label": "% Total Utentes com MdF atribuído"},
+      {"name": "utentes_inscritos", "label": "Utentes inscritos"}
+    ],
+    "numeric_profiles": [
+      {"field": "percentagem", "label": "% Total Utentes com MdF atribuído", "measure_role": "taxa"}
+    ],
+    "categorical_profiles": [{"field": "ars", "label": "ARS"}],
+    "temporal_field": "periodo",
+    "ordering": "api_default",
+    "values": [91.1, 91.5, 0, 92.0, 92.2, 92.3],
+    "counts": [5, 5, 5, 5, 5, 5],
+    "quality_summary": {
+      "coverage": {"status": "pronto", "ratio": 1},
+      "denominator": {"status": "pronto", "label": "utentes inscritos"},
+      "granularity": {"status": "pronto", "label": "granularidade legível", "max_missing_ratio": 0}
+    },
+    "expected": {
+      "domain": "cobertura_populacional",
+      "time_axis_status": "pronto",
+      "zero_status": "fragil",
+      "reporting_status": "pronto"
+    }
+  },
+  {
+    "name": "eventos_raros_obitos_zero_plausivel",
+    "dataset_id": "mortalidade-hospitalar",
+    "dataset_title": "Óbitos e mortalidade hospitalar por período",
+    "mega_theme": "Qualidade & Resultados",
+    "fields": [
+      {"name": "periodo", "label": "Período"},
+      {"name": "obitos", "label": "Óbitos"}
+    ],
+    "numeric_profiles": [
+      {"field": "obitos", "label": "Óbitos", "measure_role": "contagem"}
+    ],
+    "categorical_profiles": [{"field": "hospital", "label": "Hospital"}],
+    "temporal_field": "periodo",
+    "ordering": "api_default",
+    "values": [0, 1, 0, 2, 0, 1, 0, 0],
+    "counts": [3, 3, 3, 3, 3, 3, 3, 3],
+    "quality_summary": {
+      "coverage": {"status": "pronto", "ratio": 1},
+      "denominator": {"status": "pronto", "label": "medida simples"},
+      "granularity": {"status": "pronto", "label": "granularidade legível", "max_missing_ratio": 0}
+    },
+    "expected": {
+      "domain": "eventos_raros",
+      "time_axis_status": "pronto",
+      "zero_status": "pronto",
+      "reporting_status": "pronto"
+    }
+  },
+  {
+    "name": "capacidade_camas_stock_zero_estrutural",
+    "dataset_id": "lotacao-praticada",
+    "dataset_title": "Camas e lotação praticada",
+    "mega_theme": "Rede & Território",
+    "fields": [
+      {"name": "ano", "label": "Ano"},
+      {"name": "camas", "label": "Camas"}
+    ],
+    "numeric_profiles": [
+      {"field": "camas", "label": "Camas", "measure_role": "stock"}
+    ],
+    "categorical_profiles": [{"field": "hospital", "label": "Hospital"}],
+    "temporal_field": "ano",
+    "ordering": "api_default",
+    "values": [120, 121, 0, 122, 123, 124],
+    "counts": [1, 1, 1, 1, 1, 1],
+    "quality_summary": {
+      "coverage": {"status": "pronto", "ratio": 1},
+      "denominator": {"status": "pronto", "label": "stock/capacidade"},
+      "granularity": {"status": "pronto", "label": "granularidade legível", "max_missing_ratio": 0}
+    },
+    "expected": {
+      "domain": "capacidade_recursos",
+      "time_axis_status": "pronto",
+      "zero_status": "rever",
+      "reporting_status": "pronto"
+    }
+  }
+]

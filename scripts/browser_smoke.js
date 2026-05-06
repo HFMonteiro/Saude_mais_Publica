@@ -49,6 +49,41 @@ function json(response, payload) {
 }
 
 function dataAnalytics(datasetId) {
+  const review = {
+    ontology_version: "browser-smoke.ontology",
+    overall: {status: "pronto", label: "Pronto", summary: "A série pode ser interpretada."},
+    analytical_intent: {status: "pronto", label: "Triagem exploratória", detail: "Validar interpretabilidade antes de ler sinais úteis.", code: "triagem_exploratoria"},
+    surveillance_domain: {status: "pronto", code: "financeiro", label: "Financeiro", detail: "Validar base contabilística, período e unidade monetária antes de interpretar.", signals: ["valor monetário"], rule_id: "SURV-DOMAIN-001"},
+    population_basis: {status: "rever", code: "base_contabilistica", label: "Base contabilística", detail: "Confirmar denominador e unidade."},
+    measure_construct: {status: "pronto", code: "valor_monetario", label: "Valor monetário", detail: "Medida monetária provável."},
+    denominator: {status: "rever", code: "sensivel", label: "denominador sensível", detail: "Validar unidade."},
+    time_axis: {status: "pronto", label: "6 períodos válidos", detail: "Períodos comparáveis para leitura temporal.", valid_periods: 6, min_records_per_period: 3, periodicity: {code: "mensal", label: "mensal provável"}},
+    geography_axis: {status: "pronto", label: "1 dimensão territorial", detail: "Região disponível.", local_dimension_count: 1},
+    reporting_process: {status: "pronto", label: "sem atraso visível", detail: "Não há indício forte de cauda recente truncada.", lag_suspected_periods: [], lag_confidence: "baixa", reason_code: "no_lag_signal"},
+    zero_meaning: {status: "pronto", label: "sem zeros relevantes", detail: "A série não sugere silêncio de reporte.", zero_periods: 0, active_periods: 6, zero_tail: 0, zero_ratio: 0, interpretation: "zero por validar", reason_code: "no_relevant_zeros"},
+    missingness: {status: "pronto", label: "missing controlado", detail: "Maior proporção de valores em falta: 0%."},
+    comparability: {status: "pronto", label: "Comparável para triagem", detail: "Unidade, período, denominador e âmbito suportam triagem."},
+    evidence_grade: {status: "pronto", label: "Evidência exploratória forte", detail: "Grau interno; não é validade clínica nem causal.", grade: "A"},
+    rule_trace: [{rule_id: "SURV-DOMAIN-001", input_signal: "valor monetário", decision: "Classificado como Financeiro.", status_delta: "neutro", explanation: "Valores financeiros exigem base contabilística e período de execução."}],
+    dataset_family: {code: "financeiro", label: "Financeiro", zero_policy: "zero pode ser não execução ou atraso contabilístico", lag_sensitivity: "media", review_focus: "base contabilística, período e unidade", signals: ["valor monetário"]},
+    source_reliability_profile: {
+      dataset_family: "financeiro",
+      update_pattern: "mensal provável",
+      expected_periodicity: {code: "mensal", label: "mensal provável", expected: "mensal, trimestral ou anual"},
+      known_truncation_risk: {status: "pronto", label: "sem truncamento forte", detail: "Fixture com série completa."},
+      denominator_reliability: {status: "rever", label: "denominador sensível", detail: "Validar unidade."},
+      territorial_stability: {status: "pronto", label: "1 dimensão territorial", detail: "Região disponível."},
+    },
+    observation_unit: {status: "pronto", label: "agregado por período", detail: "A unidade observada parece agregada e legível."},
+    population_at_risk: {status: "rever", label: "validar unidade", detail: "Confirmar denominador e unidade."},
+    period_comparability: {status: "pronto", label: "6 períodos válidos", detail: "Períodos comparáveis para leitura temporal.", valid_periods: 6, min_records_per_period: 3},
+    zero_semantics: {status: "pronto", label: "sem zeros relevantes", detail: "A série não sugere silêncio de reporte.", zero_periods: 0, active_periods: 6, zero_tail: 0, zero_ratio: 0, interpretation: "zero por validar", reason_code: "no_relevant_zeros"},
+    reporting_lag: {status: "pronto", label: "sem atraso visível", detail: "Não há indício forte de cauda recente truncada.", lag_suspected_periods: [], lag_confidence: "baixa", reason_code: "no_lag_signal"},
+    coverage_assessment: {status: "rever", label: "cobertura 66.7%", detail: "Fixture parcial.", ratio: 0.6667},
+    granularity_assessment: {status: "pronto", label: "granularidade legível", detail: "1 dimensão territorial.", local_dimension_count: 1},
+    blocking_factors: [],
+    warnings: ["Amostra sintética para smoke test."],
+  };
   return {
     dataset_id: datasetId,
     title: datasetId === "financeiro" ? "Despesa sintética" : "Produção sintética",
@@ -60,6 +95,7 @@ function dataAnalytics(datasetId) {
     methodology: {version: "browser-smoke", scope: "fixture"},
     sample: {sample_size: 80, requested_limit: 80, total_records: 120, ordering: "temporal_desc", coverage_ratio: 0.6667},
     quality_warnings: ["Amostra sintética para smoke test."],
+    epidemiology_review: review,
     analysis_readiness: {score: 82, band: "pronto", label: "Pronto", gaps: ["confirmar fonte"]},
     numeric_profiles: [
       {field: "valor", label: "Valor", count: 80, missing: 0, min: 1, max: 80, avg: 40, stddev: 10, measure_role: "contagem"},
@@ -170,6 +206,27 @@ function finprodPayload() {
     outliers: [],
     entity_benchmark: [],
     diagnostics: {warnings: []},
+    epidemiology_review: {
+      overall: {status: "pronto", label: "Pronto", summary: "Par comparável para leitura exploratória."},
+      dataset_family: {code: "custo_unitario", label: "Custo unitário", zero_policy: "zero no denominador bloqueia leitura de rácio", lag_sensitivity: "alta", review_focus: "numerador, denominador, âmbito e período comum", signals: ["financeiro", "produção"]},
+      source_reliability_profile: {
+        dataset_family: "custo_unitario",
+        update_pattern: "mensal/trimestral",
+        expected_periodicity: {code: "mensal/trimestral", label: "mensal/trimestral", expected: "mesma granularidade"},
+        known_truncation_risk: {status: "pronto", label: "sem truncamento forte", detail: "Pares válidos suficientes."},
+        denominator_reliability: {status: "pronto", label: "soma de produção/atividade por período comum", detail: "Denominador produtivo."},
+        territorial_stability: {status: "rever", label: "âmbito por validar", detail: "Fixture sem benchmark territorial."},
+      },
+      observation_unit: {status: "pronto", label: "agregado por período comum", detail: "Séries agregadas por período."},
+      population_at_risk: {status: "pronto", label: "soma de produção/atividade por período comum", detail: "Denominador produtivo."},
+      period_comparability: {status: "pronto", label: "6 períodos em comum", detail: "Interseção temporal real.", valid_periods: 6, min_records_per_period: 6},
+      zero_semantics: {status: "pronto", label: "zeros não dominantes", detail: "Sem zeros no denominador.", zero_periods: 0, active_periods: 6, zero_tail: 0, interpretation: "zero no denominador não é custo zero", reason_code: "unit_cost_denominator_zero"},
+      reporting_lag: {status: "pronto", label: "sem atraso visível", detail: "Todos os períodos geram pares válidos.", lag_suspected_periods: [], lag_confidence: "baixa", reason_code: "no_lag_signal"},
+      coverage_assessment: {status: "pronto", label: "6 pares válidos", detail: "Cobertura útil suficiente.", ratio: 1},
+      granularity_assessment: {status: "rever", label: "âmbito por validar", detail: "Geografia e entidade devem ser comparáveis.", local_dimension_count: 0},
+      blocking_factors: [],
+      warnings: [],
+    },
     generated_at: 1,
   };
 }
@@ -197,6 +254,7 @@ function deepResearchPayload(datasetId) {
     territorial_map: {regions: {Norte: 40, Centro: 40}, uls: {}, entities: {}},
     methodology: {version: "browser-smoke", copy_safe: true},
     quality_warnings: analysis.quality_warnings,
+    epidemiology_review: analysis.epidemiology_review,
     generated_at: 1,
   };
 }
@@ -254,6 +312,33 @@ function finprodRecommendationsPayload() {
   };
 }
 
+function predictiveRecommendationsPayload() {
+  return {
+    active_dataset_id: "financeiro",
+    recommendations: [
+      {
+        dataset_id: "financeiro",
+        title: "Despesa sintética",
+        mega_theme: "Finanças & Compras",
+        band: "pronto",
+        score: 88,
+        reasons: ["período válido", "amostra suficiente"],
+        warnings: [],
+      },
+      {
+        dataset_id: "producao",
+        title: "Produção sintética",
+        mega_theme: "Acesso & Produção",
+        band: "rever",
+        score: 72,
+        reasons: ["período comum"],
+        warnings: ["confirmar granularidade"],
+      },
+    ],
+    generated_at: 1,
+  };
+}
+
 function contentType(filePath) {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
   if (filePath.endsWith(".js")) return "application/javascript; charset=utf-8";
@@ -269,6 +354,7 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/api/data-analytics") return json(response, dataAnalytics(url.searchParams.get("dataset_id") || "financeiro"));
   if (url.pathname === "/api/deep-research") return json(response, deepResearchPayload(url.searchParams.get("dataset_id") || "financeiro"));
   if (url.pathname === "/api/finprod/recommendations") return json(response, finprodRecommendationsPayload());
+  if (url.pathname === "/api/predictive/recommendations") return json(response, predictiveRecommendationsPayload());
   if (url.pathname === "/api/finprod") return json(response, finprodPayload());
   if (url.pathname.startsWith("/api/dataset/")) return json(response, datasetPayload(decodeURIComponent(url.pathname.split("/api/dataset/")[1])));
   if (url.pathname.startsWith("/api/recent/")) return json(response, recentPayload(decodeURIComponent(url.pathname.split("/api/recent/")[1])));
@@ -299,10 +385,16 @@ if (process.argv.includes("--server-only")) {
     const browser = await chromium.launch({headless: true});
     const page = await browser.newPage({viewport: {width: 1280, height: 900}});
     const errors = [];
+    const failedResponses = [];
     page.on("console", (message) => {
       if (message.type() === "error") errors.push(message.text());
     });
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        failedResponses.push(`${response.status()} ${response.url()}`);
+      }
+    });
 
     async function checkNoHorizontalOverflow(label) {
       const metrics = await page.evaluate(() => ({
@@ -321,14 +413,17 @@ if (process.argv.includes("--server-only")) {
     ];
     const pages = [
       {path: "/index.html", selector: "#datasetList .dataset-item"},
-      {path: "/crosswalk.html", selector: "#pairTable"},
-      {path: "/analytics.html?tab=data", selector: "#dataStatRows"},
-      {path: "/analytics.html?tab=finprod", selector: "#finProdKpis div"},
+      {path: "/index.html?dataset_id=financeiro", selector: ".selected-guided-actions"},
+      {path: "/crosswalk.html?dataset_id=financeiro", selector: ".cross-details-drawer"},
+      {path: "/analytics.html?dataset_id=financeiro", selector: "#analyticsEpiReview .epi-review-card"},
+      {path: "/analytics.html?dataset_id=financeiro&mode=tempo", selector: "#predictiveKpis div"},
+      {path: "/analytics.html?dataset_id=financeiro&mode=economia", selector: "#finProdKpis div"},
+      {path: "/analytics.html?dataset_id=financeiro&mode=anomalias", selector: "#anomalySummary div"},
       {path: "/analytics.html?tab=health", selector: "#publicHealthKpis div"},
       {path: "/analytics.html?tab=care", selector: "#careOpsTable tbody tr"},
       {path: "/analytics.html?tab=local", selector: "#localPlanKpis div"},
       {path: "/metodologia.html", selector: ".methodology-hero"},
-      {path: "/research.html", selector: "#resultNarrative p"},
+      {path: "/research.html", selector: "#dataStatRows"},
     ];
 
     for (const viewport of viewports) {
@@ -345,19 +440,24 @@ if (process.argv.includes("--server-only")) {
     await page.waitForSelector("#dataStatRows");
     await page.click('[data-analytics-tab="finprod"]');
     await page.waitForSelector("#finProdKpis div");
-    await page.click('[data-analytics-tab="care"]');
+    await page.click("details.analytics-secondary-nav summary");
+    await page.click('[data-secondary-tab="care"]');
     await page.waitForSelector("#careOpsTable tbody tr");
-    await page.click('[data-analytics-tab="tables"]');
+    await page.click('[data-secondary-tab="tables"]');
     await page.waitForSelector("#analyticsCorrelationTable tbody tr");
     await page.selectOption("#analyticsLocalScope", "regiao");
     await page.waitForSelector("#analyticsCorrelationTable tbody tr");
+    await page.click('[data-analytics-tab="finprod"]');
     await page.keyboard.press("Home");
     const selected = await page.locator('[role="tab"][aria-selected="true"]').innerText();
-    if (!selected.includes("Dados reais")) {
-      throw new Error(`Expected Home key to select Dados reais, got ${selected}`);
+    if (!selected.includes("Resumo rápido")) {
+      throw new Error(`Expected Home key to select Resumo rápido, got ${selected}`);
     }
     if (errors.length) {
       throw new Error(`Console/page errors: ${errors.join(" | ")}`);
+    }
+    if (failedResponses.length) {
+      throw new Error(`Failed responses: ${failedResponses.join(" | ")}`);
     }
     await browser.close();
     server.close();

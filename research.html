@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Investigação</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=research-scroll-20260430" />
+    <link rel="stylesheet" href="styles.css?v=simplify-20260506" />
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const datasetId = params.get("dataset_id");
+      const analyticsUrl = datasetId
+        ? `analytics.html?dataset_id=${encodeURIComponent(datasetId)}`
+        : "analytics.html";
+      window.location.replace(analyticsUrl);
+    </script>
   </head>
   <body>
     <main class="layout">
@@ -15,11 +23,9 @@
           <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Investigação</h1>
         </div>
         <div class="topbar-actions">
-          <a href="/" class="top-link">Vista principal</a>
+          <a href="/" class="top-link">Radar</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
-          <a href="research.html" class="top-link is-active" aria-current="page">Investigação</a>
-          <a href="metodologia.html" class="top-link">Metodologia</a>
           <div id="researchStatus" class="sync-state">A iniciar...</div>
         </div>
       </header>
@@ -111,6 +117,6 @@
       </footer>
     </main>
 
-    <script src="research.js?v=ux-flow-20260505" defer></script>
+    <script src="research.js?v=simplify-20260506" defer></script>
   </body>
 </html>

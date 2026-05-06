@@ -27,6 +27,15 @@ const state = {
   selectedProductionDataset: "",
   finProdPayload: null,
   finProdRecommendationPayload: null,
+  _finProdAutoSelectedFor: "",
+  dataDetailExpanded: {
+    features: false,
+    measures: false,
+    dimensions: false,
+    anomalyMeasures: false,
+    anomalyDimensions: false,
+    anomalyWarnings: false,
+  },
   predictiveRecommendationPayload: null,
   _predictiveRecommendationKey: "",
   _predictiveLoadDataset: "",
@@ -71,6 +80,11 @@ const dataFeatureImportance = document.getElementById("dataFeatureImportance");
 const featureDetailPanel = document.getElementById("featureDetailPanel");
 const dataPcaMeta = document.getElementById("dataPcaMeta");
 const dataPcaChart = document.getElementById("dataPcaChart");
+const analyticsEpiReview = document.getElementById("analyticsEpiReview");
+const analyticsExecutiveSummary = document.getElementById("analyticsExecutiveSummary");
+const epidemiologyReviewFlow = document.getElementById("epidemiologyReviewFlow");
+const guidedAnalysisBar = document.getElementById("guidedAnalysisBar");
+const analysisConfidenceChips = document.getElementById("analysisConfidenceChips");
 const finProdMeta = document.getElementById("finProdMeta");
 const finProdStatus = document.getElementById("finProdStatus");
 const finProdStoryStrip = document.getElementById("finProdStoryStrip");
@@ -98,7 +112,22 @@ const predictiveScenarios = document.getElementById("predictiveScenarios");
 const predictiveRisk = document.getElementById("predictiveRisk");
 const predictiveDatasetCandidates = document.getElementById("predictiveDatasetCandidates");
 const analyticsTabs = Array.from(document.querySelectorAll("[data-analytics-tab]"));
+const secondaryTabs = Array.from(document.querySelectorAll("[data-secondary-tab]"));
 const analyticsPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+const contextDataset = document.getElementById("contextDataset");
+const contextDatasetLink = document.getElementById("contextDatasetLink");
+const contextReadiness = document.getElementById("contextReadiness");
+const contextSample = document.getElementById("contextSample");
+const contextPeriod = document.getElementById("contextPeriod");
+const contextDenominator = document.getElementById("contextDenominator");
+const contextRadarLink = document.getElementById("contextRadarLink");
+const anomalyMeta = document.getElementById("anomalyMeta");
+const anomalyStatus = document.getElementById("anomalyStatus");
+const anomalyStoryStrip = document.getElementById("anomalyStoryStrip");
+const anomalySummary = document.getElementById("anomalySummary");
+const anomalyMeasureList = document.getElementById("anomalyMeasureList");
+const anomalyDimensionList = document.getElementById("anomalyDimensionList");
+const anomalyWarningList = document.getElementById("anomalyWarningList");
 const topOpportunities = document.getElementById("analyticsTopOpportunities");
 const statDatasets = document.getElementById("analyticsStatDatasets");
 const statLinks = document.getElementById("analyticsStatLinks");
@@ -327,6 +356,27 @@ let activeDataRequest = 0;
 let activeFinProdRequest = 0;
 let activeFinProdRecommendationRequest = 0;
 let activePredictiveRecommendationRequest = 0;
+const PRIMARY_TABS = new Set(["data", "predictive", "finprod", "anomalies"]);
+const MODE_BY_TAB = {
+  data: "resumo",
+  predictive: "tempo",
+  finprod: "economia",
+  anomalies: "anomalias",
+};
+const TAB_BY_MODE = {
+  resumo: "data",
+  quick: "data",
+  data: "data",
+  tempo: "predictive",
+  time: "predictive",
+  predictive: "predictive",
+  economia: "finprod",
+  economica: "finprod",
+  economics: "finprod",
+  finprod: "finprod",
+  anomalias: "anomalies",
+  anomalies: "anomalies",
+};
 
 function primaryPanelForTab(tab) {
   return analyticsPanels.find((panel) => (panel.dataset.tabPanel || "").split(/\s+/).includes(tab)) || null;
@@ -380,6 +430,254 @@ function renderAnalyticsStory(container, items = []) {
 
 function firstWarning(warnings = [], fallback = "Validar fonte, denominador, unidade e período antes de concluir.") {
   return warnings.length ? shortSentence(String(warnings[0]).replace(/[.。]+$/g, ""), 96) : fallback;
+}
+
+function activeDatasetId() {
+  return state.selectedDataDataset || state.dataPayload?.dataset_id || selectedCatalogDataset()?.dataset_id || "";
+}
+
+function datasetScopedHref(page, extraParams = {}) {
+  const params = new URLSearchParams();
+  const datasetId = activeDatasetId();
+  if (datasetId) params.set("dataset_id", datasetId);
+  Object.entries(extraParams).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  const query = params.toString();
+  return `${page}${query ? `?${query}` : ""}`;
+}
+
+function denominatorLabel(payload = state.dataPayload) {
+  if (!payload) return "denominador por validar";
+  if (payload.quality_summary?.denominator?.label) return payload.quality_summary.denominator.label;
+  const warningText = (payload.quality_warnings || []).join(" ").toLowerCase();
+  const metricRoles = new Set((payload.numeric_profiles || []).map((profile) => profile.measure_role).filter(Boolean));
+  if (/denominador|unidade|rácio|ratio|taxa/.test(warningText)) return "denominador a rever";
+  if (metricRoles.has("taxa") || metricRoles.has("monetario")) return "unidade a validar";
+  return "denominador por validar";
+}
+
+function periodLabel(payload = state.dataPayload) {
+  if (payload?.quality_summary?.period?.label) {
+    const period = payload.quality_summary.period;
+    return period.status === "fragil" ? period.label : `período ${period.label}`;
+  }
+  const trend = (payload?.trends || [])[0];
+  const points = trend?.points || [];
+  if (payload?.temporal_field) return `${points.length || 0} períodos`;
+  return "sem eixo temporal";
+}
+
+function coverageLabel(payload = state.dataPayload) {
+  if (payload?.quality_summary?.coverage?.label) return payload.quality_summary.coverage.label;
+  if (payload?.sample?.coverage_ratio == null) return "cobertura por validar";
+  return `cobertura ${formatDecimal(payload.sample.coverage_ratio * 100, 1)}%`;
+}
+
+function analysisQualityLine(payload = state.dataPayload) {
+  const granularity = payload?.quality_summary?.granularity?.label;
+  const dimensions = (payload?.categorical_profiles || []).length;
+  return `${denominatorLabel(payload)} · ${periodLabel(payload)} · ${coverageLabel(payload)} · ${granularity || `granularidade ${dimensions ? `${dimensions} dimensões` : "por validar"}`}`;
+}
+
+function buildConfidenceFlags(payload = state.dataPayload) {
+  const flags = [];
+  const warnings = payload?.quality_warnings || [];
+  warnings.slice(0, 3).forEach((warning) => flags.push({label: shortSentence(warning, 54), tone: /denominador|cobertura|amostra|nulo/i.test(warning) ? "fragil" : "rever"}));
+  const trend = (payload?.trends || [])[0];
+  const values = (trend?.points || []).map((point) => Number(point.avg)).filter(Number.isFinite);
+  if (values.length && values.filter((value) => value === 0).length >= Math.ceil(values.length * 0.45) && Math.max(...values) > 0) {
+    flags.push({label: "muitos zeros", tone: "rever"});
+  }
+  if (payload?.sample?.coverage_ratio != null && payload.sample.coverage_ratio < 0.5) {
+    flags.push({label: "amostra truncada", tone: "fragil"});
+  }
+  if (/rever|validar/.test(denominatorLabel(payload))) {
+    flags.push({label: denominatorLabel(payload), tone: "rever"});
+  }
+  const finWarnings = state.finProdPayload ? [...(state.finProdPayload.unit_warnings || []), ...(state.finProdPayload.diagnostics?.warnings || [])] : [];
+  finWarnings.slice(0, 2).forEach((warning) => flags.push({label: shortSentence(warning, 54), tone: "rever"}));
+  return flags.slice(0, 5);
+}
+
+function renderConfidenceChips() {
+  if (!analysisConfidenceChips) return;
+  clearElement(analysisConfidenceChips);
+  const flags = buildConfidenceFlags();
+  const title = document.createElement("strong");
+  title.textContent = "Filtro de confiança";
+  analysisConfidenceChips.appendChild(title);
+  if (!flags.length) {
+    const chip = document.createElement("span");
+    chip.className = "confidence-chip is-pronto";
+    chip.textContent = "sem travão crítico";
+    analysisConfidenceChips.appendChild(chip);
+    return;
+  }
+  flags.forEach((flag) => {
+    const chip = document.createElement("span");
+    chip.className = `confidence-chip is-${flag.tone || "rever"}`;
+    chip.textContent = flag.label;
+    analysisConfidenceChips.appendChild(chip);
+  });
+}
+
+function renderExecutiveSummary() {
+  if (!analyticsExecutiveSummary) return;
+  clearElement(analyticsExecutiveSummary);
+  const payload = state.dataPayload;
+  const dataset = selectedCatalogDataset();
+  const fit = payload ? readinessInfo(payload) : readinessInfo(dataset || {});
+  const review = epidemiologyReview(payload);
+  const timeAxis = reviewTimeAxis(review);
+  const populationBasis = review?.population_basis || review?.population_at_risk;
+  const blockers = review?.blocking_factors || [];
+  const cards = state.dataLoading
+    ? [
+        ["Unidade e população", "A analisar amostra...", "A leitura aparece quando a API devolver estrutura e cobertura.", "neutral"],
+        ["É interpretável?", "Rever", "A aguardar denominador, período, cobertura e granularidade.", "rever"],
+        ["Travão principal", "Cobertura por validar", "Ainda não há base para interpretar resultados.", "rever"],
+        ["Próxima ação", "Aguardar análise", "Depois seguir para vigilância temporal, anomalias ou economia.", "neutral"],
+      ]
+    : [
+        [
+          "Unidade e população",
+          payload ? compactTitle(review?.observation_unit?.label || "unidade por validar", 52) : "Selecionar dataset",
+          payload ? shortSentence(populationBasis?.detail || "Validar população em risco e unidade observada.", 94) : "Selecione um dataset para obter base de revisão antes da interpretação.",
+          reviewToneClass(review?.observation_unit?.status || "rever"),
+        ],
+        [
+          "É interpretável?",
+          payload ? reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever") : "Rever",
+          payload ? analysisQualityLine(payload) : readinessDetail(fit),
+          reviewToneClass(reviewOverallStatus(review) || fit.band || "rever"),
+        ],
+        [
+          "Travão principal",
+          payload ? compactTitle(blockers[0]?.label || "sem travão crítico", 52) : "sem amostra ativa",
+          payload ? shortSentence(blockers[0]?.action || "Manter leitura exploratória até validar contexto epidemiológico.", 92) : "Corre a análise para medir risco real.",
+          blockers.length ? reviewToneClass(blockers[0]?.severity || "rever") : "pronto",
+        ],
+        [
+          "Próxima ação",
+          payload ? (timeAxis?.status === "pronto" ? "Ler resultados úteis" : "Validar período e reporte") : "Analisar dados",
+          payload ? (timeAxis?.status === "pronto" ? "Prosseguir para tendência, anomalias ou economia." : shortSentence(timeAxis?.detail || "Confirmar períodos e densidade temporal antes de ler tendência.", 90)) : "Depois seguir para vigilância temporal, anomalias ou economia.",
+          "neutral",
+        ],
+      ];
+  cards.forEach(([labelText, valueText, detailText, tone]) => {
+    const card = document.createElement("article");
+    card.className = `executive-card is-${tone || "neutral"}`;
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const value = document.createElement("strong");
+    value.textContent = compactTitle(valueText, 74);
+    value.title = valueText;
+    const detail = document.createElement("small");
+    detail.textContent = detailText;
+    card.append(label, value, detail);
+    analyticsExecutiveSummary.appendChild(card);
+  });
+}
+
+function epidemiologyReview(payload = state.dataPayload) {
+  return payload?.epidemiology_review || null;
+}
+
+function reviewTimeAxis(review) {
+  return review?.time_axis || review?.period_comparability || null;
+}
+
+function reviewZeroMeaning(review) {
+  return review?.zero_meaning || review?.zero_semantics || null;
+}
+
+function reviewReportingProcess(review) {
+  return review?.reporting_process || review?.reporting_lag || null;
+}
+
+function reviewOverallStatus(review) {
+  if (!review) return "rever";
+  if (typeof review.overall === "string") return review.overall;
+  return review.overall?.status || "rever";
+}
+
+function reviewStatusLabel(value) {
+  if (value === "pronto") return "Pronto";
+  if (value === "fragil") return "Frágil";
+  return "Rever";
+}
+
+function reviewToneClass(value) {
+  if (value === "pronto" || value === "ok" || value === "low") return "pronto";
+  if (value === "fragil" || value === "critical" || value === "high") return "fragil";
+  return "rever";
+}
+
+function renderEpidemiologyReview(payload = state.dataPayload) {
+  if (!analyticsEpiReview) return;
+  clearElement(analyticsEpiReview);
+  const review = epidemiologyReview(payload);
+  if (!review) return;
+  const zero = reviewZeroMeaning(review) || {};
+  const reporting = reviewReportingProcess(review) || {};
+  const zeroReporting = {
+    status: reviewToneClass(zero.status) === "fragil" ? "fragil" : reporting.status || zero.status,
+    label: compactTitle(`${zero.label || "zeros por validar"} · ${reporting.label || "reporte por validar"}`, 58),
+    detail: `${zero.detail || ""} ${reporting.detail || ""}`.trim(),
+  };
+  const sections = [
+    ["Domínio", review.surveillance_domain || {status: reviewOverallStatus(review), label: review.dataset_family?.label, detail: review.dataset_family?.review_focus || review.dataset_family?.zero_policy}],
+    ["Intenção", review.analytical_intent || {status: reviewOverallStatus(review), label: "Triagem exploratória", detail: "Validar interpretabilidade antes de ler sinais úteis."}],
+    ["Unidade observada", review.observation_unit],
+    ["População/denominador", review.population_basis || review.population_at_risk],
+    ["Eixo temporal", reviewTimeAxis(review)],
+    ["Zeros/reporte", zeroReporting],
+    ["Grau evidência", review.evidence_grade || {status: reviewOverallStatus(review), label: reviewStatusLabel(reviewOverallStatus(review)), detail: review.overall?.summary}],
+    ["Comparabilidade", review.comparability || review.granularity_assessment],
+  ];
+  sections.forEach(([labelText, item]) => {
+    const card = document.createElement("article");
+    card.className = `epi-review-card is-${reviewToneClass(item?.status || "rever")}`;
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const value = document.createElement("strong");
+    value.textContent = compactTitle(item?.label || "-", 52);
+    value.title = item?.label || "-";
+    const detail = document.createElement("small");
+    detail.textContent = shortSentence(item?.detail || "Sem detalhe disponível.", 104);
+    card.append(label, value, detail);
+    analyticsEpiReview.appendChild(card);
+  });
+}
+
+function renderEpidemiologyReviewFlow(payload = state.dataPayload) {
+  if (!epidemiologyReviewFlow) return;
+  clearElement(epidemiologyReviewFlow);
+  const review = epidemiologyReview(payload);
+  if (!review) return;
+  const timeAxis = reviewTimeAxis(review);
+  const zero = reviewZeroMeaning(review);
+  const reporting = reviewReportingProcess(review);
+  [
+    ["Unidade e população", review.observation_unit, (review.population_basis || review.population_at_risk)?.detail],
+    ["Cobertura e período", review.coverage_assessment, timeAxis?.detail],
+    ["Zeros e reporte", zero, reporting?.detail],
+    ["Comparabilidade", review.comparability || review.granularity_assessment, (review.blocking_factors || [])[0]?.label || "Sem travão crítico"],
+    ["Resultados úteis", {status: reviewOverallStatus(review), label: reviewStatusLabel(reviewOverallStatus(review)), detail: reviewOverallStatus(review) === "pronto" ? "A leitura pode avançar para sinais substantivos." : "Ler resultados só com caveat explícito."}],
+    ["Diagnóstico", review.evidence_grade || {status: "rever", label: "Exploratório", detail: "PCA, correlações e detalhes técnicos ficam em segundo plano."}],
+  ].forEach(([titleText, item, extraDetail]) => {
+    const block = document.createElement("article");
+    block.className = `epi-review-flow-item is-${reviewToneClass(item?.status || "rever")}`;
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const value = document.createElement("span");
+    value.textContent = item?.label || "-";
+    const detail = document.createElement("small");
+    detail.textContent = shortSentence(extraDetail || item?.detail || "Sem detalhe disponível.", 110);
+    block.append(title, value, detail);
+    epidemiologyReviewFlow.appendChild(block);
+  });
 }
 
 function renderEmptyPanel(container, message) {
@@ -458,7 +756,10 @@ async function fetchJson(url, {timeoutMs = 22000} = {}) {
       payload = {};
     }
     if (!response.ok) {
-      throw new Error(payload.error || `Pedido falhou (${response.status})`);
+      const detail = payload.action ? `${payload.error || "Pedido falhou"} · ${payload.action}` : (payload.error || `Pedido falhou (${response.status})`);
+      const wrapped = new Error(detail);
+      wrapped.errorKind = payload.error_kind || "request_failed";
+      throw wrapped;
     }
     return payload;
   } catch (error) {
@@ -502,7 +803,7 @@ function readinessInfo(payload) {
 }
 
 function readinessDetail(info) {
-  const gaps = (info.gaps || ["validar fonte"]).slice(0, 3).join(", ");
+  const gaps = (info.gap_labels || info.gaps || ["validar fonte"]).slice(0, 3).join(", ");
   return `Validar: ${gaps}`;
 }
 
@@ -718,6 +1019,29 @@ function renderDatasetMode() {
   dataManualMode?.classList.toggle("is-active", state.datasetMode === "manual");
 }
 
+function syncAnalyticsUrl() {
+  if (!window.history?.replaceState) return;
+  const params = new URLSearchParams(window.location.search);
+  if (PRIMARY_TABS.has(state.activeTab)) {
+    params.delete("tab");
+    if (state.activeTab === "data") {
+      params.set("mode", "resumo");
+    } else {
+      params.set("mode", MODE_BY_TAB[state.activeTab] || state.activeTab);
+    }
+  } else {
+    params.delete("mode");
+    params.set("tab", state.activeTab);
+  }
+  if (state.selectedDataDataset) {
+    params.set("dataset_id", state.selectedDataDataset);
+  } else {
+    params.delete("dataset_id");
+  }
+  const query = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
 function setActiveTab(tab, {syncUrl = true, force = false} = {}) {
   const nextTab = tab || "data";
   if (!force && state.activeTab === nextTab) {
@@ -731,21 +1055,17 @@ function setActiveTab(tab, {syncUrl = true, force = false} = {}) {
     button.setAttribute("role", "tab");
     button.tabIndex = isActive ? 0 : -1;
   });
+  secondaryTabs.forEach((button) => {
+    const isActive = button.dataset.secondaryTab === state.activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
   analyticsPanels.forEach((panel) => {
     const panels = (panel.dataset.tabPanel || "").split(/\s+/);
     panel.hidden = !panels.includes(state.activeTab);
     panel.setAttribute("role", "tabpanel");
   });
-  if (syncUrl && window.history?.replaceState) {
-    const params = new URLSearchParams(window.location.search);
-    if (state.activeTab === "data") {
-      params.delete("tab");
-    } else {
-      params.set("tab", state.activeTab);
-    }
-    const query = params.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
-  }
+  if (syncUrl) syncAnalyticsUrl();
   renderAll();
 }
 
@@ -762,7 +1082,7 @@ async function loadAnalytics() {
   populateFinProdOptions();
   analyticsStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   renderAll();
-  if (state.selectedDataDataset && !state.dataPayload) {
+  if (state.selectedDataDataset && !state.dataPayload && !state.dataLoading) {
     loadDataAnalytics().catch(showDataError);
   }
 }
@@ -851,6 +1171,12 @@ async function loadDataAnalytics() {
   if (!state.selectedDataDataset) return;
   const requestId = ++activeDataRequest;
   state.dataLoading = true;
+  state.dataDetailExpanded.features = false;
+  state.dataDetailExpanded.measures = false;
+  state.dataDetailExpanded.dimensions = false;
+  state.dataDetailExpanded.anomalyMeasures = false;
+  state.dataDetailExpanded.anomalyDimensions = false;
+  state.dataDetailExpanded.anomalyWarnings = false;
   dataAnalyticsStatus.textContent = "A analisar amostra...";
   renderDataAnalytics();
   const payload = await fetchJson(`/api/data-analytics?dataset_id=${encodeURIComponent(state.selectedDataDataset)}&limit=${state.dataLimit}`, {
@@ -862,6 +1188,8 @@ async function loadDataAnalytics() {
   dataAnalyticsStatus.textContent = `Amostra atualizada · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   if (state.activeTab === "predictive") {
     renderPredictiveAnalytics();
+  } else if (state.activeTab === "anomalies") {
+    renderAnomalies();
   } else {
     renderDataAnalytics();
   }
@@ -912,7 +1240,7 @@ function renderDataLoadingState() {
 
 async function loadFinProdAnalytics() {
   if (!state.selectedFinancialDataset || !state.selectedProductionDataset) {
-    throw new Error("Seleciona dataset financeiro e de produção.");
+    throw new Error("Selecione um dataset financeiro e um dataset de produção.");
   }
   const requestId = ++activeFinProdRequest;
   finProdStatus.textContent = "A cruzar datasets...";
@@ -938,6 +1266,21 @@ async function loadFinProdRecommendations(payload = null) {
   const recommendations = await fetchJson(url, {timeoutMs: 45000});
   if (requestId !== activeFinProdRecommendationRequest) return;
   state.finProdRecommendationPayload = recommendations;
+  const rows = recommendations.recommendations || recommendations.candidates || [];
+  const best = rows
+    .filter((row) => row.production_dataset_id && row.production_dataset_id !== state.selectedProductionDataset)
+    .sort((a, b) => Number(b.matched_periods || 0) - Number(a.matched_periods || 0))[0];
+  const currentMatched = Number(payload?.summary?.matched_periods || 0);
+  const autoKey = `${state.selectedFinancialDataset}:${activeProduction}:${best?.production_dataset_id || ""}`;
+  if (payload && best && currentMatched < 3 && Number(best.matched_periods || 0) >= 3 && state._finProdAutoSelectedFor !== autoKey) {
+    state._finProdAutoSelectedFor = autoKey;
+    state.selectedProductionDataset = best.production_dataset_id;
+    if (finProdProductionDataset) finProdProductionDataset.value = best.production_dataset_id;
+    state.finProdPayload = null;
+    renderFinProdRecommendations(recommendations, payload);
+    loadFinProdAnalytics().catch(showError);
+    return;
+  }
   renderFinProdRecommendations(recommendations, payload);
 }
 
@@ -958,12 +1301,15 @@ function renderFinProdInterpretation(payload) {
   const summary = payload.summary || {};
   const viability = finProdViability(summary, payload);
   const warnings = [...(payload.unit_warnings || []), ...(payload.diagnostics?.warnings || [])];
+  const blockers = payload.blocking_factors || [];
   const note = document.createElement("div");
   note.className = `finprod-interpretation is-${viability.band}`;
   const title = document.createElement("strong");
   title.textContent = `Leitura: ${viability.label}`;
   const detail = document.createElement("small");
-  detail.textContent = warnings.length
+  detail.textContent = blockers.length
+    ? blockers.slice(0, 2).map((item) => item.label).join(" · ")
+    : warnings.length
     ? shortSentence(String(warnings[0]).replace(/[.。]+$/g, ""), 92)
     : "Confirmar unidade, âmbito e denominador.";
   note.append(title, detail);
@@ -971,6 +1317,11 @@ function renderFinProdInterpretation(payload) {
 }
 
 function renderFinProdAnalytics() {
+  renderAnalyticsContext();
+  renderExecutiveSummary();
+  renderEpidemiologyReview(state.finProdPayload || state.dataPayload);
+  renderEpidemiologyReviewFlow(state.finProdPayload || state.dataPayload);
+  renderConfidenceChips();
   clearElement(finProdKpis);
   clearElement(finProdChecks);
   clearElement(finProdOutliers);
@@ -987,7 +1338,7 @@ function renderFinProdAnalytics() {
       {
         label: "Pergunta ativa",
         value: "Despesa acompanha produção?",
-        detail: "Seleciona um numerador financeiro e um denominador de produção para testar períodos comuns.",
+        detail: "Selecione um numerador financeiro e um denominador de produção para testar períodos comuns.",
       },
       {
         label: "Leitura recomendada",
@@ -1001,7 +1352,7 @@ function renderFinProdAnalytics() {
         detail: "Depois lê tendência, outliers e benchmark territorial/entidade.",
       },
     ]);
-    finProdMeta.textContent = "Seleciona os dois datasets e clica em Cruzar datasets.";
+    finProdMeta.textContent = "Compatibilidade epidemiológica antes de custo unitário.";
     finProdDiagnostics.textContent = "Sem cruzamento ativo.";
     renderFinProdRecommendations(state.finProdRecommendationPayload || {recommendations: []});
     return;
@@ -1018,13 +1369,13 @@ function renderFinProdAnalytics() {
   renderAnalyticsStory(finProdStoryStrip, [
     {
       label: "Pergunta ativa",
-      value: "Qual é o custo por unidade produzida?",
+      value: "Há base para custo por unidade?",
       detail: `${formatNumber(summary.matched_periods || 0)} períodos comuns; numerador ${numerator.role || "desconhecido"} e denominador ${denominator.role || "desconhecido"}.`,
     },
     {
       label: "Leitura recomendada",
       value: summary.avg_unit_cost == null ? "Sem custo validável" : formatSmartNumber(summary.avg_unit_cost),
-      detail: summary.avg_unit_cost == null ? "Não calcular rácio sem denominador e unidade validados." : `Média exploratória; mediana ${formatSmartNumber(summary.median_unit_cost)}.`,
+      detail: summary.avg_unit_cost == null ? "Não calcular rácio sem denominador, âmbito e unidade validados." : `Média exploratória; mediana ${formatSmartNumber(summary.median_unit_cost)}.`,
       tone: viability.band === "good" ? "ok" : "warning",
     },
     {
@@ -1118,7 +1469,7 @@ function renderFinProdRecommendations(payload = {}, currentPayload = null) {
     strong.textContent = `${finProdMatchTitle(band)} · ${finProdMatchLabel(activeRow)}`;
     const small = document.createElement("small");
     small.textContent = band === "none"
-      ? "Sem períodos comuns. Escolhe verde/âmbar."
+      ? "Sem períodos comuns. Selecione uma alternativa verde/âmbar."
       : `${formatNumber(activeRow.sample_pairs || activeRow.matched_periods || 0)} pares válidos · robustez ${activeRow.robustness || "insuficiente"}.`;
     status.append(strong, small);
     finProdRecommendations.appendChild(status);
@@ -1158,6 +1509,16 @@ function renderFinProdRecommendations(payload = {}, currentPayload = null) {
     }
     return;
   }
+  const bestAlternative = usefulRows
+    .filter((row) => row.production_dataset_id !== state.selectedProductionDataset)
+    .sort((a, b) => Number(b.matched_periods || 0) - Number(a.matched_periods || 0))[0];
+  const activeMatched = Number(activeRow?.matched_periods || activeRow?.sample_pairs || 0);
+  if (bestAlternative && Number(bestAlternative.matched_periods || 0) > activeMatched) {
+    const note = document.createElement("div");
+    note.className = "finprod-recommendation-note is-warning";
+    note.textContent = `Par atual é frágil; melhor alternativa: ${compactTitle(bestAlternative.production_title || bestAlternative.production_dataset_id, 72)} (${bestAlternative.why_better || `${formatNumber(bestAlternative.matched_periods || 0)} períodos comuns`}).`;
+    finProdRecommendations.appendChild(note);
+  }
   const title = document.createElement("div");
   title.className = "finprod-recommendation-title";
   const strong = document.createElement("strong");
@@ -1183,7 +1544,7 @@ function renderFinProdRecommendations(payload = {}, currentPayload = null) {
     const range = row.financial_range?.start && row.production_range?.start
       ? `fin. ${row.financial_range.start}-${row.financial_range.end}; prod. ${row.production_range.start}-${row.production_range.end}`
       : "";
-    meta.textContent = `${formatNumber(row.matched_periods || 0)} períodos · ${formatNumber(row.sample_pairs || 0)} pares · ${row.robustness || "insuficiente"}`;
+    meta.textContent = row.why_better || `${formatNumber(row.matched_periods || 0)} períodos · ${formatNumber(row.sample_pairs || 0)} pares · ${row.robustness || "insuficiente"}`;
     meta.title = range;
     const badge = document.createElement("span");
     badge.textContent = row.production_dataset_id === state.selectedProductionDataset ? "Atual" : finProdMatchLabel(row);
@@ -1263,7 +1624,7 @@ function renderFinProdTrend(payload) {
       bestCandidate
         ? `Melhor par: ${bestCandidate.shared_periods} período(s) comum(ns).`
         : `Tendências detetadas: financeiro ${diagnostics.financial_trends || 0}, produção ${diagnostics.production_trends || 0}.`,
-      rangeText || "Escolhe datasets com eixo temporal compatível para desenhar tendência.",
+      rangeText || "Selecione datasets com eixo temporal compatível para desenhar tendência.",
     ].filter(Boolean);
     lines.forEach((line, index) => {
       const empty = svgNode("text", {
@@ -1769,6 +2130,11 @@ function renderTopOpportunities() {
 }
 
 function renderDataAnalytics() {
+  renderAnalyticsContext();
+  renderEpidemiologyReview();
+  renderExecutiveSummary();
+  renderEpidemiologyReviewFlow();
+  renderConfidenceChips();
   const payload = state.dataPayload;
   if (state.dataLoading) {
     renderDataLoadingState();
@@ -1778,22 +2144,22 @@ function renderDataAnalytics() {
     renderAnalyticsStory(dataStoryStrip, [
       {
         label: "Pergunta ativa",
-        value: "Que resultados existem no dataset?",
-        detail: "Escolhe um dataset e corre a análise para ver medidas, tendência e distribuição.",
+        value: "É interpretável antes de concluir?",
+        detail: "Selecione um dataset e execute a análise para validar unidade, cobertura, período e reporte.",
       },
       {
         label: "Leitura recomendada",
-        value: "Sem amostra ativa",
-        detail: "A página só deve interpretar dados reais carregados da API.",
+        value: "Sem revisão ativa",
+        detail: "A página só deve interpretar dados reais depois da revisão epidemiológica mínima.",
         tone: "warning",
       },
       {
         label: "Próxima ação",
         value: "Analisar dados",
-        detail: "Começa por dataset rico; usa dataset atual só quando queres auditar um caso específico.",
+        detail: "Começa por dataset rico; depois lê período, cobertura e travões antes de resultados.",
       },
     ]);
-    dataAnalyticsMeta.textContent = "Escolhe um dataset para medir sinais reais.";
+    dataAnalyticsMeta.textContent = "Selecione um dataset para validar o contexto epidemiológico e só depois medir sinais reais.";
     dataStatRows.textContent = "-";
     dataStatCompletenessValue.textContent = "-";
     dataStatCounts.textContent = "-";
@@ -1812,34 +2178,40 @@ function renderDataAnalytics() {
   const coverage = payload.sample?.coverage_ratio == null ? "" : ` · cobertura ${formatDecimal(payload.sample.coverage_ratio * 100, 1)}%`;
   const warningCount = (payload.quality_warnings || []).length;
   const fit = readinessInfo(payload);
+  const review = epidemiologyReview(payload);
   const leadInsight = (payload.insights || [])[0];
   const leadMetric = (payload.numeric_profiles || [])[0];
   const leadTrend = (payload.trends || [])[0];
+  const blockers = review?.blocking_factors || [];
   renderAnalyticsStory(dataStoryStrip, [
     {
       label: "Pergunta ativa",
-      value: "O que a amostra mostra?",
-      detail: `${formatNumber(payload.sample_size)} registos lidos${coverage}; ${leadMetric ? `indicador líder: ${compactTitle(leadMetric.label || leadMetric.field, 62)}` : "sem medida numérica dominante"}.`,
+      value: "É interpretável antes de concluir?",
+      detail: `${formatNumber(payload.sample_size)} registos lidos${coverage}; ${review?.observation_unit?.label || "unidade por validar"}.`,
     },
     {
       label: "Leitura recomendada",
-      value: leadInsight ? compactTitle(leadInsight.value, 46) : (leadMetric ? compactTitle(leadMetric.label || leadMetric.field, 46) : "Sem achado forte"),
-      detail: leadInsight?.detail || (leadTrend ? `Ler tendência de ${compactTitle(leadTrend.label || leadTrend.field, 58)}.` : "Usar dimensões/categorias; sem tendência temporal robusta."),
-      tone: fit.band || "rever",
+      value: reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever"),
+      detail: reviewOverallStatus(review) === "pronto"
+        ? (leadInsight?.detail || `Prosseguir para ${leadTrend ? "tempo" : "dados-chave"} com caveats visíveis.`)
+        : shortSentence(review?.period_comparability?.detail || "Confirmar período, zeros e reporte antes de ler tendência.", 96),
+      tone: reviewToneClass(reviewOverallStatus(review) || fit.band || "rever"),
     },
     {
       label: "Travão",
-      value: fit.label || "Rever",
-      detail: firstWarning(payload.quality_warnings || [], readinessDetail(fit)),
-      tone: warningCount ? "warning" : "ok",
+      value: compactTitle(blockers[0]?.label || fit.label || "Rever", 46),
+      detail: blockers[0]?.action || firstWarning(payload.quality_warnings || [], readinessDetail(fit)),
+      tone: blockers.length || warningCount ? "warning" : "ok",
     },
     {
       label: "Próxima ação",
-      value: leadTrend ? "Explorar tendência" : "Abrir dados-chave",
-      detail: leadTrend ? "Comparar períodos e confirmar se a amostra não está truncada." : "Ver medidas e dimensões com maior completude antes de cruzar.",
+      value: review?.period_comparability?.status === "pronto" ? (leadTrend ? "Explorar tendência" : "Abrir dados-chave") : "Validar período e reporte",
+      detail: review?.period_comparability?.status === "pronto"
+        ? (leadTrend ? "Comparar períodos e confirmar se a amostra não está truncada." : "Ver medidas e dimensões com maior completude antes de cruzar.")
+        : shortSentence(review?.reporting_lag?.detail || "Separar zeros plausíveis de ausência de reporte.", 92),
     },
   ]);
-  dataAnalyticsMeta.textContent = `${payload.title} · n=${formatNumber(payload.sample_size)}${coverage} · fit ${fit.label || "Rever"}${payload.temporal_field ? ` · tempo: ${payload.temporal_field}` : ""}${warningCount ? ` · ${warningCount} aviso(s)` : ""}.`;
+  dataAnalyticsMeta.textContent = `${payload.title} · n=${formatNumber(payload.sample_size)}${coverage} · revisão ${reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever")}${payload.temporal_field ? ` · tempo: ${payload.temporal_field}` : ""}${warningCount ? ` · ${warningCount} aviso(s)` : ""}.`;
 
   dataStatRows.textContent = formatNumber(payload.sample_size);
 
@@ -2049,14 +2421,15 @@ function renderFeatureImportance(payload) {
     dataFeatureImportance.appendChild(empty);
     const detail = document.createElement("p");
     detail.className = "meta";
-    detail.textContent = "Escolhe um dataset mais rico ou aumenta a amostra.";
+    detail.textContent = "Selecione um dataset mais rico ou aumente a amostra.";
     featureDetailPanel.append(detail);
     return;
   }
   const maxScore = Math.max(...rows.map((row) => row.score), 1);
   const selected = rows.find((row) => row.field === state.selectedFeatureKey) || rows[0];
   state.selectedFeatureKey = selected.field;
-  rows.slice(0, 9).forEach((row, index) => {
+  const visibleRows = state.dataDetailExpanded.features ? rows : rows.slice(0, 5);
+  visibleRows.forEach((row, index) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `feature-row is-${row.kind} is-${row.selection}`;
@@ -2081,6 +2454,16 @@ function renderFeatureImportance(payload) {
     });
     dataFeatureImportance.appendChild(item);
   });
+  if (!state.dataDetailExpanded.features && rows.length > visibleRows.length) {
+    dataFeatureImportance.appendChild(createSmallButton(
+      `Mostrar mais ${rows.length - visibleRows.length} dados-chave`,
+      () => {
+        state.dataDetailExpanded.features = true;
+        renderFeatureImportance(payload);
+      },
+      "show-more-button",
+    ));
+  }
   renderFeatureDetail(selected);
 }
 
@@ -2116,7 +2499,7 @@ function renderPcaChart(payload) {
   clearElement(dataPcaChart);
   const pca = payload.pca_summary || {};
   const width = Math.max(420, dataPcaChart.closest(".pca-wrap")?.clientWidth || 420);
-  const height = 280;
+  const height = 300;
   dataPcaChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
   if (!pca.available || !pca.loadings?.length) {
     dataPcaMeta.textContent = pca.reason || "PCA indisponível para esta amostra. Usa Dataset rico para procurar uma amostra com pelo menos duas medidas.";
@@ -2127,18 +2510,39 @@ function renderPcaChart(payload) {
   }
   const pc1 = Math.round((pca.explained_variance?.pc1 || 0) * 100);
   const pc2 = Math.round((pca.explained_variance?.pc2 || 0) * 100);
+  const loadings = (pca.loadings || [])
+    .slice()
+    .sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0))
+    .slice(0, 7);
+  const dominantPc1 = pc1 >= 75 && pc2 <= 15;
   const pcaWarnings = (pca.warnings || []).length ? ` · avisos: ${(pca.warnings || []).slice(0, 2).join(" · ")}` : "";
-  dataPcaMeta.textContent = `PC1 explica ${pc1}% · PC2 explica ${pc2}% da variação padronizada${pcaWarnings}.`;
+  dataPcaMeta.textContent = `Diagnóstico PCA · PC1 ${pc1}% · PC2 ${pc2}% · ${loadings.length} medidas principais${dominantPc1 ? " · variação dominada por PC1" : ""}${pcaWarnings}.`;
 
   const left = 46;
-  const right = width - 28;
-  const top = 24;
-  const bottom = height - 38;
+  const top = 34;
+  const bottom = height - 42;
+  const legendWidth = width >= 640 ? 230 : 164;
+  const right = Math.max(left + 210, width - legendWidth - 18);
   const cx = (left + right) / 2;
   const cy = (top + bottom) / 2;
-  const scale = Math.min(right - left, bottom - top) * 0.42;
+  const scale = Math.min(right - left, bottom - top) * 0.40;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const selectLoading = (item) => {
+    analyticsSearch.value = item.field || item.label;
+    state.search = item.field || item.label;
+    invalidateFilterCache();
+    setActiveTab("semantic");
+  };
 
   const axis = svgNode("g", {class: "pca-axis"});
+  axis.appendChild(svgNode("rect", {
+    class: "pca-plot-frame",
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    rx: 8,
+  }));
   axis.appendChild(svgNode("line", {x1: left, y1: cy, x2: right, y2: cy}));
   axis.appendChild(svgNode("line", {x1: cx, y1: top, x2: cx, y2: bottom}));
   const xLabel = svgNode("text", {x: right, y: cy - 8, "text-anchor": "end"});
@@ -2148,25 +2552,49 @@ function renderPcaChart(payload) {
   axis.append(xLabel, yLabel);
   dataPcaChart.appendChild(axis);
 
-  pca.loadings.slice(0, 8).forEach((item) => {
-    const x = cx + item.pc1 * scale;
-    const y = cy - item.pc2 * scale;
+  if (dominantPc1) {
+    const note = svgNode("text", {class: "pca-dominance-note", x: left + 10, y: top + 18});
+    note.textContent = "Leitura: eixo principal dominante; comparar medidas pela legenda, não como grupos causais.";
+    dataPcaChart.appendChild(note);
+  }
+
+  loadings.forEach((item, index) => {
+    const x = clamp(cx + (Number(item.pc1) || 0) * scale, left + 18, right - 18);
+    const y = clamp(cy - (Number(item.pc2) || 0) * scale, top + 18, bottom - 18);
     const group = svgNode("g", {class: "pca-point", transform: `translate(${x}, ${y})`});
     const titleNode = svgNode("title");
     titleNode.textContent = `${item.label || item.field}: PC1 ${formatDecimal(item.pc1, 2)}, PC2 ${formatDecimal(item.pc2, 2)}, magnitude ${formatDecimal(item.magnitude, 2)}`;
     group.appendChild(titleNode);
-    group.appendChild(svgNode("circle", {r: Math.max(5, Math.min(14, item.magnitude * 12))}));
-    const label = svgNode("text", {x: 10, y: 4});
-    label.textContent = compactTitle(item.label, 20);
-    group.appendChild(label);
-    group.addEventListener("click", () => {
-      analyticsSearch.value = item.field || item.label;
-      state.search = item.field || item.label;
-      invalidateFilterCache();
-      setActiveTab("semantic");
-    });
+    group.appendChild(svgNode("circle", {r: Math.max(9, Math.min(15, (item.magnitude || 0) * 12))}));
+    const indexLabel = svgNode("text", {class: "pca-point-index", y: 4, "text-anchor": "middle"});
+    indexLabel.textContent = String(index + 1);
+    group.appendChild(indexLabel);
+    group.addEventListener("click", () => selectLoading(item));
     dataPcaChart.appendChild(group);
   });
+
+  const legend = svgNode("g", {class: "pca-legend", transform: `translate(${right + 18}, ${top + 2})`});
+  const legendTitle = svgNode("text", {class: "pca-legend-title", x: 0, y: 0});
+  legendTitle.textContent = "Medidas com maior peso";
+  legend.appendChild(legendTitle);
+  loadings.forEach((item, index) => {
+    const rowY = 18 + index * 33;
+    const row = svgNode("g", {class: "pca-legend-row", transform: `translate(0, ${rowY})`});
+    const titleNode = svgNode("title");
+    titleNode.textContent = `${item.label || item.field}: PC1 ${formatDecimal(item.pc1, 2)}, PC2 ${formatDecimal(item.pc2, 2)}`;
+    row.appendChild(titleNode);
+    row.appendChild(svgNode("rect", {x: 0, y: -12, width: legendWidth - 12, height: 28, rx: 6}));
+    const rank = svgNode("text", {class: "pca-legend-rank", x: 10, y: 5, "text-anchor": "middle"});
+    rank.textContent = String(index + 1);
+    const label = svgNode("text", {class: "pca-legend-label", x: 24, y: -1});
+    label.textContent = compactTitle(item.label || item.field, width >= 640 ? 26 : 16);
+    const meta = svgNode("text", {class: "pca-legend-meta", x: 24, y: 11});
+    meta.textContent = `PC1 ${formatDecimal(item.pc1, 2)} · PC2 ${formatDecimal(item.pc2, 2)}`;
+    row.append(rank, label, meta);
+    row.addEventListener("click", () => selectLoading(item));
+    legend.appendChild(row);
+  });
+  dataPcaChart.appendChild(legend);
 }
 
 function renderNumericProfiles(payload) {
@@ -2179,7 +2607,8 @@ function renderNumericProfiles(payload) {
     dataNumericProfiles.appendChild(empty);
     return;
   }
-  rows.forEach((row) => {
+  const visibleRows = state.dataDetailExpanded.measures ? rows : rows.slice(0, 5);
+  visibleRows.forEach((row) => {
     const item = document.createElement("div");
     item.className = row.semantic_role === "numeric_distribution" ? "data-profile-row data-profile-numeric" : "data-profile-row";
     const title = document.createElement("strong");
@@ -2203,6 +2632,16 @@ function renderNumericProfiles(payload) {
     item.append(title, meta, stats);
     dataNumericProfiles.appendChild(item);
   });
+  if (!state.dataDetailExpanded.measures && rows.length > visibleRows.length) {
+    dataNumericProfiles.appendChild(createSmallButton(
+      `Mostrar mais ${rows.length - visibleRows.length} medidas`,
+      () => {
+        state.dataDetailExpanded.measures = true;
+        renderNumericProfiles(payload);
+      },
+      "show-more-button",
+    ));
+  }
 }
 
 
@@ -2288,6 +2727,36 @@ function dimensionContext(row, payload) {
   };
 }
 
+function isTemporalDimension(row, payload) {
+  const text = normalizeSearchText([row.field, row.label, row.semantic_role].filter(Boolean).join(" "));
+  return row.field === payload?.temporal_field || /periodo|período|ano|mes|mês|data|trimestre|semana|dia/.test(text);
+}
+
+function sortedPeriodLabels(values) {
+  return values
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "pt-PT", {numeric: true}));
+}
+
+function temporalDimensionSummary(row, payload) {
+  const trendPeriods = sortedPeriodLabels((payload.trends || []).flatMap((trend) => (trend.points || []).map((point) => point.period)));
+  const topPeriods = sortedPeriodLabels((row.top_values || []).map((value) => value.value));
+  const periods = trendPeriods.length ? trendPeriods : topPeriods;
+  const unique = row.unique || periods.length || 0;
+  const density = unique ? (row.count || 0) / unique : 0;
+  const first = periods[0] || "-";
+  const last = periods[periods.length - 1] || "-";
+  return {
+    first,
+    last,
+    unique,
+    density,
+    observed: row.count || 0,
+    missing: row.missing || 0,
+  };
+}
+
 function appendDimensionContext(container, context) {
   const panel = document.createElement("div");
   panel.className = `data-dimension-context is-${context.tone}`;
@@ -2320,18 +2789,42 @@ function renderCategoricalProfiles(payload) {
     dataCategoricalProfiles.appendChild(empty);
     return;
   }
-  rows.forEach((row) => {
+  const visibleRows = state.dataDetailExpanded.dimensions ? rows : rows.slice(0, 5);
+  visibleRows.forEach((row) => {
     const item = document.createElement("div");
     item.className = row.semantic_role === "geolocation" ? "data-profile-row data-profile-geo" : "data-profile-row";
     const title = document.createElement("strong");
     title.textContent = row.label || row.field;
     const meta = document.createElement("small");
-    meta.textContent = row.semantic_role === "geolocation"
+    const isTime = isTemporalDimension(row, payload);
+    meta.textContent = isTime
+      ? `${formatNumber(row.unique)} períodos · ${formatNumber(row.missing)} em falta`
+      : row.semantic_role === "geolocation"
       ? `${formatNumber(row.unique)} ponto(s) · ${formatNumber(row.missing)} em falta`
       : `${formatNumber(row.unique)} categorias · ${formatNumber(row.missing)} em falta`;
     const context = dimensionContext(row, payload);
     const values = document.createElement("div");
-    if (row.semantic_role === "geolocation") {
+    if (isTime) {
+      values.className = "data-time-summary";
+      const summary = temporalDimensionSummary(row, payload);
+      [
+        ["Intervalo", `${summary.first} a ${summary.last}`],
+        ["Períodos", formatNumber(summary.unique)],
+        ["Densidade", `${formatDecimal(summary.density, 1)} reg./período`],
+        ["Registos", formatNumber(summary.observed)],
+      ].forEach(([label, value]) => {
+        const chip = document.createElement("span");
+        const strong = document.createElement("strong");
+        strong.textContent = label;
+        const small = document.createElement("small");
+        small.textContent = value;
+        chip.append(strong, small);
+        values.appendChild(chip);
+      });
+      const note = document.createElement("p");
+      note.textContent = "Eixo temporal: usar para cobertura, densidade e comparabilidade; não ler como ranking de categorias.";
+      values.appendChild(note);
+    } else if (row.semantic_role === "geolocation") {
       values.className = "data-geo-summary";
       const bounds = row.bounds || {};
       const center = row.center || {};
@@ -2388,71 +2881,242 @@ function renderCategoricalProfiles(payload) {
     item.appendChild(values);
     dataCategoricalProfiles.appendChild(item);
   });
+  if (!state.dataDetailExpanded.dimensions && rows.length > visibleRows.length) {
+    dataCategoricalProfiles.appendChild(createSmallButton(
+      `Mostrar mais ${rows.length - visibleRows.length} dimensões`,
+      () => {
+        state.dataDetailExpanded.dimensions = true;
+        renderCategoricalProfiles(payload);
+      },
+      "show-more-button",
+    ));
+  }
 }
 
 function renderDataTrend(payload) {
   clearElement(dataTrendChart);
   const trend = payload.trends?.[0];
+  const review = epidemiologyReview(payload);
   const width = Math.max(560, dataTrendChart.closest(".data-trend-wrap")?.clientWidth || 560);
   const height = 260;
   dataTrendChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  dataTrendChart.setAttribute("aria-label", "Tendência temporal da amostra com períodos agregados");
   if (!trend || !trend.points?.length) {
     const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
     empty.textContent = "Tendência indisponível: faltam períodos.";
     dataTrendChart.appendChild(empty);
     return;
   }
-  const points = trend.points;
-  const values = points.map((point) => point.avg);
+  const points = trend.points
+    .map((point) => {
+      const value = Number.isFinite(Number(point.value)) ? Number(point.value) : Number(point.avg);
+      return {...point, plottedValue: value};
+    })
+    .filter((point) => Number.isFinite(point.plottedValue));
+  if (!points.length) {
+    const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", fill: "#657489"});
+    empty.textContent = "Tendência indisponível: valores numéricos inválidos.";
+    dataTrendChart.appendChild(empty);
+    return;
+  }
+  const values = points.map((point) => point.plottedValue);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || 1;
-  const left = 66;
-  const right = width - 42;
-  const top = 48;
-  const bottom = height - 54;
+  const zeroCount = values.filter((value) => value === 0).length;
+  const nonZeroCount = values.length - zeroCount;
+  const zeroHeavy = zeroCount >= Math.ceil(values.length * 0.45) && max > 0;
+  const timeAxis = reviewTimeAxis(review);
+  const zeroMeaning = reviewZeroMeaning(review);
+  const comparable = timeAxis?.status === "pronto" && zeroMeaning?.status === "pronto";
+  const scaleMin = min >= 0 ? 0 : min;
+  const scaleMax = max <= 0 ? 1 : max * 1.08;
+  const span = scaleMax - scaleMin || 1;
+  const left = 76;
+  const right = width - 28;
+  const top = 54;
+  const bottom = height - 58;
   const xStep = points.length > 1 ? (right - left) / (points.length - 1) : 0;
   const coords = points.map((point, index) => ({
     x: left + index * xStep,
-    y: bottom - ((point.avg - min) / span) * (bottom - top),
+    y: bottom - ((point.plottedValue - scaleMin) / span) * (bottom - top),
     point,
+    index,
   }));
+
+  if (!comparable) {
+    const activePeriods = points.filter((point) => point.plottedValue > 0);
+    const firstActive = activePeriods[0]?.period || "-";
+    const lastActive = activePeriods[activePeriods.length - 1]?.period || "-";
+    const windowLabel = activePeriods.length ? `${firstActive} a ${lastActive}` : "sem janela ativa clara";
+    const cards = [
+      ["Períodos com sinal", formatNumber(nonZeroCount), "há valor observado"],
+      ["Zeros / sem sinal", formatNumber(zeroCount), "não ler como tendência"],
+      ["Janela útil", windowLabel, "usar como vigilância curta"],
+    ];
+    const headerTitle = svgNode("text", {x: 28, y: 24, class: "data-trend-title"});
+    headerTitle.textContent = compactTitle(trend.label, 54);
+    const headerNote = svgNode("text", {x: width - 28, y: 24, "text-anchor": "end", class: "data-trend-note"});
+    headerNote.textContent = `${formatNumber(points.length)} períodos · ${formatNumber(zeroCount)} zeros · ${formatNumber(nonZeroCount)} com sinal`;
+    dataTrendChart.append(headerTitle, headerNote);
+    cards.forEach(([labelText, valueText, detailText], index) => {
+      const cardX = 28 + index * ((width - 56) / 3);
+      const cardW = (width - 72) / 3;
+      const card = svgNode("rect", {x: cardX, y: 38, width: cardW, height: 56, rx: 8, class: "epi-trend-card"});
+      const label = svgNode("text", {x: cardX + 12, y: 56, class: "epi-trend-card-label"});
+      label.textContent = labelText;
+      const value = svgNode("text", {x: cardX + 12, y: 74, class: "epi-trend-card-value"});
+      value.textContent = valueText;
+      const detail = svgNode("text", {x: cardX + 12, y: 88, class: "epi-trend-card-detail"});
+      detail.textContent = detailText;
+      dataTrendChart.append(card, label, value, detail);
+    });
+    const stripY = 156;
+    const stripLeft = 36;
+    const stripRight = width - 36;
+    const stripStep = points.length > 1 ? (stripRight - stripLeft) / (points.length - 1) : 0;
+    const stripTitle = svgNode("text", {x: stripLeft, y: 120, class: "epi-trend-state-title"});
+    stripTitle.textContent = "Estado dos períodos observados";
+    dataTrendChart.appendChild(stripTitle);
+    points.forEach((point, index) => {
+      const x = stripLeft + index * stripStep;
+      const barWidth = Math.max(8, stripStep * 0.44 || 16);
+      const h = point.plottedValue > 0 ? 26 : 6;
+      const rect = svgNode("rect", {
+        x: x - barWidth / 2,
+        y: stripY - h,
+        width: barWidth,
+        height: h,
+        rx: 3,
+        class: `epi-trend-bar ${point.plottedValue > 0 ? "is-active" : "is-zero"}`,
+      });
+      const tooltip = svgNode("title");
+      tooltip.textContent = `${point.period}: ${formatDecimal(point.plottedValue, 2)} · ${formatNumber(point.count || 0)} registos`;
+      rect.appendChild(tooltip);
+      dataTrendChart.appendChild(rect);
+      if (index === 0 || index === points.length - 1 || point.plottedValue > 0) {
+        const label = svgNode("text", {
+          x,
+          y: stripY + 18,
+          "text-anchor": index === 0 ? "start" : (index === points.length - 1 ? "end" : "middle"),
+          class: "data-trend-period-label",
+        });
+        label.textContent = compactTitle(point.period, 11);
+        dataTrendChart.appendChild(label);
+      }
+    });
+    const footer = svgNode("text", {x: stripLeft, y: height - 16, class: "epi-trend-state-text"});
+    footer.textContent = shortSentence(timeAxis?.detail || zeroMeaning?.detail || "Série frágil: ler como presença/ausência de sinal e não como tendência contínua.", 120);
+    dataTrendChart.appendChild(footer);
+    return;
+  }
+
   const axis = svgNode("g", {class: "data-trend-axis"});
   axis.appendChild(svgNode("line", {x1: left, y1: bottom, x2: right, y2: bottom}));
   axis.appendChild(svgNode("line", {x1: left, y1: top, x2: left, y2: bottom}));
   const title = svgNode("text", {x: left, y: 22});
-  title.textContent = compactTitle(trend.label, 42);
+  title.textContent = compactTitle(trend.label, 54);
   axis.appendChild(title);
-  const minLabel = svgNode("text", {x: left - 8, y: bottom, "text-anchor": "end"});
-  minLabel.textContent = formatDecimal(min, 1);
-  const maxLabel = svgNode("text", {x: left - 8, y: top + 4, "text-anchor": "end"});
-  maxLabel.textContent = formatDecimal(max, 1);
-  axis.append(minLabel, maxLabel);
-  dataTrendChart.appendChild(axis);
 
+  const note = svgNode("text", {x: right, y: 22, "text-anchor": "end", class: "data-trend-note"});
+  note.textContent = comparable
+    ? `${formatNumber(points.length)} períodos comparáveis`
+    : `${formatNumber(points.length)} períodos · ${formatNumber(zeroCount)} zeros · ${formatNumber(nonZeroCount)} com sinal`;
+  axis.appendChild(note);
+
+  [scaleMin, scaleMin + span / 2, scaleMax].forEach((value, index) => {
+    const y = bottom - ((value - scaleMin) / span) * (bottom - top);
+    axis.appendChild(svgNode("line", {
+      x1: left,
+      y1: y,
+      x2: right,
+      y2: y,
+      class: index === 0 ? "data-trend-baseline" : "data-trend-grid",
+    }));
+    const label = svgNode("text", {x: left - 10, y: y + 4, "text-anchor": "end"});
+    label.textContent = formatSmartNumber(value);
+    axis.appendChild(label);
+  });
+
+  const tickIndexes = new Set();
+  const tickStep = Math.max(1, Math.ceil((points.length - 1) / 5));
+  points.forEach((_, index) => {
+    if (index === 0 || index === points.length - 1 || index % tickStep === 0) tickIndexes.add(index);
+  });
+  tickIndexes.forEach((index) => {
+    const coord = coords[index];
+    const tick = svgNode("line", {x1: coord.x, y1: bottom, x2: coord.x, y2: bottom + 5, class: "data-trend-tick"});
+    const label = svgNode("text", {
+      x: coord.x,
+      y: bottom + 22,
+      "text-anchor": index === 0 ? "start" : (index === points.length - 1 ? "end" : "middle"),
+      class: "data-trend-period-label",
+    });
+    label.textContent = compactTitle(coord.point.period, 11);
+    axis.append(tick, label);
+  });
+
+  dataTrendChart.appendChild(axis);
   if (points.length === 2) {
     const [first, last] = points;
     const delta = last.avg - first.avg;
     const pct = first.avg ? (delta / Math.abs(first.avg)) * 100 : null;
-    const note = svgNode("text", {x: right, y: 22, "text-anchor": "end", class: "data-trend-note"});
-    note.textContent = `2 pontos · variação ${delta >= 0 ? "+" : ""}${formatDecimal(delta, 1)}${pct === null ? "" : ` (${delta >= 0 ? "+" : ""}${formatDecimal(pct, 1)}%)`}`;
-    dataTrendChart.appendChild(note);
+    const deltaNote = svgNode("text", {x: left, y: height - 14, class: "data-trend-note"});
+    deltaNote.textContent = `2 pontos · variação ${delta >= 0 ? "+" : ""}${formatDecimal(delta, 1)}${pct === null ? "" : ` (${delta >= 0 ? "+" : ""}${formatDecimal(pct, 1)}%)`}`;
+    dataTrendChart.appendChild(deltaNote);
   }
 
-  const path = svgNode("path", {
-    class: `data-trend-line ${points.length <= 2 ? "is-sparse" : ""}`.trim(),
-    d: coords.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
-  });
-  dataTrendChart.appendChild(path);
+  const firstZeroTailIndex = zeroHeavy
+    ? coords.findIndex((coord, index) => index > 0 && coord.point.plottedValue === 0 && coords.slice(0, index).some((row) => row.point.plottedValue > 0))
+    : -1;
+  if (firstZeroTailIndex > 0) {
+    const head = coords.slice(0, firstZeroTailIndex + 1);
+    const tail = coords.slice(firstZeroTailIndex);
+    dataTrendChart.appendChild(svgNode("path", {
+      class: "data-trend-line",
+      d: head.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+    }));
+    if (tail.length > 1) {
+      dataTrendChart.appendChild(svgNode("path", {
+        class: "data-trend-line is-muted-tail",
+        d: tail.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+      }));
+    }
+  } else {
+    const path = svgNode("path", {
+      class: `data-trend-line ${points.length <= 2 ? "is-sparse" : ""}`.trim(),
+      d: coords.map((coord, index) => `${index ? "L" : "M"} ${coord.x} ${coord.y}`).join(" "),
+    });
+    dataTrendChart.appendChild(path);
+  }
+  const maxIndex = values.indexOf(max);
+  const firstPositiveIndex = values.findIndex((value) => value > 0);
+  const lastPositiveIndex = (() => {
+    for (let index = values.length - 1; index >= 0; index -= 1) {
+      if (values[index] > 0) return index;
+    }
+    return values.length - 1;
+  })();
   coords.forEach((coord) => {
-    const group = svgNode("g", {class: "data-trend-point", transform: `translate(${coord.x}, ${coord.y})`});
+    const group = svgNode("g", {
+      class: `data-trend-point ${coord.point.plottedValue === 0 ? "is-zero" : ""}`.trim(),
+      transform: `translate(${coord.x}, ${coord.y})`,
+    });
     const tooltip = svgNode("title");
-    tooltip.textContent = `${coord.point.period}: ${formatDecimal(coord.point.avg, 2)} · ${formatNumber(coord.point.count || 0)} registos`;
+    tooltip.textContent = `${coord.point.period}: ${formatDecimal(coord.point.plottedValue, 2)} · ${formatNumber(coord.point.count || 0)} registos`;
     group.appendChild(tooltip);
-    group.appendChild(svgNode("circle", {r: 4}));
-    const label = svgNode("text", {"text-anchor": coord.x > width - 90 ? "end" : "middle", y: 19});
-    label.textContent = coord.point.period;
-    group.appendChild(label);
+    group.appendChild(svgNode("circle", {r: points.length > 18 ? 3.2 : 4}));
+    const shouldLabelValue = zeroHeavy
+      ? coord.index === firstPositiveIndex || coord.index === maxIndex || coord.index === lastPositiveIndex
+      : (points.length <= 8 || coord.index === 0 || coord.index === maxIndex || coord.index === points.length - 1);
+    if (shouldLabelValue) {
+      const label = svgNode("text", {
+        "text-anchor": coord.x > width - 90 ? "end" : (coord.x < left + 40 ? "start" : "middle"),
+        y: coord.y < top + 18 ? 18 : -10,
+        class: "data-trend-value-label",
+      });
+      label.textContent = formatSmartNumber(coord.point.plottedValue);
+      group.appendChild(label);
+    }
     dataTrendChart.appendChild(group);
   });
 }
@@ -2818,7 +3482,7 @@ function renderPredictiveFitGuide(payload = state.predictiveRecommendationPayloa
   const small = document.createElement("small");
   small.textContent = active
     ? predictiveFitDetail(active)
-    : "Escolhe um dataset ou usa uma alternativa apta abaixo.";
+    : "Selecione um dataset ou use uma alternativa apta abaixo.";
   summary.append(strong, small);
 
   const legend = document.createElement("div");
@@ -2881,7 +3545,7 @@ function renderPredictiveClosestOpportunities(payload, forecast, eligibleCandida
     if (!catalogRows.length) {
       const empty = document.createElement("div");
       empty.className = "empty-state compact";
-      empty.textContent = "Sem séries temporais nem alternativas fortes no catálogo atual. Recolhe mais períodos ou escolhe outro âmbito.";
+      empty.textContent = "Sem séries temporais nem alternativas fortes no catálogo atual. Recolha mais períodos ou selecione outro âmbito.";
       predictiveClosestOpportunities.appendChild(empty);
       return;
     }
@@ -3113,28 +3777,33 @@ function renderPredictiveRisk(payload, forecast, opportunity = null) {
 
 function renderPredictiveAnalytics() {
   clearPredictive();
+  renderAnalyticsContext();
+  renderExecutiveSummary();
+  renderEpidemiologyReview();
+  renderEpidemiologyReviewFlow();
+  renderConfidenceChips();
   renderPredictiveDatasetCandidates();
   const payload = state.dataPayload;
   if (!payload) {
     renderAnalyticsStory(predictiveStoryStrip, [
       {
         label: "Pergunta ativa",
-        value: "Há série para projeção?",
-        detail: "A projeção só aparece depois de analisar um dataset real com eixo temporal utilizável.",
+        value: "Há série temporal interpretável?",
+        detail: "A vigilância temporal só aparece depois de analisar um dataset real com eixo temporal utilizável.",
       },
       {
         label: "Leitura recomendada",
-        value: "Sem projeção ativa",
+        value: "Sem revisão temporal ativa",
         detail: "Evitar previsões quando não há períodos, volume ou variação suficiente.",
         tone: "warning",
       },
       {
         label: "Próxima ação",
-        value: "Escolher dataset",
+        value: "Selecionar dataset",
         detail: "Volta a Dados reais e seleciona uma série com melhor cobertura temporal.",
       },
     ]);
-    predictiveMeta.textContent = "Escolhe ou analisa um dataset em Dados reais para ativar a projeção.";
+    predictiveMeta.textContent = "Selecione ou analise um dataset em Dados reais para ativar a revisão temporal.";
     renderPredictiveIndicatorFilter([]);
     renderPredictiveFitGuide(state.predictiveRecommendationPayload || null);
     if (state.selectedDataDataset && state._predictiveLoadDataset !== state.selectedDataDataset) {
@@ -3150,36 +3819,38 @@ function renderPredictiveAnalytics() {
   const trend = bestPredictiveTrend(payload, state.selectedPredictiveIndicator);
   const forecast = forecastFromTrend(trend, payload);
   const confidence = predictiveConfidence(payload, forecast);
+  const review = epidemiologyReview(payload);
+  const blockers = review?.blocking_factors || [];
   const slope = forecast?.available ? forecast.slope : null;
   renderAnalyticsStory(predictiveStoryStrip, [
     {
       label: "Pergunta ativa",
-      value: "O sinal continua a subir ou descer?",
+      value: "A série é comparável no tempo?",
       detail: trend ? `${compactTitle(trend.label || trend.field, 64)} · ${formatNumber(trend.points.length)} períodos.` : "Sem série temporal elegível.",
     },
     {
       label: "Leitura recomendada",
-      value: forecast?.available ? `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)} por período` : "Não projetar",
-      detail: forecast?.available ? "Usar como alerta operacional curto, não como previsão oficial." : (forecast?.reason || "Sem base temporal suficiente."),
-      tone: forecast?.available ? "ok" : "warning",
+      value: reviewStatusLabel(review?.period_comparability?.status || "rever"),
+      detail: forecast?.available ? "Usar como vigilância temporal curta, não como previsão oficial." : (review?.period_comparability?.detail || forecast?.reason || "Sem base temporal suficiente."),
+      tone: forecast?.available && review?.period_comparability?.status === "pronto" ? "ok" : "warning",
     },
     {
       label: "Travão",
-      value: confidence,
-      detail: firstWarning(payload.quality_warnings || [], "Validar sazonalidade, cobertura e estabilidade antes de extrapolar."),
-      tone: confidence === "alta" ? "ok" : "warning",
+      value: compactTitle(blockers[0]?.label || confidence, 46),
+      detail: blockers[0]?.action || firstWarning(payload.quality_warnings || [], "Validar sazonalidade, cobertura e estabilidade antes de extrapolar."),
+      tone: blockers.length ? "warning" : (confidence === "alta" ? "ok" : "warning"),
     },
     {
       label: "Próxima ação",
-      value: "Comparar cenários",
-      detail: "Ver drivers e risco do modelo antes de comunicar tendência.",
+      value: review?.period_comparability?.status === "pronto" ? "Comparar cenários" : "Rever série temporal",
+      detail: review?.period_comparability?.status === "pronto" ? "Ver drivers e risco do modelo antes de comunicar tendência." : shortSentence(review?.reporting_lag?.detail || "Separar reporte tardio de evolução real.", 92),
     },
   ]);
-  predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · fiabilidade ${confidence}.`;
+  predictiveMeta.textContent = `${payload.title} · ${formatNumber(payload.sample_size)} registos · revisão temporal ${reviewStatusLabel(review?.period_comparability?.status || "rever")}.`;
   addPredictiveKpi("Série", trend ? compactTitle(trend.label, 26) : "indisponível", trend ? `${trend.points.length} períodos` : "sem eixo temporal");
-  addPredictiveKpi("Projeção", forecast?.available ? "ativa" : "não aplicável", forecast?.available ? "linear curta" : (forecast?.reason || "sem série elegível"));
+  addPredictiveKpi("Período", reviewStatusLabel(review?.period_comparability?.status || "rever"), review?.period_comparability?.detail || "sem série elegível");
   addPredictiveKpi("Elegíveis", formatNumber(candidates.length), "indicadores com volume suficiente");
-  addPredictiveKpi("Tendência", slope === null ? "-" : `${slope >= 0 ? "+" : ""}${formatDecimal(slope, 2)}`, "variação média por período");
+  addPredictiveKpi("Zeros", review?.zero_semantics?.label || "-", review?.zero_semantics?.detail || "sem leitura");
   const recommendationKey = `${state.selectedDataDataset}|${state.dataLimit}`;
   const recommendationsCurrent = state.predictiveRecommendationPayload?.active_dataset_id === state.selectedDataDataset;
   if (!recommendationsCurrent && state._predictiveRecommendationKey !== recommendationKey) {
@@ -3973,7 +4644,7 @@ function renderHypothesisCellDetail(bucket, allRows) {
   if (!bucket || !bucket.rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Seleciona uma célula com hipóteses.";
+    empty.textContent = "Selecione uma célula com hipóteses.";
     publicHealthHypothesisDetail.appendChild(empty);
     return;
   }
@@ -4429,7 +5100,7 @@ function renderCareOps() {
     {
       label: "Leitura recomendada",
       value: selected ? compactTitle(selected.cohort || "Coorte selecionada", 46) : "Sem coorte",
-      detail: selected ? `${actionLabel} · ${viabilityLabel}.` : "Seleciona uma célula da matriz para ver o fluxo de intervenção.",
+      detail: selected ? `${actionLabel} · ${viabilityLabel}.` : "Selecione uma célula da matriz para ver o fluxo de intervenção.",
       tone: selected?.viabilityBand === "boa" ? "ok" : "warning",
     },
     {
@@ -4577,7 +5248,7 @@ function renderLocalPriorityDetail(bucket, rows) {
   if (!bucket) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Seleciona uma célula com hipóteses.";
+    empty.textContent = "Selecione uma célula com hipóteses.";
     localPriorityDetail.appendChild(empty);
     return;
   }
@@ -5111,7 +5782,237 @@ function renderCorrelationTable() {
   });
 }
 
+function selectedCatalogDataset() {
+  const datasets = state.payload?.datasets || [];
+  return datasets.find((dataset) => dataset.dataset_id === state.selectedDataDataset) || null;
+}
+
+function renderAnalyticsContext() {
+  const payload = state.dataPayload;
+  const dataset = selectedCatalogDataset();
+  const fit = payload ? readinessInfo(payload) : readinessInfo(dataset || {});
+  const review = epidemiologyReview(payload);
+  if (contextDataset) {
+    contextDataset.textContent = compactTitle(payload?.title || dataset?.title || state.selectedDataDataset || "Sem dataset selecionado", 78);
+    contextDataset.title = payload?.title || dataset?.title || state.selectedDataDataset || "";
+  }
+  if (contextDatasetLink) {
+    contextDatasetLink.href = datasetScopedHref("index.html");
+    contextDatasetLink.title = "Abrir no Radar e selecionar outro dataset";
+  }
+  if (contextReadiness) {
+    contextReadiness.textContent = review ? reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever") : (fit.label || "Rever");
+    contextReadiness.className = `context-fit is-${reviewToneClass(reviewOverallStatus(review) || fit.band || "rever")}`;
+  }
+  if (contextSample) {
+    const size = payload?.sample_size ?? dataset?.records_count;
+    contextSample.textContent = size ? `${formatNumber(size)} registos` : "-";
+  }
+  if (contextPeriod) {
+    const trend = (payload?.trends || [])[0];
+    const points = trend?.points || [];
+    const timeAxis = reviewTimeAxis(review);
+    const timeLabel = timeAxis?.label || "";
+    const countLabel = points.length && !timeLabel.includes(`${points.length}`) ? ` · ${points.length} períodos` : "";
+    contextPeriod.textContent = payload?.temporal_field
+      ? `${payload.temporal_field}${countLabel}${timeLabel ? ` · ${timeLabel}` : ""}`
+      : "Sem eixo temporal";
+  }
+  if (contextDenominator) {
+    contextDenominator.textContent = (review?.population_basis || review?.population_at_risk)?.label || payload?.quality_summary?.denominator?.label || denominatorLabel(payload);
+  }
+  if (contextRadarLink) {
+    contextRadarLink.href = datasetScopedHref("index.html");
+  }
+}
+
+function anomalySeverityClass(level) {
+  return level === "alto" ? "is-fragil" : (level === "medio" ? "is-rever" : "is-pronto");
+}
+
+function createAnomalyItem({title, meta, value, level = "medio"}) {
+  const item = document.createElement("article");
+  item.className = `anomaly-item ${anomalySeverityClass(level)}`;
+  const head = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  strong.title = title;
+  const badge = document.createElement("span");
+  badge.textContent = level === "alto" ? "Frágil" : (level === "medio" ? "Rever" : "Pronto");
+  head.append(strong, badge);
+  const detail = document.createElement("small");
+  detail.textContent = meta;
+  const metric = document.createElement("em");
+  metric.textContent = value;
+  item.append(head, detail, metric);
+  return item;
+}
+
+function renderAnomalySummary(payload, measures, dimensions, warnings) {
+  clearElement(anomalySummary);
+  [
+    ["Travões", warnings.length, warnings.length ? "avisos ativos" : "sem avisos críticos"],
+    ["Medidas", measures.length, "campos a rever"],
+    ["Dimensões", dimensions.length, "concentração ou nulos"],
+    ["Cobertura", payload.sample?.coverage_ratio == null ? "-" : `${formatDecimal(payload.sample.coverage_ratio * 100, 1)}%`, "amostra face ao total"],
+  ].forEach(([label, value, detail]) => {
+    const card = document.createElement("div");
+    const span = document.createElement("span");
+    span.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = String(value);
+    const small = document.createElement("small");
+    small.textContent = detail;
+    card.append(span, strong, small);
+    anomalySummary.appendChild(card);
+  });
+}
+
+function renderAnomalies() {
+  renderAnalyticsContext();
+  renderExecutiveSummary();
+  renderConfidenceChips();
+  const payload = state.dataPayload;
+  if (state.dataLoading) {
+    anomalyStatus.textContent = "A analisar anomalias...";
+    renderAnalyticsStory(anomalyStoryStrip, [
+      {label: "Estado", value: "A analisar amostra", detail: "A procurar nulos, variação elevada e concentrações."},
+    ]);
+    [anomalySummary, anomalyMeasureList, anomalyDimensionList, anomalyWarningList].forEach(clearElement);
+    return;
+  }
+  if (!payload) {
+    anomalyStatus.textContent = "A aguardar amostra...";
+    anomalyMeta.textContent = "Selecione um dataset para avaliar anomalias nos dados.";
+    renderAnalyticsStory(anomalyStoryStrip, [
+      {label: "Pergunta ativa", value: "Onde a leitura pode falhar?", detail: "Corre a análise da amostra para separar sinal de fragilidade."},
+      {label: "Próxima ação", value: "Analisar dados", detail: "O modo usa a mesma amostra do Resumo rápido.", tone: "warning"},
+    ]);
+    [anomalySummary, anomalyMeasureList, anomalyDimensionList, anomalyWarningList].forEach(clearElement);
+    return;
+  }
+
+  const sampleSize = payload.sample_size || 1;
+  const warnings = payload.quality_warnings || [];
+  const measures = (payload.numeric_profiles || [])
+    .map((profile) => {
+      const missingRatio = (profile.missing || 0) / Math.max(1, (profile.count || 0) + (profile.missing || 0));
+      const cv = Math.abs(Number(profile.avg || 0)) > 0 ? Math.abs(Number(profile.stddev || 0) / Number(profile.avg)) : null;
+      const level = missingRatio >= 0.35 || (cv !== null && cv >= 1.2) ? "alto" : (missingRatio >= 0.15 || (cv !== null && cv >= 0.65) ? "medio" : "baixo");
+      return {...profile, missingRatio, cv, level};
+    })
+    .filter((profile) => profile.level !== "baixo")
+    .sort((a, b) => (b.missingRatio + (b.cv || 0) / 2) - (a.missingRatio + (a.cv || 0) / 2));
+  const dimensions = (payload.categorical_profiles || [])
+    .map((profile) => {
+      const top = (profile.top_values || [])[0] || {value: "-", count: 0};
+      const share = top.count / sampleSize;
+      const missingRatio = (profile.missing || 0) / Math.max(1, (profile.count || 0) + (profile.missing || 0));
+      const level = share >= 0.7 || missingRatio >= 0.35 ? "alto" : (share >= 0.5 || missingRatio >= 0.15 ? "medio" : "baixo");
+      return {...profile, top, share, missingRatio, level};
+    })
+    .filter((profile) => profile.level !== "baixo")
+    .sort((a, b) => (b.share + b.missingRatio) - (a.share + a.missingRatio));
+
+  anomalyStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
+  anomalyMeta.textContent = `${payload.title} · ${formatNumber(sampleSize)} registos · ${warnings.length} travão(ões) · ${measures.length + dimensions.length} ponto(s) a rever.`;
+  renderAnalyticsStory(anomalyStoryStrip, [
+    {
+      label: "Pergunta ativa",
+      value: "Que sinais exigem cautela?",
+      detail: `${warnings.length} aviso(s), ${measures.length} medida(s) e ${dimensions.length} dimensão(ões) merecem revisão antes de interpretar.`,
+      tone: warnings.length || measures.length || dimensions.length ? "warning" : "ok",
+    },
+    {
+      label: "Leitura recomendada",
+      value: warnings.length ? "Validar antes de usar" : "Sem bloqueio forte",
+      detail: firstWarning(warnings, "Ainda assim confirmar fonte, período, granularidade e denominador."),
+      tone: warnings.length ? "rever" : "pronto",
+    },
+    {
+      label: "Próxima ação",
+      value: "Voltar ao resumo",
+      detail: "Comparar os achados com medidas, dimensões e tendência antes de cruzar datasets.",
+    },
+  ]);
+
+  renderAnomalySummary(payload, measures, dimensions, warnings);
+  clearElement(anomalyMeasureList);
+  clearElement(anomalyDimensionList);
+  clearElement(anomalyWarningList);
+
+  if (!measures.length) {
+    anomalyMeasureList.appendChild(createAnomalyItem({title: "Sem medidas críticas", meta: "Não foram detetados CV ou nulos elevados nas medidas principais.", value: "Pronto", level: "baixo"}));
+  } else {
+    const visibleMeasures = state.dataDetailExpanded.anomalyMeasures ? measures : measures.slice(0, 5);
+    visibleMeasures.forEach((profile) => {
+      anomalyMeasureList.appendChild(createAnomalyItem({
+        title: compactTitle(profile.label || profile.field, 80),
+        meta: `nulos ${formatDecimal(profile.missingRatio * 100, 1)}% · desvio ${formatDecimal(profile.stddev || 0, 2)} · média ${formatDecimal(profile.avg || 0, 2)}`,
+        value: profile.cv === null ? "CV n/a" : `CV ${formatDecimal(profile.cv * 100, 1)}%`,
+        level: profile.level,
+      }));
+    });
+    if (!state.dataDetailExpanded.anomalyMeasures && measures.length > visibleMeasures.length) {
+      anomalyMeasureList.appendChild(createSmallButton(
+        `Mostrar mais ${measures.length - visibleMeasures.length} medidas`,
+        () => {
+          state.dataDetailExpanded.anomalyMeasures = true;
+          renderAnomalies();
+        },
+        "show-more-button",
+      ));
+    }
+  }
+
+  if (!dimensions.length) {
+    anomalyDimensionList.appendChild(createAnomalyItem({title: "Sem concentração crítica", meta: "As dimensões principais não parecem dominadas por uma única categoria.", value: "Pronto", level: "baixo"}));
+  } else {
+    const visibleDimensions = state.dataDetailExpanded.anomalyDimensions ? dimensions : dimensions.slice(0, 5);
+    visibleDimensions.forEach((profile) => {
+      anomalyDimensionList.appendChild(createAnomalyItem({
+        title: compactTitle(profile.label || profile.field, 80),
+        meta: `valor dominante: ${compactTitle(profile.top.value, 48)} · nulos ${formatDecimal(profile.missingRatio * 100, 1)}%`,
+        value: `${formatDecimal(profile.share * 100, 1)}%`,
+        level: profile.level,
+      }));
+    });
+    if (!state.dataDetailExpanded.anomalyDimensions && dimensions.length > visibleDimensions.length) {
+      anomalyDimensionList.appendChild(createSmallButton(
+        `Mostrar mais ${dimensions.length - visibleDimensions.length} dimensões`,
+        () => {
+          state.dataDetailExpanded.anomalyDimensions = true;
+          renderAnomalies();
+        },
+        "show-more-button",
+      ));
+    }
+  }
+
+  if (!warnings.length) {
+    anomalyWarningList.appendChild(createAnomalyItem({title: "Sem aviso crítico", meta: "Não há travões fortes devolvidos pela análise automática.", value: "Validar", level: "baixo"}));
+  } else {
+    const visibleWarnings = state.dataDetailExpanded.anomalyWarnings ? warnings : warnings.slice(0, 5);
+    visibleWarnings.forEach((warning) => {
+      anomalyWarningList.appendChild(createAnomalyItem({title: compactTitle(warning, 86), meta: "Travão de leitura exploratória.", value: "Rever", level: /denominador|cobertura|amostra|nulo/i.test(warning) ? "alto" : "medio"}));
+    });
+    if (!state.dataDetailExpanded.anomalyWarnings && warnings.length > visibleWarnings.length) {
+      anomalyWarningList.appendChild(createSmallButton(
+        `Mostrar mais ${warnings.length - visibleWarnings.length} avisos`,
+        () => {
+          state.dataDetailExpanded.anomalyWarnings = true;
+          renderAnomalies();
+        },
+        "show-more-button",
+      ));
+    }
+  }
+}
+
 function renderAll() {
+  renderAnalyticsContext();
+  renderExecutiveSummary();
+  renderConfidenceChips();
   if (!state.payload) return;
   if (state.activeTab === "data") {
     renderDataAnalytics();
@@ -5126,6 +6027,13 @@ function renderAll() {
   }
   if (state.activeTab === "predictive") {
     renderPredictiveAnalytics();
+    return;
+  }
+  if (state.activeTab === "anomalies") {
+    renderAnomalies();
+    if (state.selectedDataDataset && !state.dataPayload && !state.dataLoading) {
+      loadDataAnalytics().catch(showDataError);
+    }
     return;
   }
   if (state.activeTab === "semantic") {
@@ -5165,8 +6073,18 @@ function setupEvents() {
   analyticsMinScoreValue.textContent = state.minScore;
   dataSampleLimit.value = state.dataLimit;
   dataSampleLimitValue.textContent = state.dataLimit;
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
-  if (["data", "finprod", "predictive", "semantic", "health", "care", "local", "tables"].includes(initialTab)) {
+  const params = new URLSearchParams(window.location.search);
+  const initialDataset = params.get("dataset_id");
+  if (initialDataset) {
+    state.selectedDataDataset = initialDataset;
+    state.datasetMode = "manual";
+  }
+  const initialMode = params.get("mode");
+  const initialTab = params.get("tab");
+  const modeTab = TAB_BY_MODE[initialMode || ""];
+  if (modeTab) {
+    state.activeTab = modeTab;
+  } else if (["data", "finprod", "predictive", "anomalies", "semantic", "health", "care", "local", "tables"].includes(initialTab)) {
     state.activeTab = initialTab;
   }
   setupTabAccessibility();
@@ -5187,6 +6105,29 @@ function setupEvents() {
       setActiveTab(nextButton.dataset.analyticsTab);
       nextButton.focus();
     });
+  });
+  secondaryTabs.forEach((button) => {
+    button.addEventListener("click", () => setActiveTab(button.dataset.secondaryTab));
+  });
+  guidedAnalysisBar?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-guide-action]");
+    if (!button) return;
+    const action = button.dataset.guideAction;
+    if (action === "tempo") {
+      setActiveTab("predictive");
+      return;
+    }
+    if (action === "anomalias") {
+      setActiveTab("anomalies");
+      return;
+    }
+    if (action === "economia") {
+      setActiveTab("finprod");
+      return;
+    }
+    if (action === "cruzar") {
+      window.location.href = datasetScopedHref("crosswalk.html");
+    }
   });
   predictiveDataButton?.addEventListener("click", () => setActiveTab("data"));
   predictiveIndicatorFilter?.addEventListener("change", () => {
@@ -5263,6 +6204,7 @@ function setupEvents() {
     state.predictiveRecommendationPayload = null;
     state._predictiveRecommendationKey = "";
     activePredictiveRecommendationRequest += 1;
+    syncAnalyticsUrl();
     renderDataAnalytics();
     loadDataAnalytics().catch(showDataError);
   });
@@ -5287,6 +6229,7 @@ function setupEvents() {
     state._predictiveRecommendationKey = "";
     activePredictiveRecommendationRequest += 1;
     populateDataDatasetOptions();
+    syncAnalyticsUrl();
     renderDataAnalytics();
     loadDataAnalytics().catch(showDataError);
   });
@@ -5337,7 +6280,12 @@ function showDataError(error) {
   state.dataLoading = false;
   state.dataPayload = null;
   dataAnalyticsStatus.textContent = error.message || "Erro ao analisar dados";
-  renderDataAnalytics();
+  if (state.activeTab === "anomalies") {
+    anomalyStatus.textContent = error.message || "Erro ao analisar anomalias";
+    renderAnomalies();
+  } else {
+    renderDataAnalytics();
+  }
 }
 
 setupEvents();

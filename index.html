@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Radar de dados</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=network-first-20260430" />
+    <link rel="stylesheet" href="styles.css?v=simplify-20260506" />
     <script
       src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
       integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
@@ -17,13 +17,13 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Saúde+ Pública</p>
-          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Saúde+ Pública</h1>
+          <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Radar de dados</h1>
+          <p class="meta">Selecione datasets, consulte a rede de ligações e avance para análise ou cruzamento.</p>
         </div>
         <div class="topbar-actions">
-          <a href="/" class="top-link is-active" aria-current="page">Vista principal</a>
+          <a href="/" class="top-link is-active" aria-current="page">Radar</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
-          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link">Metodologia</a>
 
           <div class="sync-state" id="syncState">A carregar...</div>
@@ -34,7 +34,7 @@
         <section class="start-page" aria-label="Mega-temas">
           <div class="start-copy">
             <h2>Mega-temas</h2>
-            <p>Escolhe uma área.</p>
+            <p>Escolha, por favor, uma área.</p>
           </div>
           <div id="themeCards" class="theme-grid"></div>
         </section>
@@ -152,7 +152,7 @@
           <div class="panel-heading">
             <div>
               <h2 id="recentDataTitle">Registos recentes</h2>
-              <p id="recentDataMeta" class="meta">Seleciona um dataset para ver a amostra da API.</p>
+              <p id="recentDataMeta" class="meta">Selecione um dataset para consultar a amostra da API.</p>
             </div>
             <button id="reloadRecordsButton" class="ghost-button" type="button">Recarregar tabela</button>
           </div>
@@ -216,6 +216,6 @@
       Campos partilhados: {{fields}}
     </template>
 
-    <script src="app.js?v=network-first-20260430" defer></script>
+    <script src="app.js?v=simplify-20260506" defer></script>
   </body>
 </html>

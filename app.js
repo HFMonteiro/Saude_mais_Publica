@@ -22,7 +22,7 @@ const state = {
   _searchTextCache: new Map(),
   _datasetMetaCache: new Map(),
   _recentCache: new Map(),
-  datasetRenderLimit: 160,
+  datasetRenderLimit: 5,
 };
 
 const TITLE_CACHE_SIZE = 700;
@@ -31,7 +31,10 @@ const DATASET_METADATA_CACHE_SIZE = 40;
 const RECENT_DATA_CACHE_SIZE = 24;
 const META_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const RECENT_DATA_CACHE_TTL_MS = 2.5 * 60 * 1000;
-const DATASET_RENDER_STEP = 160;
+const DATASET_RENDER_STEP = 5;
+const initialParams = new URLSearchParams(window.location.search);
+const initialDatasetId = initialParams.get("dataset_id");
+let initialDatasetApplied = false;
 
 const THEME_COLORS = {
   "Acesso & Produção": "#2f6fdb",
@@ -218,6 +221,18 @@ function touchSelectionState(nextDataset) {
   return true;
 }
 
+function syncRadarDatasetUrl() {
+  if (!window.history?.replaceState) return;
+  const params = new URLSearchParams(window.location.search);
+  if (state.selectedDataset) {
+    params.set("dataset_id", state.selectedDataset);
+  } else {
+    params.delete("dataset_id");
+  }
+  const query = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+}
+
 function getViewState() {
   if (state._viewState) {
     return state._viewState;
@@ -323,6 +338,11 @@ async function loadAnalysis() {
   state._selectionStamp = 0;
   state.datasetRenderLimit = DATASET_RENDER_STEP;
   invalidateViewState();
+  if (!initialDatasetApplied && initialDatasetId && state.datasetById.has(initialDatasetId)) {
+    touchSelectionState(initialDatasetId);
+    initialDatasetApplied = true;
+    state.recentData = null;
+  }
   if (!state.selectedDataset || !state.datasetById.has(state.selectedDataset)) {
     touchSelectionState(filteredDatasets()[0]?.dataset_id || null);
     state.recentData = null;
@@ -568,7 +588,7 @@ function renderCatalogCockpit() {
         {
           label: "Ação seguinte",
           value: visible.length ? "analisar" : "sem resultados",
-          detail: visible.length ? "Seleciona dataset, abre Analytics ou limpa filtros se a lista ficou estreita." : "Os filtros atuais não devolvem datasets.",
+          detail: visible.length ? "Selecione um dataset, abra Analytics ou limpe filtros se a lista ficou demasiado restrita." : "Os filtros atuais não devolvem datasets.",
           action: visible.length ? "Limpar filtros" : "Limpar filtros",
           onClick: clearCatalogFilters,
         },
@@ -898,7 +918,7 @@ function buildTreeForSelected(datasetId) {
   if (!datasetId) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Escolhe um dataset para ver ligações candidatas.";
+    empty.textContent = "Selecione um dataset para consultar ligações candidatas.";
     clearElement(linkTree);
     linkTree.appendChild(empty);
     return;
@@ -1014,7 +1034,7 @@ function renderSelectedInfo() {
   if (!state.selectedDataset) {
     const info = document.createElement("div");
     info.className = "meta";
-    info.textContent = "Escolhe um dataset para abrir cruzamentos possíveis.";
+    info.textContent = "Selecione um dataset para consultar cruzamentos possíveis.";
     clearElement(selectedModel);
     selectedModel.appendChild(info);
     return;
@@ -1045,13 +1065,46 @@ function renderSelectedInfo() {
   const gaps = document.createElement("div");
   gaps.className = "quality-note";
   const info = readiness(dataset);
-  gaps.textContent = `Fit analítico: ${info.label || "Rever"} · validar ${(info.gaps || ["fonte"]).slice(0, 3).join(", ")}.`;
+  gaps.textContent = `Fit analítico: ${info.label || "Rever"} · validar ${(info.gap_labels || info.gaps || ["fonte"]).slice(0, 3).join(", ")}.`;
 
-  selectedModel.append(title, metaRow, gaps, createDisclosure("ver campos", [fieldRow], "compact-disclosure"));
+  const actions = document.createElement("div");
+  actions.className = "selected-actions";
+  [
+    ["Analisar", `analytics.html?dataset_id=${encodeURIComponent(state.selectedDataset)}`],
+    ["Ver cruzamentos", `crosswalk.html?dataset_id=${encodeURIComponent(state.selectedDataset)}`],
+    ["Ver método usado", "metodologia.html"],
+  ].forEach(([label, href]) => {
+    const link = document.createElement("a");
+    link.className = label === "Analisar" ? "ghost-link selected-action-primary" : "ghost-link";
+    link.href = href;
+    link.textContent = label;
+    actions.appendChild(link);
+  });
+
+  const guided = document.createElement("div");
+  guided.className = "selected-guided-actions";
+  const guidedTitle = document.createElement("strong");
+  guidedTitle.textContent = "Perguntas rápidas";
+  guided.appendChild(guidedTitle);
+  [
+    ["O que mudou no tempo?", `analytics.html?dataset_id=${encodeURIComponent(state.selectedDataset)}&mode=tempo`],
+    ["Há outliers?", `analytics.html?dataset_id=${encodeURIComponent(state.selectedDataset)}&mode=anomalias`],
+    ["Vale cruzar?", `crosswalk.html?dataset_id=${encodeURIComponent(state.selectedDataset)}`],
+    ["Há custo unitário?", `analytics.html?dataset_id=${encodeURIComponent(state.selectedDataset)}&mode=economia`],
+  ].forEach(([label, href]) => {
+    const link = document.createElement("a");
+    link.className = "ghost-link";
+    link.href = href;
+    link.textContent = label;
+    guided.appendChild(link);
+  });
+
+  selectedModel.append(title, metaRow, gaps, actions, guided, createDisclosure("ver campos", [fieldRow], "compact-disclosure"));
 }
 
 async function selectDataset(datasetId) {
   const changed = touchSelectionState(datasetId);
+  syncRadarDatasetUrl();
   if (!changed && state.recentData) {
     renderAll();
     return;
@@ -1578,9 +1631,9 @@ function renderRecentTable() {
     if (!selected || !tableWrap || !tableFrame) {
       recentDataTable.hidden = true;
       recentDataEmpty.hidden = false;
-      recentDataEmpty.textContent = "Escolhe um dataset.";
+      recentDataEmpty.textContent = "Selecione um dataset.";
       recentDataMeta.textContent = "Amostra recente da API.";
-      renderQuickEmpty("Escolhe um dataset para ativar a leitura rápida.");
+      renderQuickEmpty("Selecione um dataset para ativar a leitura rápida.");
       return;
     }
   }
@@ -1593,9 +1646,9 @@ function renderRecentTable() {
   if (!selected) {
     recentDataTable.hidden = true;
     recentDataEmpty.hidden = false;
-    recentDataEmpty.textContent = "Escolhe um dataset.";
+    recentDataEmpty.textContent = "Selecione um dataset.";
     recentDataMeta.textContent = "Amostra recente da API.";
-    renderQuickEmpty("Escolhe um dataset para ativar a leitura rápida.");
+    renderQuickEmpty("Selecione um dataset para ativar a leitura rápida.");
     return;
   }
 
@@ -1752,6 +1805,7 @@ function setupEvents() {
 
   document.getElementById("clearSelectionButton").addEventListener("click", () => {
     touchSelectionState(null);
+    syncRadarDatasetUrl();
     state.recentData = null;
     renderAll();
   });

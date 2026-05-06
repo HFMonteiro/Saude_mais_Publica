@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Metodologia</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=layout-clean-20260429" />
+    <link rel="stylesheet" href="styles.css?v=simplify-20260506" />
   </head>
   <body>
     <main class="methodology-layout">
@@ -13,15 +13,13 @@
         <div>
           <p class="eyebrow">Saúde+ Pública</p>
           <h1><img src="visual_assets/logo.jpg" class="topbar-logo" alt="Logo" /> Metodologia</h1>
-          <p class="meta">Como o protótipo transforma catálogo, metadados e amostras reais em hipóteses de análise.</p>
+          <p class="meta">Como o protótipo transforma catálogo, metadados e amostras reais num processo de revisão analítica prudente.</p>
         </div>
         <div class="topbar-actions">
-          <a href="/" class="top-link">Vista principal</a>
+          <a href="/" class="top-link">Radar</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link">Analytics</a>
-          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link is-active" aria-current="page">Metodologia</a>
-
         </div>
       </header>
 
@@ -29,13 +27,14 @@
         <div>
           <h2>Do dado publicado à pergunta útil</h2>
           <p>
-            A app não tenta substituir validação epidemiológica. Faz triagem: encontra chaves prováveis,
-            mede sinais na amostra e mostra onde há valor potencial para cruzamento.
+            A app não tenta substituir validação epidemiológica nem auditoria estatística. Organiza um processo:
+            selecionar indicadores, validar dimensões, testar correspondências, extrair amostra, tratar sinais,
+            agrupar leituras por tema e só depois interpretar.
           </p>
         </div>
         <aside>
           <strong>Regra central</strong>
-          <p>Quanto mais clara for a chave, a granularidade, a cobertura temporal e a pergunta, maior o valor do cruzamento.</p>
+          <p>Quanto mais clara for a chave, a granularidade, a cobertura temporal e a unidade analítica, maior o valor da leitura.</p>
         </aside>
       </section>
 
@@ -60,40 +59,60 @@
       <section class="methodology-grid">
         <article class="methodology-card">
           <span>1</span>
-          <h2>Catálogo</h2>
-          <p>Carrega datasets e campos da API, normaliza nomes e agrupa por mega-temas: território, acesso, produção, finanças, recursos e qualidade.</p>
+          <h2>Radar</h2>
+          <p>Carrega datasets e campos da API, normaliza nomes, mede prontidão e agrupa por mega-temas para selecionar o indicador de partida.</p>
         </article>
         <article class="methodology-card">
           <span>2</span>
           <h2>Cruzamentos</h2>
-          <p>Procura campos partilhados e classifica a dimensão: temporal, território, entidade, medida ou genérica. O score combina força, confiança e risco.</p>
+          <p>Procura dimensões comuns, testa correspondência e hierarquia entre datasets e estima risco de join antes de combinar dados.</p>
         </article>
         <article class="methodology-card">
           <span>3</span>
           <h2>Dados reais</h2>
-          <p>Sobre amostras leves, calcula perfis, completude, variação, associações numéricas, tendência e PCA simples, sem tratar a amostra como estimativa oficial do dataset.</p>
+          <p>Extrai uma amostra leve da API, mede completude, variação, cobertura, associação, tendência e anomalias sem tratar a amostra como estimativa oficial.</p>
         </article>
         <article class="methodology-card">
           <span>4</span>
-          <h2>Saúde pública</h2>
-          <p>Combina viabilidade técnica, impacto, inequidade proxy e alinhamento PNS-like para priorizar hipóteses de valor público.</p>
+          <h2>Analytics</h2>
+          <p>Transforma esses sinais em leitura temática: resumo, tempo, economia, anomalias e só depois módulos secundários de validação e contexto.</p>
         </article>
       </section>
 
       <section class="panel methodology-steps">
         <div class="panel-heading">
           <div>
-            <h2>Validação antes de usar</h2>
-            <p class="meta">Checklist mínimo para transformar uma hipótese em análise robusta.</p>
+            <h2>Fluxo de trabalho</h2>
+            <p class="meta">A lógica operacional do protótipo segue um pipeline curto e verificável.</p>
           </div>
         </div>
         <ol>
-          <li><strong>Granularidade:</strong> confirmar se a chave representa linha, episódio, entidade, período ou região.</li>
-          <li><strong>Cardinalidade:</strong> medir duplicados e joins 1:1, 1:N ou N:N antes de agregar.</li>
-          <li><strong>Cobertura:</strong> comparar anos, regiões, entidades e campos nulos entre datasets.</li>
-          <li><strong>Semântica:</strong> validar nomes de campos contra dicionários oficiais ou documentação do portal.</li>
+          <li><strong>Selecionar indicador:</strong> partir de um dataset com pergunta concreta e semáforo mínimo de adequação.</li>
+          <li><strong>Selecionar dimensões:</strong> confirmar período, geografia, entidade, categoria e unidade disponíveis.</li>
+          <li><strong>Ver correspondência:</strong> testar se as chaves comuns são reais ou apenas parecidas no nome.</li>
+          <li><strong>Extrair amostra:</strong> ler um recorte leve da API com ordenação estável e consciência de truncamento.</li>
+          <li><strong>Tratar sinais:</strong> medir missing, concentração, outliers, cobertura, robustez temporal e risco de reporte antes da interpretação.</li>
+          <li><strong>Agrupar por tema:</strong> organizar a leitura em tempo, economia, anomalias e contexto analítico útil.</li>
+          <li><strong>Validar discrepâncias:</strong> explicitar bloqueios de denominador, unidade, granularidade e âmbito.</li>
+          <li><strong>Atualizar:</strong> repetir a leitura quando a fonte muda, o período avança ou o cruzamento melhora.</li>
+          <li><strong>Documentar método:</strong> manter metodologia, caveats e repositório alinhados com a lógica mostrada no produto.</li>
+        </ol>
+      </section>
+
+      <section class="panel methodology-steps">
+        <div class="panel-heading">
+          <div>
+            <h2>Validação antes de usar</h2>
+            <p class="meta">Checklist mínimo para transformar um sinal exploratório em análise defensável.</p>
+          </div>
+        </div>
+        <ol>
+          <li><strong>Granularidade:</strong> confirmar se a linha representa episódio, entidade, território, período ou agregado já pré-calculado.</li>
+          <li><strong>Cardinalidade:</strong> medir duplicados e joins 1:1, 1:N ou N:N antes de cruzar ou somar.</li>
+          <li><strong>Cobertura:</strong> comparar anos, regiões, entidades, missing e truncamento entre datasets.</li>
+          <li><strong>Semântica:</strong> validar se o nome do campo corresponde à métrica real e não apenas ao rótulo do portal.</li>
           <li><strong>Denominadores:</strong> confirmar numerador, denominador, unidade, população, período e base contabilística antes de interpretar rácios ou custo unitário.</li>
-          <li><strong>Uso público:</strong> priorizar perguntas com impacto, ação possível e risco interpretativo explicitamente validado.</li>
+          <li><strong>Discrepâncias:</strong> tratar diferenças de âmbito, unidade e geografia como bloqueios explícitos, não como detalhe.</li>
         </ol>
       </section>
 
@@ -108,7 +127,26 @@
           <li><strong>Amostra:</strong> as análises usam uma amostra leve da API, frequentemente truncada e ordenada por período recente.</li>
           <li><strong>Associação:</strong> Pearson, Spearman, PCA e tendências são sinais exploratórios, não prova de causalidade.</li>
           <li><strong>Projeção:</strong> extrapolações lineares devem ser lidas como cenários de triagem, não previsões oficiais.</li>
-          <li><strong>Financeiro × produção:</strong> custo unitário só é interpretável após validar geografia, entidade, unidade, base contabilística e denominador.</li>
+          <li><strong>Financeiro × produção:</strong> custo unitário só é interpretável após validar geografia, entidade, unidade, base contabilística, denominador e períodos comuns.</li>
+        </ol>
+      </section>
+
+      <section class="panel methodology-steps">
+        <div class="panel-heading">
+          <div>
+            <h2>Notas metodológicas da API</h2>
+            <p class="meta">A aplicação expõe dois blocos de leitura para tornar o risco interpretativo visível no próprio produto.</p>
+          </div>
+        </div>
+        <ol>
+          <li><strong>Ontologia interna:</strong> <code>epidemiology_review</code> expõe <code>ontology_version</code>, <code>analytical_intent</code>, <code>surveillance_domain</code>, <code>observation_unit</code>, <code>population_basis</code>, <code>denominator</code>, <code>time_axis</code>, <code>zero_meaning</code>, <code>reporting_process</code>, <code>comparability</code>, <code>evidence_grade</code>, <code>blocking_factors</code> e <code>rule_trace</code>.</li>
+          <li><strong>Domínios de vigilância:</strong> a grelha distingue financeiro, atividade assistencial, cobertura populacional, eventos raros, capacidade/recursos, territorial agregado e administrativo genérico. Cada domínio muda a leitura de zeros, reporte, período e denominador.</li>
+          <li><strong>Ambiguidade baixa confiança:</strong> quando unidade, denominador, eixo temporal, geografia ou significado do zero ficam ambíguos, o estado baixa para <strong>Rever</strong> ou <strong>Frágil</strong>. A regra é conservadora por desenho.</li>
+          <li><strong>Rule trace:</strong> <code>rule_trace</code> mostra regras acionadas, sinal observado, decisão, delta de estado e explicação. Serve para auditar porque uma leitura ficou Pronto, Rever ou Frágil.</li>
+          <li><strong>Blocking factors:</strong> cada travão tem <code>code</code>, <code>label</code>, <code>severity</code>, <code>domain</code>, <code>action</code> e <code>rule_id</code>. Travões típicos: denominador inválido, poucos períodos, zeros suspeitos, atraso de reporte, geografia ausente ou comparabilidade frágil.</li>
+          <li><strong>Calibração por domínio:</strong> as regras são testadas contra fixtures reduzidas inspiradas em datasets SNS reais: Conta do SNS, consultas, utentes inscritos, mortalidade/óbitos e camas/lotação. Estas fixtures calibram limiares de zeros, cauda de reporte e densidade temporal sem expor dados pessoais.</li>
+          <li><strong>Aliases de compatibilidade:</strong> <code>dataset_family</code>, <code>source_reliability_profile</code>, <code>zero_semantics</code> e <code>reporting_lag</code> continuam disponíveis, mas derivam da ontologia formal.</li>
+          <li><strong>Uso correto:</strong> séries, correlações, PCA, projeções e custo unitário só devem ganhar destaque quando passam a grelha de interpretabilidade. A app não produz inferência causal, validade clínica nem resultado oficial.</li>
         </ol>
       </section>
 

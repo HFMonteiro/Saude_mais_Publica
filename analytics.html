@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=ux-flow-20260505" />
+    <link rel="stylesheet" href="styles.css?v=trend-fix-20260506" />
   </head>
   <body>
     <main class="analytics-layout">
@@ -17,31 +17,75 @@
           <p class="meta">Amostras, sinais e validação.</p>
         </div>
         <div class="topbar-actions">
-          <a href="/" class="top-link">Vista principal</a>
+          <a href="/" class="top-link">Radar</a>
           <a href="crosswalk.html" class="top-link">Cruzamentos</a>
           <a href="analytics.html" class="top-link is-active" aria-current="page">Analytics</a>
-          <a href="research.html" class="top-link">Investigação</a>
           <a href="metodologia.html" class="top-link">Metodologia</a>
         </div>
 
       </header>
 
-      <nav class="analytics-tabs" aria-label="Secções de analytics" role="tablist">
-        <button class="analytics-tab is-active" type="button" data-analytics-tab="data">Dados reais</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="finprod">Financeiro × Produção</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="predictive">Projeção</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="semantic">Semântica</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="health">Saúde pública</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="care">Cuidados</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="local">Planos Locais</button>
-        <button class="analytics-tab" type="button" data-analytics-tab="tables">Validação</button>
+      <section id="analyticsContextBar" class="analytics-context-bar" aria-label="Contexto do dataset">
+        <a id="contextDatasetLink" class="context-dataset-link" href="/">
+          <span>Dataset</span>
+          <strong id="contextDataset">A carregar catálogo...</strong>
+        </a>
+        <div>
+          <span>Adequação</span>
+          <strong id="contextReadiness">-</strong>
+        </div>
+        <div>
+          <span>Amostra</span>
+          <strong id="contextSample">-</strong>
+        </div>
+        <div>
+          <span>Período</span>
+          <strong id="contextPeriod">-</strong>
+        </div>
+        <div>
+          <span>Denominador</span>
+          <strong id="contextDenominator">Por validar</strong>
+        </div>
+        <div class="context-actions">
+          <a id="contextRadarLink" class="ghost-link" href="/">Voltar ao Radar</a>
+          <a class="ghost-link" href="metodologia.html">Ver método usado</a>
+        </div>
+      </section>
+
+      <nav class="analytics-tabs analytics-tabs-primary" aria-label="Modos principais de analytics" role="tablist">
+        <button class="analytics-tab is-active" type="button" data-analytics-tab="data" data-mode="resumo">Resumo rápido</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="predictive" data-mode="tempo">Tempo</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="finprod" data-mode="economia">Economia</button>
+        <button class="analytics-tab" type="button" data-analytics-tab="anomalies" data-mode="anomalias">Anomalias</button>
       </nav>
+
+      <details class="analytics-secondary-nav">
+        <summary>Leituras avançadas</summary>
+        <div class="analytics-secondary-actions" role="group" aria-label="Leituras avançadas">
+          <button type="button" data-secondary-tab="semantic">Semântica</button>
+          <button type="button" data-secondary-tab="health">Saúde pública</button>
+          <button type="button" data-secondary-tab="care">Cuidados</button>
+          <button type="button" data-secondary-tab="local">Planos locais</button>
+          <button type="button" data-secondary-tab="tables">Validação</button>
+        </div>
+      </details>
+
+      <section id="analyticsEpiReview" class="analytics-epi-review" aria-label="Revisão epidemiológica"></section>
+      <section id="analyticsExecutiveSummary" class="analytics-executive-summary" aria-label="Resumo executivo da análise"></section>
+      <section id="guidedAnalysisBar" class="guided-analysis-bar" aria-label="Análise guiada">
+        <strong>Análise guiada</strong>
+        <button type="button" data-guide-action="tempo">O que mudou no tempo?</button>
+        <button type="button" data-guide-action="anomalias">Há outliers?</button>
+        <button type="button" data-guide-action="cruzar">Vale cruzar?</button>
+        <button type="button" data-guide-action="economia">Há custo unitário?</button>
+      </section>
+      <section id="analysisConfidenceChips" class="analysis-confidence-chips" aria-label="Travões de confiança"></section>
 
       <section class="panel analytics-panel data-analytics-panel" data-tab-panel="data">
         <div class="panel-heading">
           <div>
             <h2>Amostra real</h2>
-            <p id="dataAnalyticsMeta" class="meta">Escolhe um dataset para medir sinais reais.</p>
+            <p id="dataAnalyticsMeta" class="meta">Selecione um dataset para medir sinais reais.</p>
           </div>
           <div id="dataAnalyticsStatus" class="sync-state">A aguardar catálogo...</div>
         </div>
@@ -53,7 +97,7 @@
             <span>Dataset</span>
             <select id="dataDatasetSelect" name="data-dataset"></select>
           </label>
-          <div class="dataset-mode-toggle" role="group" aria-label="Modo de escolha de dataset">
+          <div class="dataset-mode-toggle" role="group" aria-label="Modo de seleção de dataset">
             <button id="dataRichMode" class="is-active" type="button">Dataset rico</button>
             <button id="dataManualMode" type="button">Dataset atual</button>
           </div>
@@ -89,6 +133,16 @@
 
         <div id="dataInsightCards" class="data-insight-cards"></div>
 
+        <section class="panel analytics-panel epi-sequence-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Sequência de revisão</h2>
+              <p class="meta">Unidade e população primeiro; resultados e diagnóstico depois.</p>
+            </div>
+          </div>
+          <div id="epidemiologyReviewFlow" class="epi-review-flow"></div>
+        </section>
+
         <section class="key-data-panel">
           <section>
             <div class="panel-heading">
@@ -103,32 +157,15 @@
             <strong>Driver selecionado</strong>
             <p class="meta">Abre um dado-chave.</p>
           </aside>
-          <section>
-            <div class="panel-heading">
-              <div>
-                <h2>PCA das medidas</h2>
-                <p id="dataPcaMeta" class="meta">Medidas que explicam maior variação.</p>
-              </div>
-            </div>
-            <div class="pca-wrap">
-              <svg id="dataPcaChart" role="img" aria-label="PCA das medidas numéricas"></svg>
-            </div>
-          </section>
         </section>
 
-        <section class="data-analytics-grid">
+        <section class="data-analytics-grid data-useful-grid">
           <section>
             <div class="panel-heading">
               <div>
-                <h2>Correlação entre medidas</h2>
-                <p class="meta">Oculta duplicados e relações derivadas.</p>
+                <h2>Tendência temporal</h2>
+                <p class="meta">Vigilância temporal: só mostrar evolução contínua quando o período é comparável e os zeros são interpretáveis.</p>
               </div>
-            </div>
-            <div id="dataCorrelationList" class="data-correlation-list"></div>
-          </section>
-          <section>
-            <div class="panel-heading">
-              <h2>Tendência temporal</h2>
             </div>
             <div class="data-trend-wrap">
               <svg id="dataTrendChart" role="img" aria-label="Tendência temporal da amostra"></svg>
@@ -136,10 +173,40 @@
           </section>
         </section>
 
-        <section class="data-analytics-grid">
+        <details class="analytics-details-panel">
+          <summary>Detalhes e diagnóstico</summary>
+          <section class="data-analytics-grid data-diagnostic-grid">
+            <section>
+              <div class="panel-heading">
+                <div>
+                  <h2>Correlação entre medidas</h2>
+                  <p class="meta">Diagnóstico exploratório; não é causalidade nem resultado oficial.</p>
+                </div>
+              </div>
+              <div id="dataCorrelationList" class="data-correlation-list"></div>
+            </section>
+            <section>
+              <div class="panel-heading">
+                <div>
+                  <h2>PCA das medidas</h2>
+                  <p id="dataPcaMeta" class="meta">Diagnóstico de variação; usar só para orientar leitura.</p>
+                </div>
+              </div>
+              <div class="pca-wrap">
+                <svg id="dataPcaChart" role="img" aria-label="PCA das medidas numéricas"></svg>
+              </div>
+            </section>
+          </section>
+        </details>
+
+        <details class="analytics-details-panel">
+          <summary>Medidas e dimensões</summary>
+          <section class="data-analytics-grid">
           <section>
             <div class="panel-heading">
-              <h2>Medidas</h2>
+              <div>
+                <h2>Medidas</h2>
+              </div>
             </div>
             <div id="dataNumericProfiles" class="data-profile-list"></div>
           </section>
@@ -149,7 +216,8 @@
             </div>
             <div id="dataCategoricalProfiles" class="data-profile-list"></div>
           </section>
-        </section>
+          </section>
+        </details>
       </section>
 
       <section class="panel analytics-panel" data-tab-panel="finprod" hidden>
@@ -217,7 +285,7 @@
             <h2>Projeção exploratória simples</h2>
             <p id="predictiveMeta" class="meta">Projeção curta, não oficial.</p>
           </div>
-          <button id="predictiveDataButton" class="ghost-button" type="button">Escolher dataset</button>
+          <button id="predictiveDataButton" class="ghost-button" type="button">Selecionar dataset</button>
         </div>
 
         <section id="predictiveStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada da projeção"></section>
@@ -282,6 +350,38 @@
             </div>
           </div>
           <div id="predictiveDatasetCandidates" class="predictive-dataset-candidates"></div>
+        </section>
+      </section>
+
+      <section class="panel analytics-panel anomalies-panel" data-tab-panel="anomalies" hidden>
+        <div class="panel-heading">
+          <div>
+            <h2>Anomalias e fragilidades</h2>
+            <p id="anomalyMeta" class="meta">Outliers, nulos, variação elevada e dimensões concentradas.</p>
+          </div>
+          <div id="anomalyStatus" class="sync-state">A aguardar amostra...</div>
+        </div>
+        <section id="anomalyStoryStrip" class="analytics-story-strip" aria-label="Leitura recomendada de anomalias"></section>
+        <section id="anomalySummary" class="anomaly-summary" aria-label="Resumo de anomalias"></section>
+        <section class="anomaly-grid">
+          <article>
+            <div class="panel-heading">
+              <h2>Medidas a rever</h2>
+            </div>
+            <div id="anomalyMeasureList" class="analytics-list"></div>
+          </article>
+          <article>
+            <div class="panel-heading">
+              <h2>Dimensões em contexto</h2>
+            </div>
+            <div id="anomalyDimensionList" class="analytics-list"></div>
+          </article>
+          <article>
+            <div class="panel-heading">
+              <h2>Travões de leitura</h2>
+            </div>
+            <div id="anomalyWarningList" class="analytics-list"></div>
+          </article>
         </section>
       </section>
 
@@ -576,7 +676,7 @@
           <div class="panel-heading">
             <div>
               <h2>Onde começar</h2>
-              <p class="meta">Escolhe intervenção por maturidade dos dados.</p>
+              <p class="meta">Selecione a intervenção de acordo com a maturidade dos dados.</p>
             </div>
           </div>
           <div id="careOpsMatrix" class="care-ops-matrix" aria-label="Matriz de intervenção versus prontidão dos dados"></div>
@@ -798,6 +898,6 @@
       </footer>
     </main>
 
-    <script src="analytics.js?v=ux-flow-20260505" defer></script>
+    <script src="analytics.js?v=trend-fix-20260506" defer></script>
   </body>
 </html>

@@ -26,17 +26,19 @@ const state = {
   _searchTextCache: new Map(),
   _themeOptionsSignature: "",
   _fieldOptionsSignature: "",
-  fieldRenderLimit: 80,
-  pairRenderLimit: 120,
-  pathRenderLimit: 40,
+  fieldRenderLimit: 5,
+  pairRenderLimit: 5,
+  pathRenderLimit: 5,
 };
 
-const FIELD_RENDER_STEP = 80;
-const PAIR_RENDER_STEP = 120;
-const PATH_RENDER_STEP = 40;
+const FIELD_RENDER_STEP = 5;
+const PAIR_RENDER_STEP = 5;
+const PATH_RENDER_STEP = 5;
 const TITLE_CACHE_SIZE = 700;
 const SEARCH_TEXT_CACHE_SIZE = 700;
 const PATH_THEME_CACHE_SIZE = 120;
+const initialParams = new URLSearchParams(window.location.search);
+const initialDatasetId = initialParams.get("dataset_id");
 
 const THEME_COLORS = {
   "Acesso & Produção": "#2f6fdb",
@@ -76,6 +78,7 @@ const crossStatFocus = document.getElementById("crossStatFocus");
 const semanticGraph = document.getElementById("semanticModelGraph");
 const semanticGraphMeta = document.getElementById("semanticGraphMeta");
 const semanticGraphLegend = document.getElementById("semanticGraphLegend");
+const crossRadarLink = document.getElementById("crossRadarLink");
 
 let analysisLoadTimer = null;
 let filterTimer = null;
@@ -453,6 +456,9 @@ async function loadAnalysis() {
   resetRenderWindows();
   invalidateViewState();
 
+  if (!state.selectedDataset && initialDatasetId && state.datasetById.has(initialDatasetId)) {
+    setSelectedDataset(initialDatasetId);
+  }
   if (state.selectedDataset && !state.datasetById.has(state.selectedDataset)) {
     setSelectedDataset(null);
       state.selectedPairKey = null;
@@ -523,6 +529,7 @@ function setSelectedDataset(datasetId) {
     return;
   }
   state.selectedDataset = datasetId;
+  syncDatasetUrl();
   state._pairRowsCache = null;
   state.pairRenderLimit = PAIR_RENDER_STEP;
   state.pathRenderLimit = PATH_RENDER_STEP;
@@ -530,6 +537,18 @@ function setSelectedDataset(datasetId) {
     state.selectedPairKey = null;
     state.selectedPairIsAuto = true;
   }
+}
+
+function syncDatasetUrl() {
+  if (!window.history?.replaceState) return;
+  const params = new URLSearchParams(window.location.search);
+  if (state.selectedDataset) {
+    params.set("dataset_id", state.selectedDataset);
+  } else {
+    params.delete("dataset_id");
+  }
+  const query = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
 }
 
 function createShowMoreButton(text, onClick) {
@@ -597,6 +616,11 @@ function renderSummary() {
   const visible = filteredDatasets();
   const {rows} = getFilteredFieldRows();
   const linkCount = getVisibleLinks().length;
+  if (crossRadarLink) {
+    crossRadarLink.href = state.selectedDataset
+      ? `index.html?dataset_id=${encodeURIComponent(state.selectedDataset)}`
+      : "index.html";
+  }
 
   crossStatFields.textContent = rows.length.toLocaleString("pt-PT");
   crossStatPairs.textContent = linkCount.toLocaleString("pt-PT");
@@ -842,7 +866,9 @@ function renderPairTable() {
           const icon = document.createElement("button");
           icon.type = "button";
           icon.className = "ghost-button pair-focus-button";
-          icon.textContent = "foco";
+          icon.textContent = "f";
+          icon.setAttribute("aria-label", `Focar ${value}`);
+          icon.title = "Focar dataset";
           icon.onclick = (event) => {
             event.stopPropagation();
             setSelectedDataset(index === 0 ? datasetA : datasetB);
@@ -1184,6 +1210,7 @@ function renderCrossDetail() {
   sharedSection.append(sharedTitle, sharedList);
 
   const recipe = buildJoinRecipe(fields, datasetA, datasetB);
+  const epidemiology = buildEpidemiologyCompatibility(fields, datasetA, datasetB);
   const suggestion = document.createElement("div");
   suggestion.className = "cross-detail-item join-recipe";
   const suggestionTitle = document.createElement("h3");
@@ -1208,8 +1235,32 @@ function renderCrossDetail() {
   suggestionMeta.className = "meta";
   suggestionMeta.textContent = `Registo de análise: ${new Date((state.analysisAt || Date.now()) * 1000).toLocaleString("pt-PT")}`;
   suggestion.append(suggestionTitle, recipeGrid, suggestionMeta);
+  const epi = document.createElement("div");
+  epi.className = "cross-detail-item join-recipe";
+  const epiTitle = document.createElement("h3");
+  epiTitle.textContent = "Compatibilidade epidemiológica";
+  const epiGrid = document.createElement("div");
+  epiGrid.className = "join-recipe-grid";
+  [
+    ["Unidade analítica", epidemiology.observationUnit],
+    ["Período comparável", epidemiology.periodComparability],
+    ["População / denominador", epidemiology.populationAtRisk],
+    ["Âmbito", epidemiology.scope],
+  ].forEach(([label, value]) => {
+    const block = document.createElement("div");
+    const blockLabel = document.createElement("span");
+    blockLabel.textContent = label;
+    const blockValue = document.createElement("strong");
+    blockValue.textContent = value;
+    block.append(blockLabel, blockValue);
+    epiGrid.appendChild(block);
+  });
+  const epiMeta = document.createElement("p");
+  epiMeta.className = "meta";
+  epiMeta.textContent = epidemiology.caveat;
+  epi.append(epiTitle, epiGrid, epiMeta);
 
-  crossDetail.append(connection, sharedSection, suggestion);
+  crossDetail.append(connection, sharedSection, suggestion, epi);
 }
 
 function buildJoinRecipe(fields, datasetA, datasetB) {
@@ -1233,14 +1284,37 @@ function buildJoinRecipe(fields, datasetA, datasetB) {
   };
 }
 
+function buildEpidemiologyCompatibility(fields, datasetA, datasetB) {
+  const haystack = normalizeSearch([
+    ...(fields || []),
+    datasetA?.title,
+    datasetB?.title,
+    ...(datasetA?.fields || []),
+    ...(datasetB?.fields || []),
+  ].join(" "));
+  const temporal = /(period|ano|anos|mes|m[eê]s|data|semana|trimestre)/.test(haystack);
+  const territorial = /(regiao|ars|uls|concelho|distrito|freguesia|municipio|município)/.test(haystack);
+  const entity = /(hospital|entidade|unidade|uls|servico|serviço|instituicao|instituição)/.test(haystack);
+  const population = /(utente|utentes|populacao|população|inscrito|inscritos|amostra|episodio|episódio)/.test(haystack);
+  return {
+    observationUnit: entity ? "entidade / unidade compatível" : (territorial ? "território compatível" : "unidade por validar"),
+    periodComparability: temporal ? "há eixo temporal comum a validar" : "sem eixo temporal explícito",
+    populationAtRisk: population ? "há sinal de população / denominador" : "população e denominador por validar",
+    scope: territorial ? "território pode alinhar com prudência" : "âmbito estrutural, sem leitura territorial clara",
+    caveat: temporal && population
+      ? "Cruzar só depois de confirmar cardinalidade, período observado e significado do denominador."
+      : "Esta ligação pode ser útil para exploração, mas não deve sugerir comparabilidade epidemiológica sem validação adicional.",
+  };
+}
+
 function renderPaths() {
   if (!state.selectedPairKey && !state.selectedDataset) {
-    pathMetaText.textContent = "Escolhe um foco para ver caminhos de 2 saltos.";
+    pathMetaText.textContent = "Selecione um foco para ver caminhos de 2 saltos.";
     renderRecommendedPath([]);
     clearElement(crossPaths);
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Escolhe um foco para calcular caminhos.";
+    empty.textContent = "Selecione um foco para calcular caminhos.";
     crossPaths.appendChild(empty);
     return;
   }
@@ -1392,7 +1466,7 @@ function renderRecommendedPath(paths) {
     empty.className = "meta";
     empty.textContent = state.selectedDataset || state.selectedPairKey
       ? "Sem caminho de 2 saltos forte para este foco."
-      : "Escolhe dataset, campo ou par para recomendar caminho.";
+      : "Selecione dataset, campo ou par para recomendar caminho.";
     recommendedPath.appendChild(empty);
     return;
   }

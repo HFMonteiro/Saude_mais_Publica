@@ -26,6 +26,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlencode
 from urllib.request import Request, urlopen
 
+import epidemiology_rules as epi_rules
+
 ODS_BASE = "https://transparencia.sns.gov.pt/api/explore/v2.1"
 CACHE_TTL_SECONDS = 60 * 5
 MAX_CACHE_ENTRIES = 80
@@ -42,7 +44,7 @@ MAX_OPPORTUNITY_DATASETS = 80
 MAX_RECENT_LIMIT = 100
 DEFAULT_DATA_ANALYTICS_LIMIT = 80
 MAX_DATA_ANALYTICS_LIMIT = 100
-ANALYTICS_METHOD_VERSION = "2026-04-29.validation-v1"
+ANALYTICS_METHOD_VERSION = "2026-05-06.epi-ontology-v1"
 DEFAULT_MIN_SCORE = 1
 MAX_MIN_SCORE = 10
 DEFAULT_RECENT_LIMIT = 60
@@ -721,24 +723,425 @@ def _analysis_readiness(
         hard_cap = min(hard_cap, 70)
     score = min(score, hard_cap)
     score = max(0, min(100, round(score)))
-    gaps = []
+    gap_codes = []
     if coverage_ratio is not None and coverage_ratio < 0.2:
-        gaps.append("cobertura")
+        gap_codes.append("cobertura")
     if not temporal_field:
-        gaps.append("tempo")
+        gap_codes.append("tempo")
     if numeric_count < 2:
-        gaps.append("medidas")
+        gap_codes.append("medidas")
     if warning_count:
-        gaps.append("avisos")
+        gap_codes.append("avisos")
     if max_missing_ratio >= 0.25:
-        gaps.append("missing")
-    if not gaps:
-        gaps.append("denominador")
+        gap_codes.append("missing")
+    if not gap_codes:
+        gap_codes.append("contexto")
+    gap_labels = {
+        "cobertura": "cobertura",
+        "tempo": "tempo",
+        "medidas": "medidas",
+        "avisos": "avisos",
+        "missing": "missing",
+        "contexto": "contexto",
+    }
     return {
         "score": score,
         "band": _readiness_band(score),
         "label": {"pronto": "Pronto", "rever": "Rever", "fragil": "Frágil"}[_readiness_band(score)],
-        "gaps": gaps[:3],
+        "gaps": [gap_labels[code] for code in gap_codes[:3]],
+        "gap_codes": gap_codes[:3],
+        "gap_labels": [gap_labels[code] for code in gap_codes[:3]],
+    }
+
+
+def _analysis_quality_summary(
+    *,
+    temporal_field: str | None,
+    coverage_ratio: float | None,
+    max_missing_ratio: float,
+    numeric_profiles: list[dict],
+    warnings: list[str],
+) -> dict:
+    warning_text = " ".join(warnings).lower()
+    metric_roles = {str(profile.get("measure_role") or "") for profile in numeric_profiles}
+    denominator_warning = bool(re.search(r"denominador|unidade|racio|rácio|taxa|ratio", warning_text))
+    if denominator_warning:
+        denominator_status = "rever"
+        denominator_label = "denominador por validar"
+    elif {"taxa", "monetario"} & metric_roles:
+        denominator_status = "rever"
+        denominator_label = "validar unidade"
+    elif metric_roles:
+        denominator_status = "pronto"
+        denominator_label = "medida simples"
+    else:
+        denominator_status = "fragil"
+        denominator_label = "sem medida válida"
+
+    if temporal_field:
+        period_status = "pronto"
+        period_label = temporal_field
+    else:
+        period_status = "fragil"
+        period_label = "sem eixo temporal"
+
+    if coverage_ratio is None:
+        coverage_status = "rever"
+        coverage_label = "cobertura por validar"
+    elif coverage_ratio >= 0.8:
+        coverage_status = "pronto"
+        coverage_label = f"cobertura {round(coverage_ratio * 100, 1)}%"
+    elif coverage_ratio >= 0.2:
+        coverage_status = "rever"
+        coverage_label = f"cobertura {round(coverage_ratio * 100, 1)}%"
+    else:
+        coverage_status = "fragil"
+        coverage_label = f"cobertura {round(coverage_ratio * 100, 1)}%"
+
+    if max_missing_ratio >= 0.5:
+        granularity_status = "fragil"
+        granularity_label = "granularidade frágil"
+    elif max_missing_ratio >= 0.25:
+        granularity_status = "rever"
+        granularity_label = "granularidade a rever"
+    else:
+        granularity_status = "pronto"
+        granularity_label = "granularidade legível"
+
+    return {
+        "denominator": {"status": denominator_status, "label": denominator_label},
+        "period": {"status": period_status, "label": period_label},
+        "coverage": {"status": coverage_status, "label": coverage_label, "ratio": round(coverage_ratio, 4) if coverage_ratio is not None else None},
+        "granularity": {"status": granularity_status, "label": granularity_label, "max_missing_ratio": round(max_missing_ratio, 4)},
+    }
+
+
+def _field_names_for_review(fields: list[dict] | list[str] | None) -> list[str]:
+    names: list[str] = []
+    for field in fields or []:
+        if isinstance(field, dict):
+            names.append(str(field.get("name") or ""))
+            names.append(str(field.get("label") or ""))
+        else:
+            names.append(str(field))
+    return [name for name in names if name]
+
+
+def _dataset_review_family(
+    *,
+    dataset_id: str = "",
+    dataset_title: str = "",
+    mega_theme: str = "",
+    fields: list[dict] | list[str] | None = None,
+    numeric_profiles: list[dict] | None = None,
+) -> dict:
+    domain, _trace = epi_rules.classify_surveillance_domain(
+        dataset_id=dataset_id,
+        dataset_title=dataset_title,
+        mega_theme=mega_theme,
+        fields=fields,
+        numeric_profiles=numeric_profiles,
+    )
+    return {
+        "code": domain.get("code") or "administrativo_generico",
+        "label": domain.get("label") or "Administrativo genérico",
+        "zero_policy": {
+            "financeiro": "zero pode ser não execução, atraso contabilístico ou transformação",
+            "atividade_assistencial": "zero recente depois de histórico ativo é suspeito",
+            "cobertura_populacional": "zero é frágil salvo evidência explícita",
+            "eventos_raros": "zero pode ser plausível com definição estável",
+            "capacidade_recursos": "zero pode representar ausência estrutural ou erro",
+            "territorial_agregado": "zero depende da regra de agregação territorial",
+        }.get(domain.get("code"), "zero por validar"),
+        "lag_sensitivity": "alta" if domain.get("code") in {"atividade_assistencial", "cobertura_populacional"} else "media",
+        "review_focus": domain.get("detail") or "unidade, denominador, período e reporte",
+        "signals": (domain.get("signals") or [])[:5],
+    }
+
+
+def _infer_periodicity(temporal_points: list[dict], temporal_field: str | None, family: dict) -> dict:
+    labels = [str(point.get("period") or "") for point in temporal_points if point.get("period")]
+    field_text = _normalize_token(temporal_field or "")
+    if labels and all(re.fullmatch(r"\d{4}-\d{2}", label) for label in labels):
+        code = "mensal"
+        label = "mensal provável"
+    elif labels and all(re.fullmatch(r"\d{4}", label) for label in labels):
+        code = "anual"
+        label = "anual provável"
+    elif re.search(r"\b(mes|mensal|mês)\b", field_text):
+        code = "mensal"
+        label = "mensal provável"
+    elif re.search(r"\b(ano|anual)\b", field_text):
+        code = "anual"
+        label = "anual provável"
+    else:
+        code = "desconhecida"
+        label = "periodicidade por validar"
+    expected = {
+        "atividade_assistencial": "mensal ou anual",
+        "financeiro": "mensal, trimestral ou anual",
+        "cobertura_populacional": "mensal ou anual",
+        "eventos_raros": "mensal ou anual",
+        "capacidade_recursos": "mensal ou anual",
+        "territorial_agregado": "anual ou agregado",
+    }.get(family.get("code"), "por validar")
+    return {"code": code, "label": label, "expected": expected}
+
+
+def _source_reliability_profile(
+    *,
+    family: dict,
+    temporal_field: str | None,
+    ordering: str,
+    coverage_ratio: float | None,
+    temporal_points: list[dict],
+    local_dimension_count: int,
+) -> dict:
+    periodicity = _infer_periodicity(temporal_points, temporal_field, family)
+    if ordering == "temporal_desc" and (coverage_ratio is None or coverage_ratio < 0.8):
+        truncation_status = "rever"
+        truncation_label = "recorte recente provável"
+    elif coverage_ratio is not None and coverage_ratio < 0.2:
+        truncation_status = "fragil"
+        truncation_label = "cobertura baixa"
+    else:
+        truncation_status = "pronto"
+        truncation_label = "sem truncamento forte"
+    denominator_status = "rever" if family.get("code") in {"financeiro", "cobertura_populacional", "atividade_assistencial"} else "pronto"
+    territorial_status = "pronto" if local_dimension_count else ("rever" if family.get("code") == "territorial_agregado" else "pronto")
+    return {
+        "dataset_family": family.get("code"),
+        "update_pattern": periodicity["label"],
+        "expected_periodicity": periodicity,
+        "known_truncation_risk": {
+            "status": truncation_status,
+            "label": truncation_label,
+            "detail": "Risco estimado a partir da ordenação, cobertura e densidade temporal.",
+        },
+        "denominator_reliability": {
+            "status": denominator_status,
+            "label": "denominador sensível" if denominator_status == "rever" else "denominador estruturalmente menos crítico",
+            "detail": family.get("review_focus") or "validar unidade analítica",
+        },
+        "territorial_stability": {
+            "status": territorial_status,
+            "label": f"{local_dimension_count} dimensão(ões) territoriais/entidade" if local_dimension_count else "sem dimensão territorial explícita",
+            "detail": "Comparação territorial exige geografia e entidade estáveis.",
+        },
+    }
+
+
+def _zero_semantics_review(
+    *,
+    family: dict,
+    temporal_points: list[dict],
+    values: list[float],
+    ordering: str,
+) -> dict:
+    zero_review, _blockers, _trace = epi_rules.evaluate_zero_meaning(
+        surveillance_domain={"code": family.get("code"), "label": family.get("label")},
+        temporal_points=temporal_points,
+        values=values,
+        ordering=ordering,
+    )
+    return zero_review
+
+
+def _reporting_lag_review(
+    *,
+    family: dict,
+    ordering: str,
+    temporal_points: list[dict],
+    values: list[float],
+    source_profile: dict,
+) -> dict:
+    coverage_ratio = None
+    if isinstance(source_profile, dict):
+        coverage_ratio = ((source_profile.get("coverage_assessment") or {}).get("ratio"))
+    reporting_review, _blockers, _trace = epi_rules.evaluate_reporting_process(
+        surveillance_domain={"code": family.get("code"), "label": family.get("label")},
+        ordering=ordering,
+        temporal_points=temporal_points,
+        values=values,
+        coverage_ratio=coverage_ratio,
+    )
+    return reporting_review
+
+
+def _finprod_blockers(
+    *,
+    numerator_valid: bool,
+    denominator_valid: bool,
+    shared_periods: list[str],
+    pairs: list[tuple[float, float]],
+    benchmark_rows: list[dict],
+) -> list[dict]:
+    blockers = []
+    if not numerator_valid:
+        blockers.append({"code": "numerador_nao_monetario", "label": "numerador não monetário", "severity": "error", "domain": "measure", "action": "validar variável financeira", "rule_id": "COMP-001"})
+    if not denominator_valid:
+        blockers.append({"code": "denominador_nao_confirmado", "label": "denominador de produção por validar", "severity": "error", "domain": "denominator", "action": "confirmar denominador e unidade", "rule_id": "DENOM-002"})
+    if not shared_periods:
+        blockers.append({"code": "sem_periodos_comuns", "label": "sem períodos comuns", "severity": "error", "domain": "time", "action": "alinhar período entre datasets", "rule_id": "TIME-001"})
+    elif len(shared_periods) < 3:
+        blockers.append({"code": "poucos_periodos", "label": "poucos períodos comuns", "severity": "warning", "domain": "time", "action": "obter mais períodos comparáveis", "rule_id": "TIME-002"})
+    if shared_periods and not pairs:
+        blockers.append({"code": "producao_invalida", "label": "produção sem valores válidos", "severity": "error", "domain": "comparability", "action": "rever valores de produção", "rule_id": "COMP-001"})
+    if not benchmark_rows:
+        blockers.append({"code": "ambito_por_validar", "label": "âmbito territorial/entidade por validar", "severity": "warning", "domain": "geography", "action": "confirmar geografia e entidade", "rule_id": "GEO-001"})
+    return blockers
+
+
+def _epidemiology_review(
+    *,
+    dataset_id: str = "",
+    dataset_title: str = "",
+    mega_theme: str = "",
+    fields: list[dict] | list[str] | None = None,
+    temporal_field: str | None = None,
+    ordering: str = "api_default",
+    quality_summary: dict | None = None,
+    quality_warnings: list[str] | None = None,
+    numeric_profiles: list[dict] | None = None,
+    categorical_profiles: list[dict] | None = None,
+    trends: list[dict] | None = None,
+) -> dict:
+    return epi_rules.build_epidemiology_review(
+        dataset_id=dataset_id,
+        dataset_title=dataset_title,
+        mega_theme=mega_theme,
+        fields=fields,
+        temporal_field=temporal_field,
+        ordering=ordering,
+        quality_summary=quality_summary,
+        quality_warnings=quality_warnings,
+        numeric_profiles=numeric_profiles,
+        categorical_profiles=categorical_profiles,
+        trends=trends,
+    )
+
+    quality_summary = quality_summary or {}
+    quality_warnings = quality_warnings or []
+    numeric_profiles = numeric_profiles or []
+    categorical_profiles = categorical_profiles or []
+    trends = trends or []
+    local_dimension_count = sum(
+        1
+        for profile in categorical_profiles
+        if re.search(r"\b(regiao|ars|uls|hospital|concelho|distrito|entidade|unidade)\b", _normalize_token(str(profile.get("field") or "")))
+    )
+    temporal_points = (trends[0].get("points") if trends else []) or []
+    active_values = [float(point.get("value") or point.get("avg") or 0) for point in temporal_points if _coerce_number(point.get("value", point.get("avg"))) is not None]
+    min_records_per_period = min((int(point.get("count") or 0) for point in temporal_points), default=0)
+    coverage_ratio = quality_summary.get("coverage", {}).get("ratio")
+    family = _dataset_review_family(
+        dataset_id=dataset_id,
+        dataset_title=dataset_title,
+        mega_theme=mega_theme,
+        fields=fields,
+        numeric_profiles=numeric_profiles,
+    )
+    source_profile = _source_reliability_profile(
+        family=family,
+        temporal_field=temporal_field,
+        ordering=ordering,
+        coverage_ratio=coverage_ratio,
+        temporal_points=temporal_points,
+        local_dimension_count=local_dimension_count,
+    )
+    zero_review = _zero_semantics_review(
+        family=family,
+        temporal_points=temporal_points,
+        values=active_values,
+        ordering=ordering,
+    )
+    reporting_review = _reporting_lag_review(
+        family=family,
+        ordering=ordering,
+        temporal_points=temporal_points,
+        values=active_values,
+        source_profile=source_profile,
+    )
+
+    observation_status = "pronto" if (temporal_field or local_dimension_count or numeric_profiles) else "fragil"
+    observation_label = "agregado por período" if temporal_field else ("agregado territorial" if local_dimension_count else "unidade por validar")
+    observation_detail = "A unidade observada parece agregada e legível." if observation_status == "pronto" else "Confirmar se a linha representa episódio, entidade ou agregado."
+
+    population_status = quality_summary.get("denominator", {}).get("status") or "rever"
+    population_label = quality_summary.get("denominator", {}).get("label") or "denominador por validar"
+    population_detail = "Há base mínima para interpretar a população em risco." if population_status == "pronto" else "Confirmar denominador, unidade e população exposta."
+
+    if not temporal_field or len(temporal_points) < 3 or min_records_per_period < 2:
+        period_status = "fragil"
+    elif len(temporal_points) < 6 or min_records_per_period < 3:
+        period_status = "rever"
+    else:
+        period_status = "pronto"
+    period_label = f"{len(temporal_points)} períodos válidos" if temporal_points else "sem períodos válidos"
+    periodicity = source_profile.get("expected_periodicity", {})
+    period_detail = (
+        f"Períodos comparáveis para leitura temporal; periodicidade {periodicity.get('label', 'por validar')}."
+        if period_status == "pronto"
+        else f"Poucos períodos, baixa densidade ou ausência de eixo temporal; periodicidade {periodicity.get('label', 'por validar')}."
+    )
+
+    coverage_status = quality_summary.get("coverage", {}).get("status") or "rever"
+    coverage_label = quality_summary.get("coverage", {}).get("label") or "cobertura por validar"
+    coverage_detail = "A amostra cobre boa parte do total conhecido." if coverage_status == "pronto" else "A leitura pode estar limitada por amostra parcial."
+
+    granularity_status = quality_summary.get("granularity", {}).get("status") or "rever"
+    granularity_label = quality_summary.get("granularity", {}).get("label") or "granularidade por validar"
+    granularity_detail = f"{local_dimension_count} dimensão(ões) territoriais/entidade com leitura útil." if granularity_status == "pronto" else "Granularidade, missing ou âmbito ainda limitam a comparação."
+
+    blocking_factors = []
+    if observation_status == "fragil":
+        blocking_factors.append({"code": "observation_unit_unclear", "label": "unidade de observação por validar", "severity": "warning", "action": "confirmar linha analítica"})
+    if population_status != "pronto":
+        blocking_factors.append({"code": "population_at_risk_unclear", "label": "população/denominador por validar", "severity": "warning" if population_status == "rever" else "error", "action": "validar denominador e população"})
+    if period_status != "pronto":
+        blocking_factors.append({"code": "period_comparability_low", "label": "período pouco comparável", "severity": "warning" if period_status == "rever" else "error", "action": "obter mais períodos ou densidade"})
+    if zero_review["status"] != "pronto":
+        blocking_factors.append({
+            "code": f"zero_semantics_{zero_review.get('reason_code') or 'review'}",
+            "label": zero_review["label"],
+            "severity": "error" if zero_review["status"] == "fragil" else "warning",
+            "action": "confirmar significado do zero antes de interpretar tendência",
+        })
+    if reporting_review["status"] != "pronto":
+        blocking_factors.append({
+            "code": f"reporting_lag_{reporting_review.get('reason_code') or 'review'}",
+            "label": reporting_review["label"],
+            "severity": "warning",
+            "action": "validar atualização e completude da fonte",
+        })
+    if coverage_status == "fragil":
+        blocking_factors.append({"code": "coverage_low", "label": "cobertura insuficiente", "severity": "warning", "action": "evitar leitura substantiva da amostra"})
+    if granularity_status == "fragil":
+        blocking_factors.append({"code": "granularity_low", "label": "granularidade frágil", "severity": "warning", "action": "alinhar geografia, entidade e agregação"})
+
+    overall_status = "pronto"
+    if any(item["severity"] == "error" for item in blocking_factors):
+        overall_status = "fragil"
+    elif blocking_factors:
+        overall_status = "rever"
+
+    return {
+        "overall": {
+            "status": overall_status,
+            "label": {"pronto": "Pronto", "rever": "Rever", "fragil": "Frágil"}[overall_status],
+            "summary": "A série pode ser interpretada." if overall_status == "pronto" else ("Há leitura exploratória com cautela." if overall_status == "rever" else "A interpretação deve ficar em modo de revisão."),
+        },
+        "dataset_family": family,
+        "source_reliability_profile": source_profile,
+        "observation_unit": {"status": observation_status, "label": observation_label, "detail": observation_detail},
+        "population_at_risk": {"status": population_status, "label": population_label, "detail": population_detail},
+        "period_comparability": {"status": period_status, "label": period_label, "detail": period_detail, "valid_periods": len(temporal_points), "min_records_per_period": min_records_per_period},
+        "zero_semantics": zero_review,
+        "reporting_lag": reporting_review,
+        "coverage_assessment": {"status": coverage_status, "label": coverage_label, "detail": coverage_detail, "ratio": coverage_ratio},
+        "granularity_assessment": {"status": granularity_status, "label": granularity_label, "detail": granularity_detail, "local_dimension_count": local_dimension_count},
+        "blocking_factors": blocking_factors,
+        "warnings": quality_warnings[:5],
     }
 
 
@@ -1085,6 +1488,17 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
             if role not in {"desconhecido"}
         )
         metric_candidate_count = max(metric_candidate_count, semantic_metric_count)
+        review_family = _dataset_review_family(
+            dataset_id=dataset_id,
+            dataset_title=title,
+            mega_theme=mega_theme,
+            fields=entry.get("fields", []) or [],
+            numeric_profiles=[
+                {"measure_role": role, "label": role}
+                for role, count in (semantic_profile.get("role_counts") or {}).items()
+                if count and role != "desconhecido"
+            ],
+        )
         dataset_theme_by_id[dataset_id] = mega_theme
         items.append(
             {
@@ -1097,6 +1511,7 @@ def _analyze_datasets(datasets_payload: dict) -> dict:
                 "fields": sorted({str(f) for f in field_names}),
                 "facets": facets,
                 "semantic_profile": semantic_profile,
+                "dataset_family": review_family,
                 "finprod_role": semantic_profile["finprod_role"],
                 "quality_flags": facets["quality_flags"],
             }
@@ -1597,6 +2012,7 @@ def _build_analytics(analysis: dict, min_score: int) -> dict:
                 "facets": item.get("facets", {}),
                 "quality_flags": item.get("quality_flags", []),
                 "analysis_readiness": item.get("analysis_readiness", {}),
+                "dataset_family": item.get("dataset_family", {}),
             }
             for item in datasets
         ],
@@ -2724,6 +3140,27 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         warning_count=len(sample_warnings),
         max_missing_ratio=max_missing_ratio,
     )
+    coverage_ratio = round(len(records) / total_records, 4) if total_records else None
+    quality_summary = _analysis_quality_summary(
+        temporal_field=temporal_field,
+        coverage_ratio=coverage_ratio,
+        max_missing_ratio=max_missing_ratio,
+        numeric_profiles=numeric_profiles,
+        warnings=sample_warnings,
+    )
+    epidemiology_review = _epidemiology_review(
+        dataset_id=dataset_id,
+        dataset_title=title,
+        mega_theme=mega_theme,
+        fields=fields,
+        temporal_field=temporal_field,
+        ordering=ordering,
+        quality_summary=quality_summary,
+        quality_warnings=sample_warnings,
+        numeric_profiles=numeric_profiles,
+        categorical_profiles=categorical_profiles,
+        trends=trends,
+    )
     result = {
         "dataset_id": dataset_id,
         "title": title,
@@ -2743,10 +3180,12 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
             "requested_limit": safe_limit,
             "total_records": total_records,
             "ordering": ordering,
-            "coverage_ratio": round(len(records) / total_records, 4) if total_records else None,
+            "coverage_ratio": coverage_ratio,
             "max_missing_ratio": round(max_missing_ratio, 4),
         },
         "quality_warnings": sample_warnings,
+        "quality_summary": quality_summary,
+        "epidemiology_review": epidemiology_review,
         "analysis_readiness": readiness,
         "schema_quality": _schema_quality(fields, observed_columns),
         "semantic_profile": _dataset_semantic_profile(
@@ -3110,6 +3549,13 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
     numerator_valid = financial_role == "monetario"
     denominator_valid = production_role == "contagem"
     hard_blocked = not numerator_valid or not denominator_valid or not shared_periods
+    blockers = _finprod_blockers(
+        numerator_valid=numerator_valid,
+        denominator_valid=denominator_valid,
+        shared_periods=shared_periods,
+        pairs=pairs,
+        benchmark_rows=benchmark_rows,
+    )
     numerator_label = "soma monetária por período comum" if numerator_valid else "soma de volume/quantidade por período comum"
     denominator_label = "soma de produção/atividade por período comum" if denominator_valid else "medida não confirmada como contagem"
     unit_warnings = [
@@ -3178,6 +3624,7 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "matched_periods": len(rows),
             "blocked": hard_blocked,
             "blocked_reason": "validar numerador monetário, denominador de produção e períodos comuns" if hard_blocked else None,
+            "blocked_reason_code": blockers[0]["code"] if blockers else None,
             "avg_unit_cost": unit_cost_avg,
             "median_unit_cost": unit_cost_median,
             "expense_output_correlation": round(correlation, 4) if correlation is not None else None,
@@ -3186,6 +3633,7 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "robustness": robustness,
             "sample_pairs": len(pairs),
         },
+        "blocking_factors": blockers,
         "comparability": {"checks": comparability_checks},
         "aggregation": {
             "period": shared_granularity,
@@ -3198,6 +3646,61 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
             "period_key": "periodo normalizado",
             "matched_periods": len(shared_periods),
             "entity_benchmark_available": bool(benchmark_rows),
+        },
+        "coverage": {
+            "matched_period_ratio": round((len(rows) / max(1, len(shared_periods))), 4) if shared_periods else 0,
+            "shared_periods": len(shared_periods),
+            "valid_pairs": len(pairs),
+        },
+        "quality_summary": {
+            "denominator": {"status": "pronto" if denominator_valid else "fragil", "label": denominator_label},
+            "period": {"status": "pronto" if len(rows) >= 6 else ("rever" if len(rows) >= 3 else "fragil"), "label": f"{len(rows)} períodos em comum"},
+            "coverage": {"status": "pronto" if len(pairs) >= 6 else ("rever" if pairs else "fragil"), "label": f"{len(pairs)} pares válidos"},
+            "granularity": {"status": "pronto" if benchmark_rows else "rever", "label": "âmbito comparável" if benchmark_rows else "âmbito por validar"},
+        },
+        "epidemiology_review": {
+            "overall": {
+                "status": "fragil" if hard_blocked else ("rever" if blockers else "pronto"),
+                "label": "Frágil" if hard_blocked else ("Rever" if blockers else "Pronto"),
+                "summary": "Só leitura exploratória enquanto houver travões." if blockers else "Par comparável para leitura exploratória.",
+            },
+            "dataset_family": {
+                "code": "custo_unitario",
+                "label": "Custo unitário",
+                "zero_policy": "zero no denominador bloqueia leitura de rácio",
+                "lag_sensitivity": "alta",
+                "review_focus": "numerador, denominador, âmbito e período comum",
+                "signals": ["financeiro", "produção", "período comum"],
+            },
+            "source_reliability_profile": {
+                "dataset_family": "custo_unitario",
+                "update_pattern": shared_granularity,
+                "expected_periodicity": {"code": shared_granularity, "label": shared_granularity, "expected": "mesma granularidade nos dois datasets"},
+                "known_truncation_risk": {
+                    "status": "rever" if len(rows) < len(shared_periods) else "pronto",
+                    "label": "pares válidos abaixo dos períodos comuns" if len(rows) < len(shared_periods) else "sem truncamento forte",
+                    "detail": "A leitura depende da interseção temporal e de produção > 0.",
+                },
+                "denominator_reliability": {
+                    "status": "pronto" if denominator_valid else "fragil",
+                    "label": denominator_label,
+                    "detail": "Custo unitário exige denominador produtivo explícito.",
+                },
+                "territorial_stability": {
+                    "status": "pronto" if benchmark_rows else "rever",
+                    "label": "âmbito comparável" if benchmark_rows else "âmbito por validar",
+                    "detail": "Comparar só quando geografia/entidade forem compatíveis.",
+                },
+            },
+            "observation_unit": {"status": "pronto", "label": "agregado por período comum", "detail": "A comparação usa séries agregadas por período comum."},
+            "population_at_risk": {"status": "pronto" if denominator_valid else "fragil", "label": denominator_label, "detail": "O denominador deve representar produção válida."},
+            "period_comparability": {"status": "pronto" if len(rows) >= 6 else ("rever" if len(rows) >= 3 else "fragil"), "label": f"{len(rows)} períodos em comum", "detail": "A comparação depende da interseção temporal real.", "valid_periods": len(rows), "min_records_per_period": len(pairs)},
+            "zero_semantics": {"status": "rever" if any((row.get('production_value') or 0) <= 0 for row in rows) else "pronto", "label": "produção com zeros" if any((row.get('production_value') or 0) <= 0 for row in rows) else "zeros não dominantes", "detail": "Zeros no denominador bloqueiam ou fragilizam o custo unitário.", "zero_periods": sum(1 for row in rows if (row.get('production_value') or 0) <= 0), "active_periods": sum(1 for row in rows if (row.get('production_value') or 0) > 0), "zero_tail": 0, "interpretation": "zero no denominador não é custo zero", "reason_code": "unit_cost_denominator_zero"},
+            "reporting_lag": {"status": "rever" if len(rows) < len(shared_periods) else "pronto", "label": "possível truncamento temporal" if len(rows) < len(shared_periods) else "sem atraso visível", "detail": "Nem todos os períodos comuns geraram pares válidos.", "lag_suspected_periods": [], "lag_confidence": "baixa", "reason_code": "paired_period_loss" if len(rows) < len(shared_periods) else "no_lag_signal"},
+            "coverage_assessment": {"status": "pronto" if len(pairs) >= 6 else ("rever" if pairs else "fragil"), "label": f"{len(pairs)} pares válidos", "detail": "A cobertura útil depende de pares com produção > 0.", "ratio": round((len(pairs) / max(1, len(shared_periods))), 4) if shared_periods else 0},
+            "granularity_assessment": {"status": "pronto" if benchmark_rows else "rever", "label": "âmbito comparável" if benchmark_rows else "âmbito por validar", "detail": "Geografia e entidade devem ser comparáveis nos dois datasets.", "local_dimension_count": len(benchmark_rows)},
+            "blocking_factors": blockers,
+            "warnings": unit_warnings[:5],
         },
         "unit_warnings": unit_warnings,
         "methodology": {
@@ -3240,6 +3743,18 @@ def _build_finance_production(financial_dataset: str, production_dataset: str, l
         },
         "generated_at": int(_now()),
     }
+    result["epidemiology_review"] = epi_rules.build_finprod_epidemiology_review(
+        numerator_valid=numerator_valid,
+        denominator_valid=denominator_valid,
+        shared_periods=shared_periods,
+        pairs=pairs,
+        benchmark_rows=benchmark_rows,
+        rows=rows,
+        shared_granularity=shared_granularity,
+        numerator_label=numerator_label,
+        denominator_label=denominator_label,
+        unit_warnings=unit_warnings,
+    )
     _cache_set(cache_key, result)
     return result
 
@@ -3295,11 +3810,13 @@ def _build_finprod_recommendations(financial_dataset: str, production_dataset: s
                 "blocked": bool(summary.get("blocked")),
                 "numerator_role": numerator.get("role") or "desconhecido",
                 "denominator_role": denominator.get("role") or "desconhecido",
+                "blocking_factors": payload.get("blocking_factors") or [],
                 "financial_range": best.get("financial_range") or {},
                 "production_range": best.get("production_range") or {},
                 "trend_label_financial": (payload.get("financial_dataset") or {}).get("trend_label"),
                 "trend_label_production": (payload.get("production_dataset") or {}).get("trend_label"),
                 "is_current": candidate_id == production_dataset,
+                "why_better": f"{summary.get('matched_periods') or 0} períodos comuns; {summary.get('sample_pairs') or 0} pares válidos; robustez {summary.get('robustness') or 'insuficiente'}",
             }
         )
 
@@ -3609,9 +4126,14 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
 
     def _send_exception_json(self, exc: Exception, *, status: int = 502):
         if isinstance(exc, ValueError):
-            self._send_error_json(400, str(exc))
+            self._json(400, {"error": str(exc), "error_kind": "invalid_request", "action": "corrigir parâmetros"})
             return
-        self._send_error_json(status, "Upstream data service unavailable")
+        kind = getattr(exc, "kind", "upstream_unavailable")
+        action = {
+            "upstream_contract_error": "rever contrato com a API",
+            "upstream_unavailable": "tentar novamente",
+        }.get(kind, "tentar novamente")
+        self._json(status, {"error": "Upstream data service unavailable", "error_kind": kind, "action": action})
 
     def _rate_limited(self) -> bool:
         retry_after = _rate_limit_retry_after(self.client_address[0])
@@ -3834,6 +4356,7 @@ class TransparenciaHandler(SimpleHTTPRequestHandler):
                             "copy_safe": True,
                         },
                         "quality_warnings": analysis_payload.get("quality_warnings", []),
+                        "epidemiology_review": analysis_payload.get("epidemiology_review", {}),
                         "generated_at": int(_now()),
                     }
                     self._json(200, payload, cache_control="no-store")
