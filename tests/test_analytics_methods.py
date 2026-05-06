@@ -197,6 +197,59 @@ class AnalyticsMethodTests(unittest.TestCase):
         self.assertEqual(spatial["top_values"], [])
         self.assertNotIn("{'lon'", str(spatial))
 
+    def test_geopoint_string_uses_named_lat_lon_keys(self):
+        def mock_fetch(path, params=None, cacheable=True):
+            if path.endswith("/records"):
+                return {
+                    "results": [
+                        {"localizacao": '{"lon":-7.9281554,"lat":37.0238973}', "regiao": "Sul", "valor": 1},
+                        {"localizacao": '{"lon":-8.7982706,"lat":39.7414812}', "regiao": "Centro", "valor": 2},
+                    ],
+                    "total_count": 2,
+                }
+            return geo_dataset(records_count=2)
+
+        with patch.object(server, "_ods_fetch", side_effect=mock_fetch):
+            payload = server._build_data_analytics("geo-json", 80)
+
+        spatial = next(profile for profile in payload["categorical_profiles"] if profile["field"] == "localizacao")
+        self.assertEqual(spatial["semantic_role"], "geolocation")
+        self.assertEqual(spatial["sample_points"][0]["lat"], 37.0239)
+        self.assertEqual(spatial["sample_points"][0]["lon"], -7.92816)
+        self.assertLess(spatial["bounds"]["lon_min"], 0)
+        self.assertGreater(spatial["bounds"]["lat_min"], 0)
+
+    def test_geopoint_sample_points_include_place_context(self):
+        def mock_fetch(path, params=None, cacheable=True):
+            if path.endswith("/records"):
+                return {
+                    "results": [
+                        {
+                            "localizacao": '{"lon":-7.9281554,"lat":37.0238973}',
+                            "regiao": "Região de Saúde do Algarve",
+                            "instituicao": "Hospital de Faro",
+                            "valor": 1,
+                        },
+                        {
+                            "localizacao": '{"lon":-7.9281554,"lat":37.0238973}',
+                            "regiao": "Região de Saúde do Algarve",
+                            "instituicao": "Hospital de Faro",
+                            "valor": 2,
+                        },
+                    ],
+                    "total_count": 2,
+                }
+            return geo_dataset(records_count=2)
+
+        with patch.object(server, "_ods_fetch", side_effect=mock_fetch):
+            payload = server._build_data_analytics("geo-context", 80)
+
+        spatial = next(profile for profile in payload["categorical_profiles"] if profile["field"] == "localizacao")
+        point = spatial["sample_points"][0]
+        self.assertEqual(point["label"], "Hospital de Faro")
+        self.assertEqual(point["region"], "Região de Saúde do Algarve")
+        self.assertEqual(point["count"], 2)
+
     def test_percent_prefixed_measure_is_rate_role(self):
         role = server._measure_role({"name": "total_utentes_sem_mdf_atribuido0", "label": "% Total Utentes sem MdF Atribuído"})
         self.assertEqual(role, "taxa")

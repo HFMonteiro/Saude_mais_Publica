@@ -74,9 +74,12 @@ const dataStatSuitability = document.getElementById("dataStatSuitability");
 const dataInsightCards = document.getElementById("dataInsightCards");
 const dataCorrelationList = document.getElementById("dataCorrelationList");
 const dataTrendChart = document.getElementById("dataTrendChart");
+const dataTerritoryMeta = document.getElementById("dataTerritoryMeta");
+const dataTerritoryMap = document.getElementById("dataTerritoryMap");
 const dataNumericProfiles = document.getElementById("dataNumericProfiles");
 const dataCategoricalProfiles = document.getElementById("dataCategoricalProfiles");
 const dataFeatureImportance = document.getElementById("dataFeatureImportance");
+const dataAnalysisAxes = document.getElementById("dataAnalysisAxes");
 const featureDetailPanel = document.getElementById("featureDetailPanel");
 const dataPcaMeta = document.getElementById("dataPcaMeta");
 const dataPcaChart = document.getElementById("dataPcaChart");
@@ -85,6 +88,7 @@ const analyticsExecutiveSummary = document.getElementById("analyticsExecutiveSum
 const epidemiologyReviewFlow = document.getElementById("epidemiologyReviewFlow");
 const guidedAnalysisBar = document.getElementById("guidedAnalysisBar");
 const analysisConfidenceChips = document.getElementById("analysisConfidenceChips");
+const analysisProvenance = document.getElementById("analysisProvenance");
 const finProdMeta = document.getElementById("finProdMeta");
 const finProdStatus = document.getElementById("finProdStatus");
 const finProdStoryStrip = document.getElementById("finProdStoryStrip");
@@ -146,6 +150,8 @@ const publicHealthKpis = document.getElementById("publicHealthKpis");
 const publicHealthPriorityList = document.getElementById("publicHealthPriorityList");
 const publicHealthLayerControls = document.getElementById("publicHealthLayerControls");
 const publicHealthNationalSummary = document.getElementById("publicHealthNationalSummary");
+const publicHealthGeoMeta = document.getElementById("publicHealthGeoMeta");
+const publicHealthPointMap = document.getElementById("publicHealthPointMap");
 const publicHealthMap = document.getElementById("publicHealthMap");
 const publicHealthDecisionDetail = document.getElementById("publicHealthDecisionDetail");
 const publicHealthQuestions = document.getElementById("publicHealthQuestions");
@@ -407,6 +413,7 @@ function setupTabAccessibility() {
 }
 
 function clearElement(element) {
+  if (!element) return;
   element.replaceChildren();
 }
 
@@ -434,6 +441,10 @@ function firstWarning(warnings = [], fallback = "Validar fonte, denominador, uni
 
 function activeDatasetId() {
   return state.selectedDataDataset || state.dataPayload?.dataset_id || selectedCatalogDataset()?.dataset_id || "";
+}
+
+function hasCurrentDataPayload() {
+  return Boolean(state.selectedDataDataset && state.dataPayload?.dataset_id === state.selectedDataDataset);
 }
 
 function datasetScopedHref(page, extraParams = {}) {
@@ -522,6 +533,48 @@ function renderConfidenceChips() {
   });
 }
 
+function renderAnalysisProvenance(payload = state.dataPayload) {
+  if (!analysisProvenance) return;
+  clearElement(analysisProvenance);
+  const review = epidemiologyReview(payload);
+  const fit = payload ? readinessInfo(payload) : readinessInfo(selectedCatalogDataset() || {});
+  const intro = document.createElement("div");
+  intro.className = "analysis-provenance-intro";
+  const title = document.createElement("strong");
+  title.textContent = "Como surge esta leitura";
+  const detail = document.createElement("span");
+  detail.textContent = payload
+    ? "Fonte aberta SNS -> amostra lida -> perfis de campos -> revisão epidemiológica -> sinais observados."
+    : "Selecione um dataset para ver a cadeia entre fonte, amostra, revisão e resultados exploratórios.";
+  intro.append(title, detail);
+
+  const steps = document.createElement("ol");
+  const sampleText = payload
+    ? `${formatNumber(payload.sample_size)} registos${payload.sample?.coverage_ratio == null ? "" : ` · cobertura ${formatDecimal(payload.sample.coverage_ratio * 100, 1)}%`}`
+    : "sem amostra ativa";
+  const reviewText = review
+    ? `${reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever")} · ${compactTitle(review?.evidence_grade?.label || analysisQualityLine(payload), 76)}`
+    : "denominador, período, zeros e cobertura por validar";
+  [
+    ["Fonte", payload?.title ? compactTitle(payload.title, 82) : "Dataset escolhido no Radar ou no seletor do Analytics"],
+    ["Amostra", sampleText],
+    ["Revisão", reviewText],
+  ].forEach(([label, text], index) => {
+    const item = document.createElement("li");
+    const number = document.createElement("b");
+    number.textContent = String(index + 1);
+    const body = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const value = document.createElement("small");
+    value.textContent = text;
+    body.append(name, value);
+    item.append(number, body);
+    steps.appendChild(item);
+  });
+  analysisProvenance.append(intro, steps);
+}
+
 function renderExecutiveSummary() {
   if (!analyticsExecutiveSummary) return;
   clearElement(analyticsExecutiveSummary);
@@ -534,35 +587,28 @@ function renderExecutiveSummary() {
   const blockers = review?.blocking_factors || [];
   const cards = state.dataLoading
     ? [
-        ["Unidade e população", "A analisar amostra...", "A leitura aparece quando a API devolver estrutura e cobertura.", "neutral"],
-        ["É interpretável?", "Rever", "A aguardar denominador, período, cobertura e granularidade.", "rever"],
-        ["Travão principal", "Cobertura por validar", "Ainda não há base para interpretar resultados.", "rever"],
-        ["Próxima ação", "Aguardar análise", "Depois seguir para vigilância temporal, anomalias ou economia.", "neutral"],
+        ["Pode ser usado?", "A analisar amostra...", "A aguardar denominador, período, cobertura e granularidade.", "rever"],
+        ["Porquê?", "A validar contexto", "A leitura aparece quando a API devolver estrutura e cobertura.", "neutral"],
+        ["Próxima ação", "Aguardar análise", "Depois seguir para território, sinais observados e diagnóstico.", "neutral"],
       ]
     : [
         [
-          "Unidade e população",
-          payload ? compactTitle(review?.observation_unit?.label || "unidade por validar", 52) : "Selecionar dataset",
-          payload ? shortSentence(populationBasis?.detail || "Validar população em risco e unidade observada.", 94) : "Selecione um dataset para obter base de revisão antes da interpretação.",
-          reviewToneClass(review?.observation_unit?.status || "rever"),
-        ],
-        [
-          "É interpretável?",
+          "Pode ser usado?",
           payload ? reviewStatusLabel(reviewOverallStatus(review) || fit.band || "rever") : "Rever",
           payload ? analysisQualityLine(payload) : readinessDetail(fit),
           reviewToneClass(reviewOverallStatus(review) || fit.band || "rever"),
         ],
         [
-          "Travão principal",
+          "Porquê?",
           payload ? compactTitle(blockers[0]?.label || "sem travão crítico", 52) : "sem amostra ativa",
           payload ? shortSentence(blockers[0]?.action || "Manter leitura exploratória até validar contexto epidemiológico.", 92) : "Corre a análise para medir risco real.",
           blockers.length ? reviewToneClass(blockers[0]?.severity || "rever") : "pronto",
         ],
         [
-          "Próxima ação",
-          payload ? (timeAxis?.status === "pronto" ? "Ler resultados úteis" : "Validar período e reporte") : "Analisar dados",
-          payload ? (timeAxis?.status === "pronto" ? "Prosseguir para tendência, anomalias ou economia." : shortSentence(timeAxis?.detail || "Confirmar períodos e densidade temporal antes de ler tendência.", 90)) : "Depois seguir para vigilância temporal, anomalias ou economia.",
-          "neutral",
+          "Base",
+          payload ? compactTitle(review?.observation_unit?.label || populationBasis?.label || "unidade por validar", 52) : "Selecionar dataset",
+          payload ? shortSentence(populationBasis?.detail || "Validar população em risco e unidade observada.", 94) : "Selecione um dataset para obter base de revisão antes da interpretação.",
+          reviewToneClass(review?.observation_unit?.status || populationBasis?.status || "rever"),
         ],
       ];
   cards.forEach(([labelText, valueText, detailText, tone]) => {
@@ -626,15 +672,12 @@ function renderEpidemiologyReview(payload = state.dataPayload) {
     label: compactTitle(`${zero.label || "zeros por validar"} · ${reporting.label || "reporte por validar"}`, 58),
     detail: `${zero.detail || ""} ${reporting.detail || ""}`.trim(),
   };
+  const blockers = review.blocking_factors || [];
+  const population = review.population_basis || review.population_at_risk;
   const sections = [
-    ["Domínio", review.surveillance_domain || {status: reviewOverallStatus(review), label: review.dataset_family?.label, detail: review.dataset_family?.review_focus || review.dataset_family?.zero_policy}],
-    ["Intenção", review.analytical_intent || {status: reviewOverallStatus(review), label: "Triagem exploratória", detail: "Validar interpretabilidade antes de ler sinais úteis."}],
-    ["Unidade observada", review.observation_unit],
-    ["População/denominador", review.population_basis || review.population_at_risk],
-    ["Eixo temporal", reviewTimeAxis(review)],
-    ["Zeros/reporte", zeroReporting],
-    ["Grau evidência", review.evidence_grade || {status: reviewOverallStatus(review), label: reviewStatusLabel(reviewOverallStatus(review)), detail: review.overall?.summary}],
-    ["Comparabilidade", review.comparability || review.granularity_assessment],
+    ["Confiança", review.evidence_grade || {status: reviewOverallStatus(review), label: reviewStatusLabel(reviewOverallStatus(review)), detail: review.overall?.summary || "Grau interno de prudência da análise."}],
+    ["Base", {status: review.observation_unit?.status || population?.status || "rever", label: compactTitle(`${review.observation_unit?.label || "unidade"} · ${population?.label || "denominador"}`, 58), detail: population?.detail || review.observation_unit?.detail || "Validar unidade, população e denominador."}],
+    ["Travões", blockers[0] ? {status: blockers[0].severity === "error" ? "fragil" : "rever", label: blockers.length === 1 ? blockers[0].label : `${blockers.length} travões de leitura`, detail: blockers.map((item) => item.label).slice(0, 3).join(" · ")} : zeroReporting],
   ];
   sections.forEach(([labelText, item]) => {
     const card = document.createElement("article");
@@ -1082,7 +1125,7 @@ async function loadAnalytics() {
   populateFinProdOptions();
   analyticsStatus.textContent = `Atualizado · ${new Date().toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"})}`;
   renderAll();
-  if (state.selectedDataDataset && !state.dataPayload && !state.dataLoading) {
+  if (state.selectedDataDataset && !hasCurrentDataPayload() && !state.dataLoading) {
     loadDataAnalytics().catch(showDataError);
   }
 }
@@ -1190,6 +1233,8 @@ async function loadDataAnalytics() {
     renderPredictiveAnalytics();
   } else if (state.activeTab === "anomalies") {
     renderAnomalies();
+  } else if (state.activeTab === "health") {
+    renderPublicHealthMatrix();
   } else {
     renderDataAnalytics();
   }
@@ -1232,8 +1277,9 @@ function renderDataLoadingState() {
   badge.className = "suitability-badge is-rever";
   badge.textContent = "Rever";
   dataStatSuitability.appendChild(badge);
-  [dataInsightCards, dataCorrelationList, dataNumericProfiles, dataCategoricalProfiles, dataFeatureImportance].forEach(clearElement);
+  [dataInsightCards, dataCorrelationList, dataNumericProfiles, dataCategoricalProfiles, dataFeatureImportance, dataTerritoryMeta].forEach(clearElement);
   clearElement(dataTrendChart);
+  clearElement(dataTerritoryMap);
   clearElement(dataPcaChart);
   dataPcaMeta.textContent = "A aguardar medidas numéricas da amostra.";
 }
@@ -2135,6 +2181,7 @@ function renderDataAnalytics() {
   renderExecutiveSummary();
   renderEpidemiologyReviewFlow();
   renderConfidenceChips();
+  renderAnalysisProvenance();
   const payload = state.dataPayload;
   if (state.dataLoading) {
     renderDataLoadingState();
@@ -2169,6 +2216,8 @@ function renderDataAnalytics() {
     clearElement(dataNumericProfiles);
     clearElement(dataCategoricalProfiles);
     clearElement(dataTrendChart);
+    clearElement(dataTerritoryMeta);
+    clearElement(dataTerritoryMap);
     clearElement(dataFeatureImportance);
     clearElement(dataPcaChart);
     dataPcaMeta.textContent = "Projeção das medidas numéricas para encontrar campos que explicam maior variação.";
@@ -2239,6 +2288,7 @@ function renderDataAnalytics() {
   renderDataInsights(payload);
   renderDataCorrelations(payload);
   renderDataTrend(payload);
+  renderDataTerritory(payload);
   renderNumericProfiles(payload);
   renderCategoricalProfiles(payload);
   renderFeatureImportance(payload);
@@ -2267,7 +2317,7 @@ function renderDataInsights(payload) {
   const fit = readinessInfo(payload);
   addCard({
     label: "Fit da amostra",
-    value: `${fit.label || "Rever"} ${fit.score ?? 0}`,
+    value: fit.label || "Rever",
     detail: readinessDetail(fit),
     tone: `quality-${fit.band || "fragil"}`,
   });
@@ -2297,10 +2347,11 @@ function renderDataInsights(payload) {
 
   const remainingSlots = Math.max(1, 4 - dataInsightCards.children.length);
   insights.slice(0, remainingSlots).forEach((insight) => {
+    const fragile = fit.band === "fragil" || reviewOverallStatus(epidemiologyReview(payload)) === "fragil";
     addCard({
-      label: insight.label,
+      label: fragile ? "Sinal observado" : insight.label,
       value: insight.value,
-      detail: insight.detail,
+      detail: fragile ? `${insight.label}: ${insight.detail}. Não ler como resultado final.` : insight.detail,
     });
   });
 }
@@ -2324,8 +2375,31 @@ function createCorrelationMetric(label, value) {
   return metric;
 }
 
+function diagnosticCaveat(payload) {
+  const review = epidemiologyReview(payload);
+  const coverage = payload?.sample?.coverage_ratio;
+  const timeAxis = reviewTimeAxis(review);
+  const periods = Number(timeAxis?.valid_periods || (payload?.trends?.[0]?.points || []).length || 0);
+  const reasons = [];
+  if (coverage != null && coverage < 0.5) reasons.push(`cobertura ${formatDecimal(coverage * 100, 1)}%`);
+  if (periods > 0 && periods < 3) reasons.push(`${formatNumber(periods)} períodos`);
+  if (reviewOverallStatus(review) === "fragil") reasons.push("evidência frágil");
+  if (!reasons.length) return null;
+  return `Exploratório; não usar como evidência substantiva com ${reasons.slice(0, 2).join(" e ")}.`;
+}
+
+function appendDiagnosticCaveat(container, payload) {
+  const caveat = diagnosticCaveat(payload);
+  if (!caveat) return;
+  const note = document.createElement("div");
+  note.className = "diagnostic-caveat";
+  note.textContent = caveat;
+  container.appendChild(note);
+}
+
 function renderDataCorrelations(payload) {
   clearElement(dataCorrelationList);
+  appendDiagnosticCaveat(dataCorrelationList, payload);
   const rows = payload.correlations || [];
   const exclusions = payload.correlation_exclusions || [];
   if (!rows.length) {
@@ -2412,8 +2486,11 @@ function renderDataCorrelations(payload) {
 
 function renderFeatureImportance(payload) {
   clearElement(dataFeatureImportance);
+  clearElement(dataAnalysisAxes);
   clearElement(featureDetailPanel);
   const rows = payload.feature_importance || [];
+  const axisRows = rows.filter((row) => isAnalysisAxisFeature(row, payload));
+  const signalRows = rows.filter((row) => !isAnalysisAxisFeature(row, payload));
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -2425,10 +2502,19 @@ function renderFeatureImportance(payload) {
     featureDetailPanel.append(detail);
     return;
   }
-  const maxScore = Math.max(...rows.map((row) => row.score), 1);
-  const selected = rows.find((row) => row.field === state.selectedFeatureKey) || rows[0];
+  renderAnalysisAxes(axisRows, payload);
+  if (!signalRows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Sem medidas substantivas suficientes; use os eixos de análise como contexto.";
+    dataFeatureImportance.appendChild(empty);
+    renderFeatureDetail(axisRows[0], {axis: true});
+    return;
+  }
+  const maxScore = Math.max(...signalRows.map((row) => row.score), 1);
+  const selected = signalRows.find((row) => row.field === state.selectedFeatureKey) || signalRows[0];
   state.selectedFeatureKey = selected.field;
-  const visibleRows = state.dataDetailExpanded.features ? rows : rows.slice(0, 5);
+  const visibleRows = state.dataDetailExpanded.features ? signalRows : signalRows.slice(0, 5);
   visibleRows.forEach((row, index) => {
     const item = document.createElement("button");
     item.type = "button";
@@ -2446,7 +2532,7 @@ function renderFeatureImportance(payload) {
     bar.style.width = `${Math.max(6, (row.score / maxScore) * 100)}%`;
     body.append(title, meta, bar);
     const score = document.createElement("em");
-    score.textContent = formatDecimal(row.score, 1);
+    score.textContent = featureBand(row.score);
     item.append(rank, body, score);
     item.addEventListener("click", () => {
       state.selectedFeatureKey = row.field;
@@ -2454,9 +2540,9 @@ function renderFeatureImportance(payload) {
     });
     dataFeatureImportance.appendChild(item);
   });
-  if (!state.dataDetailExpanded.features && rows.length > visibleRows.length) {
+  if (!state.dataDetailExpanded.features && signalRows.length > visibleRows.length) {
     dataFeatureImportance.appendChild(createSmallButton(
-      `Mostrar mais ${rows.length - visibleRows.length} dados-chave`,
+      `Mostrar mais ${signalRows.length - visibleRows.length} dados-chave`,
       () => {
         state.dataDetailExpanded.features = true;
         renderFeatureImportance(payload);
@@ -2467,14 +2553,61 @@ function renderFeatureImportance(payload) {
   renderFeatureDetail(selected);
 }
 
-function renderFeatureDetail(row) {
+function isAnalysisAxisFeature(row, payload) {
+  const text = normalizeSearchText([row.field, row.label, row.kind, ...(row.drivers || [])].join(" "));
+  return row.field === payload?.temporal_field
+    || /periodo|período|tempo|ano|mes|mês|data|trimestre|semana|dia|localizacao|localização|geografia|territorio|território|regiao|região|uls|hospital|entidade|instituicao|instituição/.test(text);
+}
+
+function featureBand(score) {
+  if (score >= 75) return "Forte";
+  if (score >= 55) return "Útil";
+  return "A rever";
+}
+
+function renderAnalysisAxes(rows, payload) {
+  if (!dataAnalysisAxes) return;
+  clearElement(dataAnalysisAxes);
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = payload.temporal_field ? "Eixo temporal detetado no resumo da amostra." : "Sem eixos explícitos suficientes.";
+    dataAnalysisAxes.appendChild(empty);
+    return;
+  }
+  rows.slice(0, 5).forEach((row) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "analysis-axis-row";
+    const title = document.createElement("strong");
+    title.textContent = row.label || row.field;
+    const meta = document.createElement("small");
+    meta.textContent = `${axisRoleLabel(row, payload)} · ${row.drivers?.slice(0, 2).join(" · ") || "contexto de leitura"}`;
+    const badge = document.createElement("span");
+    badge.textContent = "Contexto";
+    item.append(title, meta, badge);
+    item.addEventListener("click", () => renderFeatureDetail(row, {axis: true}));
+    dataAnalysisAxes.appendChild(item);
+  });
+}
+
+function axisRoleLabel(row, payload) {
+  const text = normalizeSearchText([row.field, row.label, ...(row.drivers || [])].join(" "));
+  if (row.field === payload?.temporal_field || /periodo|tempo|ano|mes|data|trimestre/.test(text)) return "Eixo temporal";
+  if (/localizacao|geografia|territorio|regiao|uls|hospital|entidade|instituicao/.test(text)) return "Eixo territorial/entidade";
+  return "Eixo de segmentação";
+}
+
+function renderFeatureDetail(row, options = {}) {
   clearElement(featureDetailPanel);
   if (!row) return;
   const title = document.createElement("strong");
   title.textContent = row.label || row.field;
   const meta = document.createElement("p");
   meta.className = "meta";
-  meta.textContent = `${row.kind} · ${row.selection === "forte" ? "sinal forte" : "sinal exploratório"} · score ${formatDecimal(row.score, 1)}`;
+  meta.textContent = options.axis
+    ? `${row.kind} · eixo de contexto · usar para estratificar a análise`
+    : `${row.kind} · ${row.selection === "forte" ? "sinal forte" : "sinal exploratório"} · triagem ${featureBand(row.score)}`;
   const drivers = document.createElement("div");
   drivers.className = "feature-driver-list";
   (row.drivers || ["sinal exploratório"]).forEach((driver) => {
@@ -2508,6 +2641,7 @@ function renderPcaChart(payload) {
     dataPcaChart.appendChild(empty);
     return;
   }
+  const caveat = diagnosticCaveat(payload);
   const pc1 = Math.round((pca.explained_variance?.pc1 || 0) * 100);
   const pc2 = Math.round((pca.explained_variance?.pc2 || 0) * 100);
   const loadings = (pca.loadings || [])
@@ -2516,7 +2650,7 @@ function renderPcaChart(payload) {
     .slice(0, 7);
   const dominantPc1 = pc1 >= 75 && pc2 <= 15;
   const pcaWarnings = (pca.warnings || []).length ? ` · avisos: ${(pca.warnings || []).slice(0, 2).join(" · ")}` : "";
-  dataPcaMeta.textContent = `Diagnóstico PCA · PC1 ${pc1}% · PC2 ${pc2}% · ${loadings.length} medidas principais${dominantPc1 ? " · variação dominada por PC1" : ""}${pcaWarnings}.`;
+  dataPcaMeta.textContent = caveat || `Diagnóstico PCA · PC1 ${pc1}% · PC2 ${pc2}% · ${loadings.length} medidas principais${dominantPc1 ? " · variação dominada por PC1" : ""}${pcaWarnings}.`;
 
   const left = 46;
   const top = 34;
@@ -2893,6 +3027,241 @@ function renderCategoricalProfiles(payload) {
   }
 }
 
+function addTerritoryChip(label, value) {
+  if (!dataTerritoryMeta) return;
+  const chip = document.createElement("span");
+  const strong = document.createElement("strong");
+  strong.textContent = label;
+  const small = document.createElement("small");
+  small.textContent = value;
+  chip.append(strong, small);
+  dataTerritoryMeta.appendChild(chip);
+}
+
+function territorialDimensionProfile(payload) {
+  const profiles = payload?.categorical_profiles || [];
+  return profiles.find((profile) => profile.semantic_role === "geolocation")
+    || profiles.find((profile) => {
+      const haystack = normalizeSearchText(`${profile.label || ""} ${profile.field || ""}`);
+      return /\b(regiao|regiao|regiao sns|ars|uls|hospital|concelho|distrito|entidade|instituicao|unidade|localizacao|territorio)\b/.test(haystack);
+    });
+}
+
+function lonLatToWorld(lon, lat, zoom) {
+  const scale = 256 * (2 ** zoom);
+  const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
+  const sinLat = Math.sin((clampedLat * Math.PI) / 180);
+  return {
+    x: ((lon + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale,
+  };
+}
+
+function tileZoomForBounds(lonSpan, latSpan) {
+  const span = Math.max(lonSpan, latSpan, 0.01);
+  if (span > 8) return 5;
+  if (span > 4) return 6;
+  if (span > 2) return 7;
+  if (span > 0.8) return 8;
+  return 9;
+}
+
+function appendMapTiles(svg, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId}) {
+  const lonPadding = Math.max(0.08, (lonMax - lonMin) * 0.12);
+  const latPadding = Math.max(0.08, (latMax - latMin) * 0.12);
+  const padded = {
+    lonMin: lonMin - lonPadding,
+    lonMax: lonMax + lonPadding,
+    latMin: latMin - latPadding,
+    latMax: latMax + latPadding,
+  };
+  const zoom = tileZoomForBounds(padded.lonMax - padded.lonMin, padded.latMax - padded.latMin);
+  const northWest = lonLatToWorld(padded.lonMin, padded.latMax, zoom);
+  const southEast = lonLatToWorld(padded.lonMax, padded.latMin, zoom);
+  const worldW = Math.max(1, southEast.x - northWest.x);
+  const worldH = Math.max(1, southEast.y - northWest.y);
+  const tileScale = Math.min(plotW / worldW, plotH / worldH);
+  const centerX = (northWest.x + southEast.x) / 2;
+  const centerY = (northWest.y + southEast.y) / 2;
+  const visibleWorldW = plotW / tileScale;
+  const visibleWorldH = plotH / tileScale;
+  const originX = centerX - visibleWorldW / 2;
+  const originY = centerY - visibleWorldH / 2;
+  const tileMinX = Math.floor(originX / 256);
+  const tileMaxX = Math.floor((originX + visibleWorldW) / 256);
+  const tileMinY = Math.floor(originY / 256);
+  const tileMaxY = Math.floor((originY + visibleWorldH) / 256);
+  const maxTile = (2 ** zoom) - 1;
+  const group = svgNode("g", {class: "territory-tiles", "clip-path": `url(#${clipId})`});
+  let count = 0;
+  for (let xTile = tileMinX; xTile <= tileMaxX; xTile += 1) {
+    for (let yTile = tileMinY; yTile <= tileMaxY; yTile += 1) {
+      if (yTile < 0 || yTile > maxTile || count >= 24) continue;
+      const normalizedX = ((xTile % (maxTile + 1)) + (maxTile + 1)) % (maxTile + 1);
+      const x = left + ((xTile * 256 - originX) * tileScale);
+      const y = top + ((yTile * 256 - originY) * tileScale);
+      const image = svgNode("image", {
+        x,
+        y,
+        width: 256 * tileScale + 0.8,
+        height: 256 * tileScale + 0.8,
+        href: `https://tile.openstreetmap.org/${zoom}/${normalizedX}/${yTile}.png`,
+        crossorigin: "anonymous",
+        class: "territory-tile",
+      });
+      group.appendChild(image);
+      count += 1;
+    }
+  }
+  svg.appendChild(group);
+  return {
+    zoom,
+    project(point) {
+      const world = lonLatToWorld(point.lon, point.lat, zoom);
+      return {
+        x: left + ((world.x - originX) * tileScale),
+        y: top + ((world.y - originY) * tileScale),
+      };
+    },
+  };
+}
+
+function renderDataTerritory(payload) {
+  clearElement(dataTerritoryMeta);
+  clearElement(dataTerritoryMap);
+  if (!dataTerritoryMap) return;
+  const width = Math.max(520, dataTerritoryMap.closest(".data-territory-wrap")?.clientWidth || 520);
+  const height = 260;
+  const territoryWrap = dataTerritoryMap.closest(".data-territory-wrap");
+  territoryWrap?.classList.remove("is-empty", "is-table", "is-map");
+  dataTerritoryMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  dataTerritoryMap.setAttribute("aria-label", "Leitura territorial simplificada da amostra");
+  const profiles = payload?.categorical_profiles || [];
+  const geoProfile = profiles.find((profile) => profile.semantic_role === "geolocation" && profile.sample_points?.length);
+
+  if (geoProfile) {
+    territoryWrap?.classList.add("is-map");
+    const points = (geoProfile.sample_points || [])
+      .map((point) => ({
+        lat: Number(point.lat),
+        lon: Number(point.lon),
+        label: point.label || "",
+        region: point.region || "",
+        count: Number(point.count || 1),
+        periods: Array.isArray(point.periods) ? point.periods : [],
+      }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    const bounds = geoProfile.bounds || {};
+    const latMin = Number.isFinite(Number(bounds.lat_min)) ? Number(bounds.lat_min) : Math.min(...points.map((point) => point.lat));
+    const latMax = Number.isFinite(Number(bounds.lat_max)) ? Number(bounds.lat_max) : Math.max(...points.map((point) => point.lat));
+    const lonMin = Number.isFinite(Number(bounds.lon_min)) ? Number(bounds.lon_min) : Math.min(...points.map((point) => point.lon));
+    const lonMax = Number.isFinite(Number(bounds.lon_max)) ? Number(bounds.lon_max) : Math.max(...points.map((point) => point.lon));
+    const latSpan = Math.max(0.0001, latMax - latMin);
+    const lonSpan = Math.max(0.0001, lonMax - lonMin);
+    const left = 46;
+    const right = width - 24;
+    const top = 26;
+    const bottom = height - 42;
+    const plotW = right - left;
+    const plotH = bottom - top;
+
+    addTerritoryChip("Base", `${formatNumber(geoProfile.count || points.length)} registos com coordenadas`);
+    addTerritoryChip("Pontos", `${formatNumber(geoProfile.unique || points.length)} únicos · amostra ${formatNumber(points.length)}`);
+    addTerritoryChip("Centro", `${formatDecimal(geoProfile.center?.lat, 4)}, ${formatDecimal(geoProfile.center?.lon, 4)}`);
+    addTerritoryChip("Mapa", "contextual; não corrige cobertura, denominador ou período");
+
+    const clipId = `territory-map-clip-${String(geoProfile.field || "geo").replace(/[^a-z0-9_-]/gi, "-")}`;
+    const defs = svgNode("defs");
+    const clipPath = svgNode("clipPath", {id: clipId});
+    clipPath.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, rx: 10}));
+    defs.appendChild(clipPath);
+    dataTerritoryMap.appendChild(defs);
+    dataTerritoryMap.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, rx: 10, class: "territory-frame"}));
+    const tileProjection = appendMapTiles(dataTerritoryMap, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId});
+    [0.25, 0.5, 0.75].forEach((ratio) => {
+      dataTerritoryMap.appendChild(svgNode("line", {x1: left + plotW * ratio, y1: top, x2: left + plotW * ratio, y2: bottom, class: "territory-grid"}));
+      dataTerritoryMap.appendChild(svgNode("line", {x1: left, y1: top + plotH * ratio, x2: right, y2: top + plotH * ratio, class: "territory-grid"}));
+    });
+    const title = svgNode("text", {x: left, y: 16, class: "territory-title"});
+    title.textContent = compactTitle(geoProfile.label || "Coordenadas", 52);
+    const note = svgNode("text", {x: right, y: 16, "text-anchor": "end", class: "territory-note"});
+    note.textContent = `pontos da amostra · mapa base z${tileProjection.zoom}`;
+    dataTerritoryMap.append(title, note);
+    points.forEach((point) => {
+      const {x, y} = tileProjection.project(point);
+      const halo = svgNode("circle", {cx: x, cy: y, r: 8, class: "territory-point-halo"});
+      const circle = svgNode("circle", {cx: x, cy: y, r: 5, class: "territory-point"});
+      const tooltip = svgNode("title");
+      const name = point.label || point.region || "Ponto sem nome territorial";
+      tooltip.textContent = [
+        name,
+        point.region && point.region !== name ? point.region : null,
+        `${formatNumber(point.count)} registo(s)`,
+        point.periods.length ? `períodos ${point.periods.join(", ")}` : null,
+        `lat/lon ${formatDecimal(point.lat, 5)}, ${formatDecimal(point.lon, 5)}`,
+      ].filter(Boolean).join(" · ");
+      circle.appendChild(tooltip);
+      dataTerritoryMap.append(halo, circle);
+    });
+    const latLabel = svgNode("text", {x: left, y: height - 18, class: "territory-note"});
+    latLabel.textContent = `lat ${formatDecimal(latMin, 3)} a ${formatDecimal(latMax, 3)}`;
+    const lonLabel = svgNode("text", {x: right, y: height - 18, "text-anchor": "end", class: "territory-note"});
+    lonLabel.textContent = `lon ${formatDecimal(lonMin, 3)} a ${formatDecimal(lonMax, 3)}`;
+    const attribution = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-attribution"});
+    attribution.textContent = "© OpenStreetMap contributors";
+    dataTerritoryMap.append(latLabel, attribution, lonLabel);
+    const caveat = svgNode("text", {x: left, y: height - 4, class: "territory-caveat"});
+    caveat.textContent = "Mapa apenas contextual; validar cobertura, denominador e período antes de interpretar.";
+    dataTerritoryMap.appendChild(caveat);
+    return;
+  }
+
+  const territoryProfile = territorialDimensionProfile(payload);
+  if (territoryProfile && territoryProfile.top_values?.length) {
+    territoryWrap?.classList.add("is-table");
+    addTerritoryChip("Base", "campo territorial sem coordenadas");
+    addTerritoryChip("Dimensão", territoryProfile.label || territoryProfile.field || "território");
+    addTerritoryChip("Categorias", `${formatNumber(territoryProfile.unique || territoryProfile.top_values.length)} valores`);
+    const rows = territoryProfile.top_values.slice(0, 6);
+    const max = Math.max(...rows.map((row) => row.count), 1);
+    const title = svgNode("text", {x: 24, y: 26, class: "territory-title"});
+    title.textContent = "Distribuição territorial da amostra";
+    const note = svgNode("text", {x: width - 24, y: 26, "text-anchor": "end", class: "territory-note"});
+    note.textContent = "top valores · confirmar granularidade";
+    dataTerritoryMap.append(title, note);
+    rows.forEach((row, index) => {
+      const y = 56 + index * 31;
+      const label = svgNode("text", {x: 24, y: y + 12, class: "territory-bar-label"});
+      label.textContent = compactTitle(formatDisplayValue(row.value), 34);
+      const barX = Math.min(250, width * 0.44);
+      const barW = width - barX - 66;
+      dataTerritoryMap.appendChild(svgNode("rect", {x: barX, y, width: barW, height: 12, rx: 6, class: "territory-bar-bg"}));
+      dataTerritoryMap.appendChild(svgNode("rect", {
+        x: barX,
+        y,
+        width: Math.max(8, (row.count / max) * barW),
+        height: 12,
+        rx: 6,
+        class: "territory-bar-fill",
+      }));
+      const count = svgNode("text", {x: width - 24, y: y + 12, "text-anchor": "end", class: "territory-bar-count"});
+      count.textContent = formatNumber(row.count);
+      dataTerritoryMap.append(label, count);
+    });
+    const footer = svgNode("text", {x: 24, y: height - 18, class: "territory-note"});
+    footer.textContent = "Sem coordenadas nesta amostra; esta leitura não substitui validação territorial formal.";
+    dataTerritoryMap.appendChild(footer);
+    return;
+  }
+
+  addTerritoryChip("Estado", "território indisponível");
+  addTerritoryChip("Ação", "validar campos de entidade, região ou coordenadas");
+  territoryWrap?.classList.add("is-empty");
+  const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", class: "territory-empty"});
+  empty.textContent = "Sem coordenadas ou dimensão territorial reconhecida nesta amostra.";
+  dataTerritoryMap.appendChild(empty);
+}
+
 function renderDataTrend(payload) {
   clearElement(dataTrendChart);
   const trend = payload.trends?.[0];
@@ -2954,7 +3323,7 @@ function renderDataTrend(payload) {
       ["Janela útil", windowLabel, "usar como vigilância curta"],
     ];
     const headerTitle = svgNode("text", {x: 28, y: 24, class: "data-trend-title"});
-    headerTitle.textContent = compactTitle(trend.label, 54);
+    headerTitle.textContent = points.length < 3 ? `Só há ${formatNumber(points.length)} períodos comparáveis` : compactTitle(trend.label, 54);
     const headerNote = svgNode("text", {x: width - 28, y: 24, "text-anchor": "end", class: "data-trend-note"});
     headerNote.textContent = `${formatNumber(points.length)} períodos · ${formatNumber(zeroCount)} zeros · ${formatNumber(nonZeroCount)} com sinal`;
     dataTrendChart.append(headerTitle, headerNote);
@@ -2974,6 +3343,14 @@ function renderDataTrend(payload) {
     const stripLeft = 36;
     const stripRight = width - 36;
     const stripStep = points.length > 1 ? (stripRight - stripLeft) / (points.length - 1) : 0;
+    const activeIndexes = points
+      .map((point, index) => (point.plottedValue > 0 ? index : -1))
+      .filter((index) => index >= 0);
+    const labelIndexes = new Set([0, points.length - 1]);
+    if (activeIndexes.length) {
+      labelIndexes.add(activeIndexes[0]);
+      labelIndexes.add(activeIndexes[activeIndexes.length - 1]);
+    }
     const stripTitle = svgNode("text", {x: stripLeft, y: 120, class: "epi-trend-state-title"});
     stripTitle.textContent = "Estado dos períodos observados";
     dataTrendChart.appendChild(stripTitle);
@@ -2993,7 +3370,7 @@ function renderDataTrend(payload) {
       tooltip.textContent = `${point.period}: ${formatDecimal(point.plottedValue, 2)} · ${formatNumber(point.count || 0)} registos`;
       rect.appendChild(tooltip);
       dataTrendChart.appendChild(rect);
-      if (index === 0 || index === points.length - 1 || point.plottedValue > 0) {
+      if (labelIndexes.has(index)) {
         const label = svgNode("text", {
           x,
           y: stripY + 18,
@@ -3316,6 +3693,7 @@ function activatePredictiveDataset(datasetId) {
   if (!datasetId || datasetId === state.selectedDataDataset) return;
   activePredictiveRecommendationRequest += 1;
   state.selectedDataDataset = datasetId;
+  state.dataPayload = null;
   state.predictiveRecommendationPayload = null;
   state._predictiveRecommendationKey = "";
   if (dataDatasetSelect) dataDatasetSelect.value = datasetId;
@@ -4366,8 +4744,130 @@ const TERRITORY_POLYGON_BLOCKS = {
   madeira: {label: "Madeira", labelX: 118, labelY: 438, points: [[60, 404], [158, 392], [174, 444], [76, 458]]},
 };
 
+function addPublicHealthGeoChip(label, value) {
+  if (!publicHealthGeoMeta) return;
+  const chip = document.createElement("span");
+  chip.className = "territory-chip";
+  const strong = document.createElement("strong");
+  strong.textContent = label;
+  const small = document.createElement("small");
+  small.textContent = value;
+  chip.append(strong, small);
+  publicHealthGeoMeta.appendChild(chip);
+}
+
+function renderPublicHealthPointMap() {
+  clearElement(publicHealthGeoMeta);
+  clearElement(publicHealthPointMap);
+  if (!publicHealthPointMap) return false;
+  const pointWrap = publicHealthPointMap.closest(".public-health-point-map-wrap");
+  if (state.selectedDataDataset && state.dataPayload && state.dataPayload.dataset_id !== state.selectedDataDataset) {
+    addPublicHealthGeoChip("Lat/lon", "a atualizar amostra");
+    addPublicHealthGeoChip("Ação", "aguardar carregamento do dataset selecionado");
+    if (pointWrap) pointWrap.hidden = true;
+    return false;
+  }
+  const geoProfile = (state.dataPayload?.categorical_profiles || [])
+    .find((profile) => profile.semantic_role === "geolocation" && profile.sample_points?.length);
+  if (!geoProfile) {
+    if (state.selectedDataDataset) {
+      addPublicHealthGeoChip("Lat/lon", "indisponível neste dataset");
+      addPublicHealthGeoChip("Ação", "usar Região SNS, entidade ou escolher dataset com coordenadas");
+    }
+    if (pointWrap) pointWrap.hidden = true;
+    return false;
+  }
+
+  const points = (geoProfile.sample_points || [])
+    .map((point) => ({
+      lat: Number(point.lat),
+      lon: Number(point.lon),
+      label: point.label || "",
+      region: point.region || "",
+      count: Number(point.count || 1),
+      periods: Array.isArray(point.periods) ? point.periods : [],
+    }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  if (!points.length) {
+    addPublicHealthGeoChip("Lat/lon", "sem pontos válidos");
+    addPublicHealthGeoChip("Ação", "confirmar formato de latitude e longitude");
+    if (pointWrap) pointWrap.hidden = true;
+    return false;
+  }
+
+  if (pointWrap) pointWrap.hidden = false;
+  const width = Math.max(520, pointWrap?.clientWidth || 520);
+  const height = 236;
+  publicHealthPointMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  publicHealthPointMap.setAttribute("aria-label", "Pontos geográficos da amostra por latitude e longitude");
+
+  const bounds = geoProfile.bounds || {};
+  const latMin = Number.isFinite(Number(bounds.lat_min)) ? Number(bounds.lat_min) : Math.min(...points.map((point) => point.lat));
+  const latMax = Number.isFinite(Number(bounds.lat_max)) ? Number(bounds.lat_max) : Math.max(...points.map((point) => point.lat));
+  const lonMin = Number.isFinite(Number(bounds.lon_min)) ? Number(bounds.lon_min) : Math.min(...points.map((point) => point.lon));
+  const lonMax = Number.isFinite(Number(bounds.lon_max)) ? Number(bounds.lon_max) : Math.max(...points.map((point) => point.lon));
+  const left = 38;
+  const right = width - 20;
+  const top = 24;
+  const bottom = height - 42;
+  const plotW = right - left;
+  const plotH = bottom - top;
+
+  addPublicHealthGeoChip("Lat/lon", `${formatNumber(geoProfile.count || points.length)} registos`);
+  addPublicHealthGeoChip("Pontos", `${formatNumber(geoProfile.unique || points.length)} locais`);
+  addPublicHealthGeoChip("Uso", "contexto territorial; não substitui regra Região SNS");
+
+  const clipId = `public-health-point-clip-${String(geoProfile.field || "geo").replace(/[^a-z0-9_-]/gi, "-")}`;
+  const defs = svgNode("defs");
+  const clipPath = svgNode("clipPath", {id: clipId});
+  clipPath.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, rx: 10}));
+  defs.appendChild(clipPath);
+  publicHealthPointMap.appendChild(defs);
+  publicHealthPointMap.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, rx: 10, class: "territory-frame"}));
+  const projection = appendMapTiles(publicHealthPointMap, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId});
+  [0.25, 0.5, 0.75].forEach((ratio) => {
+    publicHealthPointMap.appendChild(svgNode("line", {x1: left + plotW * ratio, y1: top, x2: left + plotW * ratio, y2: bottom, class: "territory-grid"}));
+    publicHealthPointMap.appendChild(svgNode("line", {x1: left, y1: top + plotH * ratio, x2: right, y2: top + plotH * ratio, class: "territory-grid"}));
+  });
+  const title = svgNode("text", {x: left, y: 15, class: "territory-title"});
+  title.textContent = compactTitle(geoProfile.label || "Pontos lat/lon", 46);
+  const note = svgNode("text", {x: right, y: 15, "text-anchor": "end", class: "territory-note"});
+  note.textContent = `amostra · mapa base z${projection.zoom}`;
+  publicHealthPointMap.append(title, note);
+
+  points.forEach((point) => {
+    const {x, y} = projection.project(point);
+    const halo = svgNode("circle", {cx: x, cy: y, r: 8, class: "territory-point-halo"});
+    const circle = svgNode("circle", {cx: x, cy: y, r: 5, class: "territory-point"});
+    const tooltip = svgNode("title");
+    const name = point.label || point.region || "Ponto sem nome territorial";
+    tooltip.textContent = [
+      name,
+      point.region && point.region !== name ? point.region : null,
+      `${formatNumber(point.count)} registo(s)`,
+      point.periods.length ? `períodos ${point.periods.join(", ")}` : null,
+      `lat/lon ${formatDecimal(point.lat, 5)}, ${formatDecimal(point.lon, 5)}`,
+    ].filter(Boolean).join(" · ");
+    circle.appendChild(tooltip);
+    publicHealthPointMap.append(halo, circle);
+  });
+
+  const latLabel = svgNode("text", {x: left, y: height - 18, class: "territory-note"});
+  latLabel.textContent = `lat ${formatDecimal(latMin, 3)} a ${formatDecimal(latMax, 3)}`;
+  const lonLabel = svgNode("text", {x: right, y: height - 18, "text-anchor": "end", class: "territory-note"});
+  lonLabel.textContent = `lon ${formatDecimal(lonMin, 3)} a ${formatDecimal(lonMax, 3)}`;
+  const attribution = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-attribution"});
+  attribution.textContent = "© OpenStreetMap contributors";
+  publicHealthPointMap.append(latLabel, attribution, lonLabel);
+  const caveat = svgNode("text", {x: left, y: height - 4, class: "territory-caveat"});
+  caveat.textContent = "Pontos da amostra; validar cobertura, denominador e período antes de interpretar território.";
+  publicHealthPointMap.appendChild(caveat);
+  return true;
+}
+
 function renderPublicHealthMap(rows) {
   clearElement(publicHealthMap);
+  const hasPointMap = renderPublicHealthPointMap();
   const width = 620;
   const height = 500;
   publicHealthMap.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -4376,7 +4876,9 @@ function renderPublicHealthMap(rows) {
   title.textContent = `Regiões SNS · ${layerTitle}`;
   publicHealthMap.appendChild(title);
   const subtitle = svgNode("text", {x: 22, y: 50, class: "health-map-subtitle"});
-  subtitle.textContent = "Mostra apenas regiões com regra validada; restantes ficam por resolver.";
+  subtitle.textContent = hasPointMap
+    ? "Lat/lon dá contexto; Região SNS continua a precisar de regra validada."
+    : "Mostra apenas regiões com regra validada; restantes ficam por resolver.";
   publicHealthMap.appendChild(subtitle);
 
   const selected = rows.find((row) => row.key === state.selectedPublicHealthKey);
@@ -6013,6 +6515,7 @@ function renderAll() {
   renderAnalyticsContext();
   renderExecutiveSummary();
   renderConfidenceChips();
+  renderAnalysisProvenance();
   if (!state.payload) return;
   if (state.activeTab === "data") {
     renderDataAnalytics();
@@ -6031,7 +6534,7 @@ function renderAll() {
   }
   if (state.activeTab === "anomalies") {
     renderAnomalies();
-    if (state.selectedDataDataset && !state.dataPayload && !state.dataLoading) {
+    if (state.selectedDataDataset && !hasCurrentDataPayload() && !state.dataLoading) {
       loadDataAnalytics().catch(showDataError);
     }
     return;
@@ -6049,6 +6552,9 @@ function renderAll() {
   if (state.activeTab === "health") {
     renderSummary();
     renderPublicHealthMatrix();
+    if (state.selectedDataDataset && !hasCurrentDataPayload() && !state.dataLoading) {
+      loadDataAnalytics().catch(showDataError);
+    }
     return;
   }
   if (state.activeTab === "care") {
@@ -6283,6 +6789,8 @@ function showDataError(error) {
   if (state.activeTab === "anomalies") {
     anomalyStatus.textContent = error.message || "Erro ao analisar anomalias";
     renderAnomalies();
+  } else if (state.activeTab === "health") {
+    renderPublicHealthMatrix();
   } else {
     renderDataAnalytics();
   }

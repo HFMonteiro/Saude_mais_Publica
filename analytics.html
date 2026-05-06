@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Analytics</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=trend-fix-20260506" />
+    <link rel="stylesheet" href="styles.css?v=health-geo-20260506" />
   </head>
   <body>
     <main class="analytics-layout">
@@ -80,6 +80,7 @@
         <button type="button" data-guide-action="economia">Há custo unitário?</button>
       </section>
       <section id="analysisConfidenceChips" class="analysis-confidence-chips" aria-label="Travões de confiança"></section>
+      <section id="analysisProvenance" class="analytics-provenance-panel" aria-label="Como surge a análise"></section>
 
       <section class="panel analytics-panel data-analytics-panel" data-tab-panel="data">
         <div class="panel-heading">
@@ -148,7 +149,7 @@
             <div class="panel-heading">
               <div>
                 <h2>Top dados-chave</h2>
-                <p class="meta">Ranking por completude e variação.</p>
+                <p class="meta">Triagem por completude e variação; eixos ficam separados.</p>
               </div>
             </div>
             <div id="dataFeatureImportance" class="feature-importance-list"></div>
@@ -157,6 +158,15 @@
             <strong>Driver selecionado</strong>
             <p class="meta">Abre um dado-chave.</p>
           </aside>
+          <section>
+            <div class="panel-heading">
+              <div>
+                <h2>Eixos de análise</h2>
+                <p class="meta">Período, território e entidade orientam a leitura; não são resultado substantivo.</p>
+              </div>
+            </div>
+            <div id="dataAnalysisAxes" class="analysis-axis-list"></div>
+          </section>
         </section>
 
         <section class="data-analytics-grid data-useful-grid">
@@ -169,6 +179,18 @@
             </div>
             <div class="data-trend-wrap">
               <svg id="dataTrendChart" role="img" aria-label="Tendência temporal da amostra"></svg>
+            </div>
+          </section>
+          <section>
+            <div class="panel-heading">
+              <div>
+                <h2>Território</h2>
+                <p class="meta">Leitura simples a partir de coordenadas ou de campos territoriais da amostra.</p>
+              </div>
+            </div>
+            <div id="dataTerritoryMeta" class="territory-meta"></div>
+            <div class="data-territory-wrap">
+              <svg id="dataTerritoryMap" role="img" aria-label="Mapa simplificado de pontos territoriais"></svg>
             </div>
           </section>
         </section>
@@ -581,6 +603,10 @@
               <div id="publicHealthLayerControls" class="map-layer-controls" role="group" aria-label="Layers do mapa SNS"></div>
             </div>
             <div id="publicHealthNationalSummary" class="public-health-national-summary"></div>
+            <div id="publicHealthGeoMeta" class="territory-meta public-health-geo-meta"></div>
+            <div class="data-territory-wrap public-health-point-map-wrap" hidden>
+              <svg id="publicHealthPointMap" role="img" aria-label="Mapa de pontos geográficos da amostra"></svg>
+            </div>
             <div class="public-health-map-wrap">
               <svg id="publicHealthMap" role="img" aria-label="Leitura territorial de prioridades em saúde pública"></svg>
             </div>
@@ -898,6 +924,6 @@
       </footer>
     </main>
 
-    <script src="analytics.js?v=trend-fix-20260506" defer></script>
+    <script src="analytics.js?v=health-geo-20260506" defer></script>
   </body>
 </html>

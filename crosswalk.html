@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Saúde+ Pública - Cruzamentos</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css?v=simplify-20260506" />
+    <link rel="stylesheet" href="styles.css?v=cross-focus-20260506" />
   </head>
   <body>
     <main class="crosswalk-layout">
@@ -24,55 +24,58 @@
 
       </header>
 
-      <section class="crosswalk-toolbar">
-        <label>
-          <span>Pesquisar dataset</span>
-          <input id="crossDatasetFilter" name="cross-dataset-search" autocomplete="off" placeholder="ICPC, problemas, ULS, UF, hospital" type="text" />
-        </label>
-        <label>
-          <span>Mega-tema</span>
-          <select id="crossThemeFilter" name="cross-theme-filter" autocomplete="off"></select>
-        </label>
-        <label>
-          <span>Foco de campo</span>
-          <select id="crossFieldFilter" name="cross-field-filter">
-            <option value="">Todos os campos</option>
-          </select>
-        </label>
-        <label>
-          <span>Âmbito local</span>
-          <select id="crossLocalScopeFilter" name="cross-local-scope-filter">
-            <option value="">Todos</option>
-            <option value="uls">ULS</option>
-            <option value="uf">UF/CSP</option>
-            <option value="regiao">Região/ARS</option>
-            <option value="hospital">Hospital</option>
-            <option value="concelho">Concelho/Distrito</option>
-            <option value="entidade">Instituição/Entidade</option>
-            <option value="none">Sem dimensão local</option>
-          </select>
-        </label>
-        <label>
-          <span>Tipo de dimensão</span>
-          <select id="crossDimensionFilter" name="cross-dimension-filter">
-            <option value="">Todas</option>
-            <option value="temporal">Temporal</option>
-            <option value="territorial">Territorial</option>
-            <option value="entidade">Entidade</option>
-            <option value="medida">Medida</option>
-            <option value="clinico">Clínico</option>
-            <option value="generico">Genérico</option>
-          </select>
-        </label>
-        <label class="range-control">
-          <span>Força mínima</span>
-          <input id="crossMinScore" min="1" max="10" step="1" type="range" value="4" />
-          <strong id="crossMinScoreValue">4</strong>
-        </label>
-        <button id="crossReloadButton" class="ghost-button" type="button">Atualizar</button>
-        <button id="crossExportButton" class="ghost-button" type="button">Exportar JSON</button>
-        <div id="crossStatus" class="sync-state">A carregar...</div>
-      </section>
+      <details class="cross-filter-drawer">
+        <summary>Filtros avançados e exportação</summary>
+        <section class="crosswalk-toolbar">
+          <label>
+            <span>Pesquisar dataset</span>
+            <input id="crossDatasetFilter" name="cross-dataset-search" autocomplete="off" placeholder="ICPC, problemas, ULS, UF, hospital" type="text" />
+          </label>
+          <label>
+            <span>Mega-tema</span>
+            <select id="crossThemeFilter" name="cross-theme-filter" autocomplete="off"></select>
+          </label>
+          <label>
+            <span>Foco de campo</span>
+            <select id="crossFieldFilter" name="cross-field-filter">
+              <option value="">Todos os campos</option>
+            </select>
+          </label>
+          <label>
+            <span>Âmbito local</span>
+            <select id="crossLocalScopeFilter" name="cross-local-scope-filter">
+              <option value="">Todos</option>
+              <option value="uls">ULS</option>
+              <option value="uf">UF/CSP</option>
+              <option value="regiao">Região/ARS</option>
+              <option value="hospital">Hospital</option>
+              <option value="concelho">Concelho/Distrito</option>
+              <option value="entidade">Instituição/Entidade</option>
+              <option value="none">Sem dimensão local</option>
+            </select>
+          </label>
+          <label>
+            <span>Tipo de dimensão</span>
+            <select id="crossDimensionFilter" name="cross-dimension-filter">
+              <option value="">Todas</option>
+              <option value="temporal">Temporal</option>
+              <option value="territorial">Territorial</option>
+              <option value="entidade">Entidade</option>
+              <option value="medida">Medida</option>
+              <option value="clinico">Clínico</option>
+              <option value="generico">Genérico</option>
+            </select>
+          </label>
+          <label class="range-control">
+            <span>Força mínima</span>
+            <input id="crossMinScore" min="1" max="10" step="1" type="range" value="4" />
+            <strong id="crossMinScoreValue">4</strong>
+          </label>
+          <button id="crossReloadButton" class="ghost-button" type="button">Atualizar</button>
+          <button id="crossExportButton" class="ghost-button" type="button">Exportar JSON</button>
+          <div id="crossStatus" class="sync-state">A carregar...</div>
+        </section>
+      </details>
 
       <section class="crosswalk-summary" aria-label="Resumo de cruzamentos">
         <div>
@@ -175,6 +178,6 @@
       </footer>
     </main>
 
-    <script src="crosswalk.js?v=simplify-20260506" defer></script>
+    <script src="crosswalk.js?v=cross-focus-20260506" defer></script>
   </body>
 </html>

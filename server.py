@@ -2509,6 +2509,22 @@ def _safe_label(field: dict) -> str:
 
 def _geo_point(value) -> tuple[float, float] | None:
     """Return (lat, lon) for ODS geopoint-like values without treating them as categories."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                parsed = json.loads(stripped)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, dict):
+                return _geo_point(parsed)
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                parsed = json.loads(stripped)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, list):
+                return _geo_point(parsed)
     if isinstance(value, dict):
         lat = value.get("lat", value.get("latitude"))
         lon = value.get("lon", value.get("lng", value.get("longitude")))
@@ -2528,14 +2544,102 @@ def _geo_point(value) -> tuple[float, float] | None:
     return None
 
 
-def _geo_profile(column: str, field: dict, raw_values: list) -> dict | None:
-    points = [_geo_point(value) for value in raw_values if value not in (None, "")]
-    points = [point for point in points if point is not None]
+def _geo_context_value(record: dict, candidates: tuple[str, ...]) -> str | None:
+    normalized = {_normalize_token(key): key for key in record.keys()}
+    for candidate in candidates:
+        key = normalized.get(_normalize_token(candidate))
+        value = record.get(key) if key else None
+        if value not in (None, ""):
+            return str(value).strip()
+    for key, value in record.items():
+        text = _normalize_token(key)
+        if any(_normalize_token(candidate) in text for candidate in candidates) and value not in (None, ""):
+            return str(value).strip()
+    return None
+
+
+def _geo_point_label(record: dict) -> str | None:
+    return _geo_context_value(
+        record,
+        (
+            "instituicao",
+            "instituição",
+            "entidade",
+            "unidade",
+            "hospital",
+            "concelho",
+            "municipio",
+            "município",
+            "local",
+            "regiao",
+            "região",
+        ),
+    )
+
+
+def _geo_profile(column: str, field: dict, raw_values: list, records: list[dict] | None = None, temporal_field: str | None = None) -> dict | None:
+    point_rows = []
+    for idx, value in enumerate(raw_values):
+        if value in (None, ""):
+            continue
+        point = _geo_point(value)
+        if point is None:
+            continue
+        record = records[idx] if records and idx < len(records) else {}
+        point_rows.append((point, record))
+    points = [point for point, _ in point_rows]
     if not points:
         return None
     lats = [point[0] for point in points]
     lons = [point[1] for point in points]
-    unique_points = sorted({(round(lat, 5), round(lon, 5)) for lat, lon in points})
+    grouped_points: dict[tuple[float, float], dict] = {}
+    for (lat, lon), record in point_rows:
+        key = (round(lat, 5), round(lon, 5))
+        group = grouped_points.setdefault(
+            key,
+            {
+                "lat": key[0],
+                "lon": key[1],
+                "count": 0,
+                "labels": {},
+                "regions": {},
+                "periods": {},
+            },
+        )
+        group["count"] += 1
+        label = _geo_point_label(record)
+        region = _geo_context_value(record, ("regiao", "região", "ars", "uls"))
+        period = _extract_period_key(record.get(temporal_field), temporal_field)[1] if temporal_field else None
+        if label:
+            group["labels"][label] = group["labels"].get(label, 0) + 1
+        if region:
+            group["regions"][region] = group["regions"].get(region, 0) + 1
+        if period:
+            group["periods"][period] = group["periods"].get(period, 0) + 1
+
+    def dominant(values: dict[str, int]) -> str | None:
+        if not values:
+            return None
+        return sorted(values.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    unique_points = sorted(grouped_points.values(), key=lambda item: (item["lat"], item["lon"]))
+    sample_points = []
+    for point in unique_points[:80]:
+        sample = {
+            "lat": point["lat"],
+            "lon": point["lon"],
+            "count": point["count"],
+        }
+        label = dominant(point["labels"])
+        region = dominant(point["regions"])
+        periods = [period for period, _ in sorted(point["periods"].items(), key=lambda item: (-item[1], item[0]))[:3]]
+        if label:
+            sample["label"] = label[:120]
+        if region:
+            sample["region"] = region[:120]
+        if periods:
+            sample["periods"] = periods
+        sample_points.append(sample)
     return {
         "field": column,
         "label": _safe_label(field),
@@ -2554,10 +2658,7 @@ def _geo_profile(column: str, field: dict, raw_values: list) -> dict | None:
             "lat": round(_mean(lats), 6),
             "lon": round(_mean(lons), 6),
         },
-        "sample_points": [
-            {"lat": lat, "lon": lon}
-            for lat, lon in unique_points[:5]
-        ],
+        "sample_points": sample_points,
         "top_values": [],
     }
 
@@ -2908,7 +3009,7 @@ def _build_data_analytics(dataset_id: str, limit: int) -> dict:
         raw_values = [record.get(column) for record in records]
         non_empty = [value for value in raw_values if value not in (None, "")]
 
-        geo_profile = _geo_profile(column, field, raw_values)
+        geo_profile = _geo_profile(column, field, raw_values, records=records, temporal_field=temporal_field)
         if geo_profile and (canonical_type == "geo" or geo_profile["count"] / max(1, len(non_empty)) >= 0.65):
             categorical_profiles.append(geo_profile)
             continue

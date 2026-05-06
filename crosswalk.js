@@ -1451,9 +1451,9 @@ function renderRecommendedPath(paths) {
   if (state.selectedPairKey) {
     const edge = state.linkByPair.get(state.selectedPairKey);
     const direct = document.createElement("p");
-    direct.className = "meta";
+    direct.className = "meta recommended-summary";
     direct.textContent = edge
-      ? `Melhor par direto selecionado: score ${edge.score || 0}, ${(edge.shared_fields || []).slice(0, 3).join(", ") || "chave a validar"}.`
+      ? `Par direto · força ${edge.score || 0} · ${(edge.shared_fields || []).slice(0, 3).join(", ") || "chave a validar"}`
       : "Par direto indisponível nos filtros atuais.";
     recommendedPath.append(title, direct);
   } else {
@@ -1473,11 +1473,21 @@ function renderRecommendedPath(paths) {
 
   const route = document.createElement("div");
   route.className = "recommended-route";
-  route.textContent = best.path.map((id) => compactTitle(displayTitle(state.datasetById.get(id)), 24)).join(" → ");
+  best.path.forEach((id, index) => {
+    const step = document.createElement("span");
+    step.textContent = compactTitle(displayTitle(state.datasetById.get(id)), 28);
+    step.title = displayTitle(state.datasetById.get(id));
+    route.appendChild(step);
+    if (index < best.path.length - 1) {
+      const arrow = document.createElement("b");
+      arrow.textContent = "→";
+      route.appendChild(arrow);
+    }
+  });
   const reason = document.createElement("p");
-  reason.className = "meta";
+  reason.className = "meta recommended-summary";
   const keys = best.connectors.flat().slice(0, 4).join(", ") || "chaves a validar";
-  reason.textContent = `Melhor 2 saltos: score ${best.score}. Razão: maior força acumulada e chaves comuns (${keys}).`;
+  reason.textContent = `2 saltos · força ${best.score} · chaves: ${keys}`;
   recommendedPath.append(route, reason);
 }
 
