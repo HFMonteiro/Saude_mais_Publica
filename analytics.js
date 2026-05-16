@@ -3066,6 +3066,15 @@ function tileZoomForBounds(lonSpan, latSpan) {
   return 9;
 }
 
+function projectedOutlinePath(points, project) {
+  return points
+    .map((point, index) => {
+      const {x, y} = project({lon: point[0], lat: point[1]});
+      return `${index ? "L" : "M"} ${formatDecimal(x, 2)} ${formatDecimal(y, 2)}`;
+    })
+    .join(" ");
+}
+
 function appendMapTiles(svg, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId}) {
   const lonPadding = Math.max(0.08, (lonMax - lonMin) * 0.12);
   const latPadding = Math.max(0.08, (latMax - latMin) * 0.12);
@@ -3087,42 +3096,47 @@ function appendMapTiles(svg, {lonMin, lonMax, latMin, latMax, left, top, plotW, 
   const visibleWorldH = plotH / tileScale;
   const originX = centerX - visibleWorldW / 2;
   const originY = centerY - visibleWorldH / 2;
-  const tileMinX = Math.floor(originX / 256);
-  const tileMaxX = Math.floor((originX + visibleWorldW) / 256);
-  const tileMinY = Math.floor(originY / 256);
-  const tileMaxY = Math.floor((originY + visibleWorldH) / 256);
-  const maxTile = (2 ** zoom) - 1;
-  const group = svgNode("g", {class: "territory-tiles", "clip-path": `url(#${clipId})`});
-  let count = 0;
-  for (let xTile = tileMinX; xTile <= tileMaxX; xTile += 1) {
-    for (let yTile = tileMinY; yTile <= tileMaxY; yTile += 1) {
-      if (yTile < 0 || yTile > maxTile || count >= 24) continue;
-      const normalizedX = ((xTile % (maxTile + 1)) + (maxTile + 1)) % (maxTile + 1);
-      const x = left + ((xTile * 256 - originX) * tileScale);
-      const y = top + ((yTile * 256 - originY) * tileScale);
-      const image = svgNode("image", {
-        x,
-        y,
-        width: 256 * tileScale + 0.8,
-        height: 256 * tileScale + 0.8,
-        href: `https://tile.openstreetmap.org/${zoom}/${normalizedX}/${yTile}.png`,
-        crossorigin: "anonymous",
-        class: "territory-tile",
-      });
-      group.appendChild(image);
-      count += 1;
-    }
-  }
+  const project = (point) => {
+    const world = lonLatToWorld(point.lon, point.lat, zoom);
+    return {
+      x: left + ((world.x - originX) * tileScale),
+      y: top + ((world.y - originY) * tileScale),
+    };
+  };
+  const group = svgNode("g", {class: "territory-local-base", "clip-path": `url(#${clipId})`});
+  group.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, class: "territory-local-water"}));
+
+  const mainlandPortugal = [
+    [-8.78, 41.92], [-8.38, 42.05], [-7.24, 41.88], [-6.72, 41.55], [-6.42, 40.96],
+    [-6.82, 40.38], [-7.04, 39.72], [-6.93, 39.02], [-7.30, 38.46], [-7.02, 37.18],
+    [-7.52, 36.96], [-8.08, 37.08], [-8.78, 37.20], [-8.98, 38.02], [-9.48, 38.70],
+    [-9.28, 39.46], [-8.88, 40.02], [-8.88, 40.74], [-8.78, 41.92],
+  ];
+  const madeira = [[-17.30, 32.88], [-16.98, 33.02], [-16.62, 32.86], [-16.78, 32.62], [-17.18, 32.58], [-17.30, 32.88]];
+  const azores = [[-31.30, 39.75], [-30.82, 39.92], [-28.64, 38.66], [-27.10, 38.76], [-25.72, 37.78], [-25.02, 37.86]];
+  [mainlandPortugal, madeira, azores].forEach((outline, index) => {
+    const path = svgNode("path", {
+      d: `${projectedOutlinePath(outline, project)} ${index === 2 ? "" : "Z"}`.trim(),
+      class: `territory-outline ${index ? "territory-outline-island" : ""}`.trim(),
+    });
+    group.appendChild(path);
+  });
+
+  const northWestBounds = project({lon: lonMin, lat: latMax});
+  const southEastBounds = project({lon: lonMax, lat: latMin});
+  group.appendChild(svgNode("rect", {
+    x: Math.min(northWestBounds.x, southEastBounds.x),
+    y: Math.min(northWestBounds.y, southEastBounds.y),
+    width: Math.max(6, Math.abs(southEastBounds.x - northWestBounds.x)),
+    height: Math.max(6, Math.abs(southEastBounds.y - northWestBounds.y)),
+    rx: 8,
+    class: "territory-bounds",
+  }));
   svg.appendChild(group);
   return {
     zoom,
-    project(point) {
-      const world = lonLatToWorld(point.lon, point.lat, zoom);
-      return {
-        x: left + ((world.x - originX) * tileScale),
-        y: top + ((world.y - originY) * tileScale),
-      };
-    },
+    source: "local",
+    project,
   };
 }
 
@@ -3151,6 +3165,15 @@ function renderDataTerritory(payload) {
         periods: Array.isArray(point.periods) ? point.periods : [],
       }))
       .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    if (!points.length) {
+      addTerritoryChip("Estado", "sem coordenadas válidas");
+      addTerritoryChip("Ação", "confirmar formato de latitude e longitude");
+      territoryWrap?.classList.add("is-empty");
+      const empty = svgNode("text", {x: width / 2, y: height / 2, "text-anchor": "middle", class: "territory-empty"});
+      empty.textContent = "Coordenadas inválidas nesta amostra; valide latitude e longitude.";
+      dataTerritoryMap.appendChild(empty);
+      return;
+    }
     const bounds = geoProfile.bounds || {};
     const latMin = Number.isFinite(Number(bounds.lat_min)) ? Number(bounds.lat_min) : Math.min(...points.map((point) => point.lat));
     const latMax = Number.isFinite(Number(bounds.lat_max)) ? Number(bounds.lat_max) : Math.max(...points.map((point) => point.lat));
@@ -3177,7 +3200,7 @@ function renderDataTerritory(payload) {
     defs.appendChild(clipPath);
     dataTerritoryMap.appendChild(defs);
     dataTerritoryMap.appendChild(svgNode("rect", {x: left, y: top, width: plotW, height: plotH, rx: 10, class: "territory-frame"}));
-    const tileProjection = appendMapTiles(dataTerritoryMap, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId});
+    const localProjection = appendMapTiles(dataTerritoryMap, {lonMin, lonMax, latMin, latMax, left, top, plotW, plotH, clipId});
     [0.25, 0.5, 0.75].forEach((ratio) => {
       dataTerritoryMap.appendChild(svgNode("line", {x1: left + plotW * ratio, y1: top, x2: left + plotW * ratio, y2: bottom, class: "territory-grid"}));
       dataTerritoryMap.appendChild(svgNode("line", {x1: left, y1: top + plotH * ratio, x2: right, y2: top + plotH * ratio, class: "territory-grid"}));
@@ -3185,10 +3208,10 @@ function renderDataTerritory(payload) {
     const title = svgNode("text", {x: left, y: 16, class: "territory-title"});
     title.textContent = compactTitle(geoProfile.label || "Coordenadas", 52);
     const note = svgNode("text", {x: right, y: 16, "text-anchor": "end", class: "territory-note"});
-    note.textContent = `pontos da amostra · mapa base z${tileProjection.zoom}`;
+    note.textContent = "pontos da amostra · base local sem rede";
     dataTerritoryMap.append(title, note);
     points.forEach((point) => {
-      const {x, y} = tileProjection.project(point);
+      const {x, y} = localProjection.project(point);
       const halo = svgNode("circle", {cx: x, cy: y, r: 8, class: "territory-point-halo"});
       const circle = svgNode("circle", {cx: x, cy: y, r: 5, class: "territory-point"});
       const tooltip = svgNode("title");
@@ -3207,9 +3230,9 @@ function renderDataTerritory(payload) {
     latLabel.textContent = `lat ${formatDecimal(latMin, 3)} a ${formatDecimal(latMax, 3)}`;
     const lonLabel = svgNode("text", {x: right, y: height - 18, "text-anchor": "end", class: "territory-note"});
     lonLabel.textContent = `lon ${formatDecimal(lonMin, 3)} a ${formatDecimal(lonMax, 3)}`;
-    const attribution = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-attribution"});
-    attribution.textContent = "© OpenStreetMap contributors";
-    dataTerritoryMap.append(latLabel, attribution, lonLabel);
+    const localLabel = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-note"});
+    localLabel.textContent = "contorno esquemático local";
+    dataTerritoryMap.append(latLabel, localLabel, lonLabel);
     const caveat = svgNode("text", {x: left, y: height - 4, class: "territory-caveat"});
     caveat.textContent = "Mapa apenas contextual; validar cobertura, denominador e período antes de interpretar.";
     dataTerritoryMap.appendChild(caveat);
@@ -4832,7 +4855,7 @@ function renderPublicHealthPointMap() {
   const title = svgNode("text", {x: left, y: 15, class: "territory-title"});
   title.textContent = compactTitle(geoProfile.label || "Pontos lat/lon", 46);
   const note = svgNode("text", {x: right, y: 15, "text-anchor": "end", class: "territory-note"});
-  note.textContent = `amostra · mapa base z${projection.zoom}`;
+  note.textContent = "amostra · base local sem rede";
   publicHealthPointMap.append(title, note);
 
   points.forEach((point) => {
@@ -4856,9 +4879,9 @@ function renderPublicHealthPointMap() {
   latLabel.textContent = `lat ${formatDecimal(latMin, 3)} a ${formatDecimal(latMax, 3)}`;
   const lonLabel = svgNode("text", {x: right, y: height - 18, "text-anchor": "end", class: "territory-note"});
   lonLabel.textContent = `lon ${formatDecimal(lonMin, 3)} a ${formatDecimal(lonMax, 3)}`;
-  const attribution = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-attribution"});
-  attribution.textContent = "© OpenStreetMap contributors";
-  publicHealthPointMap.append(latLabel, attribution, lonLabel);
+  const localLabel = svgNode("text", {x: (left + right) / 2, y: height - 18, "text-anchor": "middle", class: "territory-note"});
+  localLabel.textContent = "contorno esquemático local";
+  publicHealthPointMap.append(latLabel, localLabel, lonLabel);
   const caveat = svgNode("text", {x: left, y: height - 4, class: "territory-caveat"});
   caveat.textContent = "Pontos da amostra; validar cobertura, denominador e período antes de interpretar território.";
   publicHealthPointMap.appendChild(caveat);
