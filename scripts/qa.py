@@ -27,6 +27,12 @@ FORBIDDEN_FRONTEND_SINKS = [
     (re.compile(r"\bpostMessage\s*\("), "postMessage"),
 ]
 
+REMOTE_MAP_TILE_PATTERNS = [
+    (re.compile(r"tile\.openstreetmap\.org", re.IGNORECASE), "OpenStreetMap tile host"),
+    (re.compile(r"https?://[^\s\"'`]*(?:/tiles?/|\{z\}/\{x\}/\{y\}|/z/|/vt/)", re.IGNORECASE), "remote map tile URL"),
+    (re.compile(r"https?://[^\s\"'`]*(?:api\.mapbox\.com|tiles\.stadiamaps\.com|cartocdn\.com|tile\.thunderforest\.com|maps\.wikimedia\.org|virtualearth\.net)", re.IGNORECASE), "known remote map tile provider"),
+]
+
 FRONTEND_SCAN_FILES = [
     "app.js",
     "analytics.js",
@@ -55,6 +61,21 @@ def run_frontend_security_scan() -> int:
     return 0
 
 
+def run_remote_map_tile_scan() -> int:
+    path = Path("analytics.js")
+    if not path.exists():
+        return 0
+    failures = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for pattern, label in REMOTE_MAP_TILE_PATTERNS:
+            if pattern.search(line):
+                failures.append(f"analytics.js:{line_number}: forbidden remote map tile reference: {label}")
+    if failures:
+        print("\n".join(failures))
+        return 1
+    return 0
+
+
 def main() -> int:
     for command in CHECKS:
         print(f"> {' '.join(command)}")
@@ -63,6 +84,10 @@ def main() -> int:
             return result.returncode
     print("> frontend security sink scan")
     result = run_frontend_security_scan()
+    if result != 0:
+        return result
+    print("> remote map tile scan")
+    result = run_remote_map_tile_scan()
     if result != 0:
         return result
     node_modules = bundled_node_modules()

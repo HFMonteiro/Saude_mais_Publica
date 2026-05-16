@@ -5085,8 +5085,30 @@ td.numeric {
   stroke-dasharray: 4 6;
 }
 
-.territory-tile {
-  opacity: 0.62;
+.territory-local-base {
+  pointer-events: none;
+}
+
+.territory-local-water {
+  fill: #eef4f8;
+}
+
+.territory-outline {
+  fill: rgba(180, 214, 198, 0.54);
+  stroke: rgba(7, 95, 79, 0.42);
+  stroke-width: 1.4px;
+}
+
+.territory-outline-island {
+  fill: none;
+  stroke-dasharray: 4 5;
+  stroke-width: 1.1px;
+}
+
+.territory-bounds {
+  fill: rgba(255, 255, 255, 0.18);
+  stroke: rgba(32, 94, 143, 0.3);
+  stroke-dasharray: 6 5;
 }
 
 .territory-point {
