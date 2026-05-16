@@ -1976,16 +1976,15 @@ function publicHealthScopeLabel(row) {
 
 function priorityDecision(score, row) {
   if ((row.risk || 0) >= 7 || row.viability < 4) return "Validar antes";
-  if (score >= 72) return "Priorizar";
+  if (score >= 72) return "Explorar";
   if (score >= 55) return "Acompanhar";
-  return "Explorar";
+  return "Validar antes";
 }
 
 function decisionTone(decision) {
   return {
-    "Priorizar": "act",
-    "Acompanhar": "watch",
     "Explorar": "investigate",
+    "Acompanhar": "watch",
     "Validar antes": "avoid",
   }[decision] || "investigate";
 }
@@ -2077,14 +2076,14 @@ function publicHealthReason(row) {
   const model = row.item.public_health_model || {};
   const drivers = model.impact?.drivers || [];
   const parts = [];
-  if (row.decision === "Priorizar") parts.push("alto valor potencial e boa viabilidade");
-  if (row.decision === "Acompanhar") parts.push("sinal relevante para acompanhamento");
-  if (row.decision === "Explorar") parts.push("potencial exploratório ainda incompleto");
-  if (row.decision === "Validar antes") parts.push("validar risco, granularidade ou viabilidade");
+  if (row.decision === "Explorar") parts.push("hipótese exploratória com impacto e viabilidade aparentes");
+  if (row.decision === "Acompanhar") parts.push("sinal a acompanhar sem leitura decisória isolada");
+  if (row.decision === "Validar antes") parts.push("validar risco, granularidade, cobertura ou viabilidade");
   if (drivers.length) parts.push(`drivers: ${drivers.slice(0, 2).join(", ")}`);
   if (row.geo.resolution === "mapped") parts.push(`entidade reconhecida: ${row.geo.matchedEntity}`);
   if (row.geo.id === "agregar") parts.push(publicHealthScopeLabel(row).toLowerCase());
   if (row.geo.id !== "nacional" && row.geo.id !== "agregar") parts.push(`área: ${row.geo.label}`);
+  parts.push("hipótese; validar fonte, denominador, granularidade, cobertura e período");
   return parts.join(" · ");
 }
 
@@ -4557,7 +4556,7 @@ function renderPublicHealthCockpit(rows) {
 
 function renderPublicHealthKpis(rows) {
   clearElement(publicHealthKpis);
-  const priorityCount = rows.filter((row) => row.decision === "Priorizar").length;
+  const exploreCount = rows.filter((row) => row.decision === "Explorar").length;
   const nationalCount = rows.filter((row) => row.geo.id === "nacional").length;
   const aggregateCount = rows.filter((row) => row.geo.id === "agregar").length;
   const mappedCount = rows.filter((row) => row.geo.resolution === "mapped").length;
@@ -4565,7 +4564,7 @@ function renderPublicHealthKpis(rows) {
   const geoCount = new Set(rows.map((row) => row.geo.id)).size;
   [
     ["Score médio", formatDecimal(avgPriority, 0)],
-    ["Priorizar", formatNumber(priorityCount)],
+    ["Explorar", formatNumber(exploreCount)],
     ["Âmbitos", formatNumber(geoCount)],
     ["Agregados", formatNumber(mappedCount)],
     ["Por validar", formatNumber(aggregateCount)],
@@ -4601,7 +4600,7 @@ function renderPublicHealthPriorityList(rows, total) {
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Sem prioridades para os filtros atuais.";
+    empty.textContent = "Sem hipóteses para os filtros atuais; alargue filtros ou reveja a fonte.";
     publicHealthPriorityList.appendChild(empty);
     return;
   }
@@ -4632,7 +4631,7 @@ function renderPublicHealthPriorityList(rows, total) {
   publicHealthPriorityList.appendChild(fragment);
   if (rows.length < total) {
     publicHealthPriorityList.appendChild(createSmallButton(
-      `Mostrar mais ${Math.min(40, total - rows.length)} prioridades`,
+      `Mostrar mais ${Math.min(40, total - rows.length)} hipóteses`,
       () => {
         state.publicHealthRenderLimit = Math.min(total, state.publicHealthRenderLimit + 40);
         renderPublicHealthMatrix();
@@ -4988,7 +4987,7 @@ function renderPublicHealthDecisionDetail(row) {
   if (!row) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = "Abre uma prioridade para ver drivers.";
+    empty.textContent = "Abre uma hipótese para ver drivers e validações.";
     publicHealthDecisionDetail.appendChild(empty);
     return;
   }
@@ -5031,7 +5030,7 @@ function renderPublicHealthDecisionDetail(row) {
   const validation = document.createElement("p");
   validation.className = "meta";
   const keys = (row.item.join_recipe?.suggested_keys || row.item.shared_fields || []).slice(0, 4).join(", ") || "chave a validar";
-  validation.textContent = `Validar: ${compactTitle(keys, 72)}.`;
+  validation.textContent = `Validar fonte, denominador, granularidade, cobertura e período; chaves: ${compactTitle(keys, 72)}.`;
   const geoChecklist = document.createElement("div");
   geoChecklist.className = "geo-validation-note";
   const geoTitle = document.createElement("strong");
@@ -5077,7 +5076,7 @@ function renderPublicHealthPriorityTable(rows, total) {
   const regionalCount = rows.length - nationalCount - aggregateCount;
   publicHealthTableMeta.textContent = `${formatNumber(total)} hipóteses · ${formatNumber(regionalCount)} regionais (${formatNumber(mappedCount)} por entidade reconhecida) · ${formatNumber(aggregateCount)} por validar · ${formatNumber(nationalCount)} nacionais.`;
 
-  const decisions = ["Priorizar", "Acompanhar", "Explorar", "Validar antes"];
+  const decisions = ["Explorar", "Acompanhar", "Validar antes"];
   const scopes = [
     ["regional", "Regional"],
     ["agregar", "Por resolver"],
@@ -5340,7 +5339,7 @@ function careActionBand(template) {
 
 function careViabilityBand(source) {
   if (!source) return "preparar";
-  if ((source.viability || 0) >= 12 || source.decision === "Priorizar") return "boa";
+  if ((source.viability || 0) >= 12 || source.decision === "Explorar") return "boa";
   return "preparar";
 }
 
@@ -5936,7 +5935,7 @@ function renderPublicHealthMatrix() {
   const correlations = filteredCorrelations();
   const priorityRows = publicHealthPriorityRows();
   const cells = summarizePublicHealthCells(correlations);
-  publicHealthMeta.textContent = `${formatNumber(correlations.length)} hipóteses filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} com impacto+viabilidade altos · risco/incerteza como travão · layer: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
+  publicHealthMeta.textContent = `${formatNumber(correlations.length)} hipóteses filtradas · ${formatNumber(priorityRows.filter((row) => row.decision === "Explorar").length)} para explorar impacto+viabilidade aparentes · risco/incerteza como travão · validar fonte, denominador, granularidade, cobertura e período · layer: ${PUBLIC_HEALTH_LAYERS.find(([key]) => key === state.activePublicHealthLayer)?.[1] || "Impacto"}.`;
   const selectedPriority = priorityRows.find((row) => row.key === state.selectedPublicHealthKey) || priorityRows[0];
   const mappedCount = priorityRows.filter((row) => row.geo.resolution === "mapped").length;
   const unresolvedCount = priorityRows.filter((row) => row.geo.id === "agregar").length;
@@ -5945,13 +5944,13 @@ function renderPublicHealthMatrix() {
     {
       label: "Pergunta ativa",
       value: "Que sinais merecem acompanhamento?",
-      detail: `${formatNumber(priorityRows.length)} hipóteses; ${formatNumber(priorityRows.filter((row) => row.decision === "Priorizar").length)} para priorizar por impacto e viabilidade.`,
+      detail: `${formatNumber(priorityRows.length)} hipóteses; ${formatNumber(priorityRows.filter((row) => row.decision === "Explorar").length)} para triagem exploratória; validar fonte, denominador, granularidade, cobertura e período.`,
     },
     {
       label: "Leitura recomendada",
       value: selectedPriority ? compactTitle(selectedPriority.decision, 40) : "Sem hipótese",
-      detail: selectedPriority ? `${compactTitle(selectedPriority.item.source_title, 48)} / ${compactTitle(selectedPriority.item.target_title, 48)}.` : "Alarga filtros ou baixa score mínimo.",
-      tone: selectedPriority?.decision === "Priorizar" ? "ok" : "warning",
+      detail: selectedPriority ? `Hipótese a validar: ${compactTitle(selectedPriority.item.source_title, 38)} / ${compactTitle(selectedPriority.item.target_title, 38)}.` : "Alarga filtros ou baixa score mínimo.",
+      tone: selectedPriority?.decision === "Explorar" ? "ok" : "warning",
     },
     {
       label: "Travão",
@@ -5962,7 +5961,7 @@ function renderPublicHealthMatrix() {
     {
       label: "Próxima ação",
       value: "Acompanhar drivers",
-      detail: "Abrir a hipótese líder e confirmar fonte, período, entidade e denominador.",
+      detail: "Abrir a hipótese líder e validar fonte, denominador, granularidade, cobertura e período.",
     },
   ]);
   renderPublicHealthCockpit(priorityRows);
